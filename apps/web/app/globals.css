@@ -1,0 +1,955 @@
+:root {
+  --green: #173f26;
+  --leaf: #347c2c;
+  --lime: #e4eb29;
+  --pale: #e8f2d9;
+  --ink: #242824;
+  --muted: #5c625d;
+  --paper: #fdfdfc;
+  --line: #dde2db;
+}
+* {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: var(--line);
+}
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 24px;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Noto Sans", sans-serif;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button,
+summary {
+  cursor: pointer;
+}
+img {
+  display: block;
+}
+button {
+  color: inherit;
+}
+a,
+button,
+summary,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: 3px solid var(--leaf);
+  outline-offset: 5px;
+}
+main p,
+main h1,
+main h2 {
+  max-width: 100%;
+}
+.skip-link {
+  position: fixed;
+  top: -80px;
+  left: 20px;
+  padding: 12px;
+  background: var(--lime);
+  z-index: 100;
+}
+.skip-link:focus {
+  top: 12px;
+}
+.site-header {
+  height: 85.333px;
+  background: #fff;
+  padding-inline: 24px;
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 10;
+}
+.header-rail {
+  width: 1160px;
+  max-width: 100%;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.logo {
+  display: flex;
+  align-items: flex-end;
+  gap: 4.838px;
+  flex-shrink: 0;
+}
+.navigation {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  font:
+    500 13px Inter,
+    sans-serif;
+  color: var(--green);
+}
+.navigation a {
+  position: relative;
+  padding-block: 8px;
+}
+.navigation a:after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 0;
+  height: 2px;
+  background: var(--lime);
+  border-radius: 10px;
+}
+.navigation a:hover:after,
+.navigation a[aria-current="page"]:after {
+  width: 28px;
+}
+.menu-toggle {
+  display: none;
+}
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 20px;
+  min-height: 48px;
+  border: 1px solid var(--ink);
+  border-radius: 28px;
+  background: white;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: max-content;
+  max-width: 100%;
+}
+.cta > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--lime);
+  flex-shrink: 0;
+}
+.cta:hover {
+  background: var(--lime);
+}
+.cta:hover > span {
+  background: var(--green);
+}
+.cta:hover > span img {
+  filter: brightness(0) invert(1);
+}
+.cta.dark {
+  background: var(--green);
+  color: #fff;
+  border-color: white;
+}
+.cta.dark:hover {
+  background: var(--leaf);
+}
+.site-footer {
+  background: #0d2f1d;
+  padding: 76px max(24px, calc((100% - 1160px) / 2)) 34px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+}
+.footer-brand {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+}
+.footer-brand p {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.socials {
+  display: flex;
+  gap: 12px;
+}
+.social-icon {
+  width: 34px;
+  height: 34px;
+  background: #ffffff12;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.social-icon:last-child img {
+  transform: scale(0.5);
+  flex-shrink: 0;
+}
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 180px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.footer-links h2 {
+  font:
+    600 16px/24px "Noto Sans",
+    sans-serif;
+  color: var(--lime);
+}
+.footer-links a:hover {
+  text-decoration: underline;
+  color: var(--lime);
+}
+.headquarters {
+  width: 260px;
+}
+.footer-divider {
+  margin-block: 54px;
+  overflow: hidden;
+  height: 1px;
+  opacity: 0.9;
+}
+.footer-legal {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  font-size: 12px;
+}
+.join-community {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px dashed #d4d4d4;
+  border-radius: 50%;
+  background: white;
+  flex-shrink: 0;
+}
+.envato-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  position: relative;
+}
+.envato-icon img {
+  transform: scale(0.6875);
+  transform-origin: top left;
+}
+/* SVGs retain their exported intrinsic dimensions; wrappers carry positioning. */
+main img[src$=".svg"] {
+  width: auto;
+  height: auto;
+  max-width: none;
+}
+[data-name="Hero"] > img {
+  animation: landscape-zoom 10s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  will-change: transform;
+}
+@keyframes landscape-zoom {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+.faq-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scroll-margin-top: 32px;
+}
+.faq-list details {
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.faq-list summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  list-style: none;
+  font-size: 18px;
+  color: var(--green);
+}
+.faq-list summary::-webkit-details-marker {
+  display: none;
+}
+.faq-list summary span:after {
+  content: "+";
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--leaf);
+}
+.faq-list details[open] summary span:after {
+  content: "−";
+}
+.faq-list p {
+  margin-top: 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.contact-form {
+  padding: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  align-items: flex-start;
+}
+.contact-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  width: 100%;
+}
+.contact-form input,
+.contact-form select,
+.contact-form textarea {
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #fff;
+  color: #171717;
+  font-size: 16px;
+  line-height: 24px;
+  width: 100%;
+  box-shadow: 0 1px 2px #0000000d;
+}
+.contact-form input,
+.contact-form select {
+  height: 44px;
+}
+.contact-form select {
+  appearance: none;
+  background: #fff url("/figma/a811f.svg") no-repeat right 14px center;
+  padding-right: 44px;
+}
+.contact-form textarea {
+  height: 128px;
+  resize: vertical;
+}
+.contact-form ::placeholder {
+  color: #737373;
+  opacity: 1;
+}
+.form-result {
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--pale);
+  padding: 16px;
+  border-radius: 8px;
+}
+.form-result a {
+  display: inline-block;
+  margin-top: 10px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+[data-name="Produce category"]:hover {
+  background: var(--pale);
+}
+[data-name="Contact channel"] a:hover {
+  text-decoration: underline;
+}
+@media (min-width: 1441px) {
+  [data-name="Hero section"] {
+    height: 860px;
+  }
+  [data-name="Hero content"] {
+    margin-inline: auto;
+  }
+  [data-name="Farmer story"] > div {
+    flex: 1;
+    width: 50%;
+  }
+}
+@media (max-width: 1199px) {
+  main [data-name] {
+    max-width: 100%;
+  }
+  [data-name="Hero section"] {
+    padding-inline: 24px;
+    height: 760px;
+  }
+  [data-name="Hero"] {
+    padding: 64px 40px;
+  }
+  [data-name="Hero content"] {
+    gap: 30px;
+    width: 100%;
+    align-items: flex-end;
+  }
+  [data-name="Hero copy"] {
+    width: 54%;
+    flex-shrink: 1;
+  }
+  [data-name="Hero copy"] h1 {
+    font-size: 50px;
+  }
+  [data-name="Mission card"] {
+    width: 40%;
+    flex-shrink: 1;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  [data-name="Mission thumbnail"] {
+    height: 90px;
+    width: 100%;
+  }
+  [data-name="Mission content"] {
+    width: 100%;
+  }
+  [data-name="Mission editorial"],
+  [data-name="Story introduction"],
+  [data-name="Founder profile"],
+  [data-name="Buyer introduction"],
+  [data-name="Legal compliance"],
+  [data-name="Contact content"],
+  [data-name="Solution mosaic"],
+  [data-name="Solution heading"],
+  [data-name="Reality introduction"],
+  [data-name="Farmer path heading"] {
+    gap: 40px;
+  }
+  [data-name="Mission editorial"] > div,
+  [data-name="Story introduction"] > *,
+  [data-name="Founder profile"] > *,
+  [data-name="Buyer introduction"] > *,
+  [data-name="Legal compliance"] > *,
+  [data-name="Contact content"] > *,
+  [data-name="Solution mosaic"] > *,
+  [data-name="Solution heading"] > *,
+  [data-name="Reality introduction"] > *,
+  [data-name="Farmer path heading"] > * {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  [data-name="Story panel"] {
+    padding: 40px;
+    gap: 40px;
+  }
+  [data-name="Story panel"] > * {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  [data-name="Photo mosaic"] > * {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  [data-name="Mosaic row"] > * {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  [data-name="Farmer story"] {
+    height: auto;
+    align-items: stretch;
+  }
+  [data-name="Harvest logistics"] {
+    width: 50%;
+    height: auto;
+    min-height: 620px;
+  }
+  [data-name="Farmer story"] [data-name="Story copy"] {
+    padding: 72px 40px;
+  }
+  [data-name="Testimonial"] [data-name="Portrait"] {
+    width: 34%;
+  }
+  [data-name="Team feature"] {
+    width: 34%;
+  }
+  [data-name="Team cards"] {
+    flex: 1;
+    min-width: 0;
+  }
+  [data-name="Team row"] {
+    width: 100%;
+  }
+  [data-name="Team portrait"] {
+    flex: 1;
+    min-width: 0;
+  }
+  .footer-content {
+    gap: 24px;
+  }
+  .footer-brand {
+    width: 30%;
+  }
+  .footer-links {
+    width: 18%;
+  }
+  .headquarters {
+    width: 25%;
+  }
+}
+@media (max-width: 767px) {
+  .site-header {
+    height: 80px;
+    padding-inline: 20px;
+  }
+  .header-rail {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .header-rail > .cta {
+    font-size: 12px;
+    min-height: 38px;
+    padding: 4px 5px 4px 12px;
+    gap: 6px;
+  }
+  .header-rail > .cta > span {
+    width: 26px;
+    height: 26px;
+  }
+  .menu-toggle {
+    display: block;
+    background: transparent;
+    font-size: 13px;
+    padding: 8px;
+    margin-left: auto;
+    color: var(--green);
+  }
+  .navigation {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 80px;
+    background: #fff;
+    padding: 24px;
+    box-shadow: 0 10px 20px #173f2610;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .navigation.open {
+    display: flex;
+  }
+  .navigation a:after {
+    left: 0;
+    translate: 0;
+  }
+  main [data-name="Section"] {
+    padding: 64px 24px;
+    gap: 36px;
+  }
+  main [data-name="Page banner section"] {
+    padding: 0 20px 32px;
+  }
+  main [data-name="Page banner"] {
+    height: 320px;
+    padding: 150px 24px 40px;
+  }
+  main [data-name="Page banner"] h1 {
+    font-size: 36px;
+    width: 100%;
+  }
+  main [data-name="Page banner"] p {
+    font-size: 15px;
+    width: 100%;
+  }
+  main [data-name="intersect-square"] {
+    right: -250px;
+  }
+  main [data-name] h2 {
+    font-size: 30px;
+    line-height: 1.2;
+  }
+  main [data-name="Hero section"] {
+    height: auto;
+    padding: 0 16px 32px;
+  }
+  main [data-name="Hero"] {
+    min-height: 730px;
+    padding: 180px 24px 32px;
+  }
+  main [data-name="Hero content"] {
+    flex-direction: column;
+    gap: 36px;
+    align-items: flex-start;
+  }
+  main [data-name="Hero copy"] {
+    width: 100%;
+    gap: 18px;
+  }
+  main [data-name="Hero copy"] h1 {
+    font-size: 43px;
+    letter-spacing: -1.5px;
+  }
+  main [data-name="Hero copy"] p {
+    width: 100%;
+    white-space: normal;
+  }
+  main [data-name="Mission card"] {
+    width: 100%;
+    flex-direction: row;
+    gap: 14px;
+    padding: 14px;
+  }
+  main [data-name="Mission thumbnail"] {
+    width: 80px;
+    height: 100px;
+  }
+  main [data-name="Mission content"] {
+    flex: 1;
+    min-width: 0;
+    overflow: visible;
+  }
+  main [data-name="Mission content"] > p {
+    font-size: 12px;
+  }
+  main [data-name="Farmer community"] {
+    max-width: 100%;
+    gap: 4px;
+  }
+  main [data-name="Avatars"] {
+    max-width: calc(100% - 28px);
+    overflow: hidden;
+  }
+  main [data-name="Promise row"],
+  main [data-name="Category cards"],
+  main [data-name="Values"],
+  main [data-name="Team values"],
+  main [data-name="Buyer benefits"],
+  main [data-name="Tracking stages"],
+  main [data-name="Buyer steps"],
+  main [data-name="Assurance cards"],
+  main [data-name="Problem cards"] {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    width: 100%;
+  }
+  main [data-name="Feature card"] {
+    min-height: 0;
+    width: 100%;
+    gap: 18px;
+  }
+  main [data-name="Mission editorial"],
+  main [data-name="Story introduction"],
+  main [data-name="Founder profile"],
+  main [data-name="Buyer introduction"],
+  main [data-name="Legal compliance"],
+  main [data-name="Contact content"],
+  main [data-name="Solution mosaic"],
+  main [data-name="Solution heading"],
+  main [data-name="Reality introduction"],
+  main [data-name="Farmer path heading"],
+  main [data-name="Photo mosaic"],
+  main [data-name="Story panel"],
+  main [data-name="Team portrait grid"] {
+    flex-direction: column;
+    gap: 32px;
+    width: 100%;
+    height: auto;
+    align-items: stretch;
+  }
+  main [data-name="Mission editorial"] > *,
+  main [data-name="Story introduction"] > *,
+  main [data-name="Founder profile"] > *,
+  main [data-name="Buyer introduction"] > *,
+  main [data-name="Legal compliance"] > *,
+  main [data-name="Contact content"] > *,
+  main [data-name="Solution mosaic"] > *,
+  main [data-name="Solution heading"] > *,
+  main [data-name="Reality introduction"] > *,
+  main [data-name="Farmer path heading"] > *,
+  main [data-name="Story panel"] > *,
+  main [data-name="Team portrait grid"] > * {
+    width: 100%;
+    flex: auto;
+    min-width: 0;
+  }
+  main [data-name="Heading column"],
+  main [data-name="Mission copy"],
+  main [data-name="Legal copy"],
+  main [data-name="Story copy"],
+  main [data-name="Buyer copy"],
+  main [data-name="Founder story"] {
+    height: auto;
+  }
+  main [data-name="Mission facts"] {
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  main [data-name="Mission detail"] {
+    flex-basis: 100%;
+    width: 100%;
+  }
+  main [data-name="Mission media"] {
+    height: 460px;
+  }
+  main [data-name="Photo mosaic"] {
+    height: auto;
+  }
+  main [data-name="Wide mosaic"] {
+    width: 100%;
+    height: auto;
+  }
+  main [data-name="Mosaic row"] {
+    flex-direction: column;
+    height: auto;
+  }
+  main [data-name="Mosaic row"] > * {
+    width: 100%;
+    flex: auto;
+  }
+  main [data-name="Farmer portrait"] {
+    width: 100%;
+    height: 450px;
+  }
+  main [data-name="Mission point"] {
+    align-items: flex-start;
+  }
+  main [data-name="Story panel"] {
+    padding: 28px;
+  }
+  main [data-name="Story image"] {
+    height: 300px;
+  }
+  main [data-name="Farmer story"] {
+    flex-direction: column;
+    height: auto;
+  }
+  main [data-name="Harvest logistics"] {
+    width: 100%;
+    height: 400px;
+    min-height: 0;
+  }
+  main [data-name="Farmer story"] [data-name="Story copy"] {
+    padding: 56px 24px;
+    flex: auto;
+  }
+  main [data-name="Impact metrics"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 36px 20px;
+    padding: 16px 0;
+  }
+  main [data-name="Metric"] {
+    width: 100%;
+  }
+  main [data-name="Metric"] > p:first-child {
+    font-size: 38px;
+    letter-spacing: -1px;
+  }
+  main [data-name="Testimonial"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  main [data-name="Testimonial"] [data-name="Portrait"] {
+    width: 100%;
+    height: 430px;
+  }
+  main [data-name="Quote panel"] {
+    padding: 32px 24px;
+    min-height: 0;
+    flex: auto;
+  }
+  main [data-name="Quote panel"] > p:nth-child(2) {
+    font-size: 20px;
+  }
+  main [data-name="Conversion panel"],
+  main [data-name="Career panel"],
+  main [data-name="Buyer conversion"],
+  main [data-name="Dual conversion"],
+  main [data-name="Vision panel"],
+  main [data-name="FAQ callout"] {
+    padding: 64px 24px;
+  }
+  main [data-name="Conversion panel"] > *,
+  main [data-name="Career panel"] > *,
+  main [data-name="Buyer conversion"] > *,
+  main [data-name="Dual conversion"] > *,
+  main [data-name="Vision panel"] > *,
+  main [data-name="FAQ callout"] > * {
+    max-width: 100%;
+  }
+  main [data-name="Team feature"] {
+    min-height: 500px;
+  }
+  main [data-name="Team cards"] {
+    height: auto;
+  }
+  main [data-name="Team row"] {
+    gap: 16px;
+  }
+  main [data-name="Team portrait"] [data-name="Portrait"] {
+    height: 200px;
+  }
+  main [data-name="Solution row"] {
+    flex-direction: column;
+    height: auto;
+  }
+  main [data-name="Solution cards"] {
+    height: auto;
+  }
+  main [data-name="Process step"] {
+    display: grid;
+    grid-template-columns: 40px 1fr 24px;
+    gap: 16px;
+    padding: 24px 0;
+    align-items: start;
+  }
+  main [data-name="Process step"] > p {
+    width: auto;
+    white-space: normal;
+  }
+  main [data-name="Process step"] > p:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  main [data-name="Step arrow"] {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .contact-form {
+    padding: 24px;
+  }
+  .faq-list details {
+    padding: 22px;
+  }
+  .faq-list summary {
+    font-size: 16px;
+  }
+  .site-footer {
+    padding: 56px 24px 28px;
+  }
+  .footer-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 36px 24px;
+  }
+  .footer-brand {
+    grid-column: 1/-1;
+    width: 100%;
+    max-width: 380px;
+  }
+  .footer-links {
+    width: 100%;
+  }
+  .headquarters {
+    grid-column: 1/-1;
+  }
+  .footer-legal {
+    flex-direction: column;
+    gap: 16px;
+    line-height: 1.6;
+  }
+  .footer-divider {
+    margin-block: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  [data-name="Hero"] > img {
+    animation: none;
+    will-change: auto;
+  }
+}
+.hero-content-6 {
+  width: min(1160px, 100%);
+}
+.section-22 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.section-30 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.section-49 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.section-69 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.section-74 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.conversion-panel-83 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.page-banner-87 {
+  width: min(1160px, 100%);
+}
+.section-101 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.section-140 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.dual-conversion-165 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+.section-177 {
+  padding-inline: max(24px, calc((100% - 1160px) / 2));
+}
+@media (max-width: 767px) {
+  main [data-name] :is(p, h1, h2) {
+    white-space: normal;
+  }
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+  [data-name="Registration card"] p {
+    white-space: normal;
+  }
+}
+@media (max-width: 380px) {
+  .site-header .logo {
+    width: 125px;
+    transform: scale(0.83);
+    transform-origin: left center;
+  }
+  .header-rail {
+    gap: 8px;
+  }
+  .site-header {
+    padding-inline: 16px;
+  }
+}

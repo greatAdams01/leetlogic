@@ -1,0 +1,26 @@
+{
+  "name": "@leetlogic/web",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "brand:generate": "node scripts/generate-brand-assets.mjs",
+    "images:optimize": "node scripts/optimize-images.mjs",
+    "start": "next start --port 3001",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.0",
+    "sharp": "^0.35.5"
+  }
+}

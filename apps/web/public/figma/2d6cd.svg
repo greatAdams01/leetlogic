@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="truck" clip-path="url(#clip0_0_200)">
+<path id="Icon" d="M14.6667 14.6667V2.75H0.916667V14.6667H14.6667ZM14.6667 14.6667H21.0833V10.0833L18.3333 7.33333H14.6667V14.6667ZM7.33333 16.9583C7.33333 18.224 6.30732 19.25 5.04167 19.25C3.77601 19.25 2.75 18.224 2.75 16.9583C2.75 15.6927 3.77601 14.6667 5.04167 14.6667C6.30732 14.6667 7.33333 15.6927 7.33333 16.9583ZM19.25 16.9583C19.25 18.224 18.224 19.25 16.9583 19.25C15.6927 19.25 14.6667 18.224 14.6667 16.9583C14.6667 15.6927 15.6927 14.6667 16.9583 14.6667C18.224 14.6667 19.25 15.6927 19.25 16.9583Z" stroke="#173F26" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_0_200">
+<rect width="22" height="22" fill="white"/>
+</clipPath>
+</defs>
+</svg>
