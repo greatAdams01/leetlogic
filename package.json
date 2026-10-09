@@ -5,6 +5,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter @leetlogic/api dev",
+    "dev:web": "pnpm --filter @leetlogic/web dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",

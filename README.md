@@ -2,6 +2,38 @@
 
 TypeScript foundation for Leetlogic's Nigeria-first farmer-to-buyer marketplace.
 
+## Next.js website
+
+The approved Figma website is implemented in `apps/web` using Next.js App Router,
+React, TypeScript, and plain CSS. Run `pnpm dev:web` and open
+`http://localhost:3001`. The API remains on port 3000.
+
+Pages: `/`, `/about`, `/team`, `/for-buyers`, `/how-it-works`, `/impact`, and `/contact`.
+The original Figma images, SVGs, and design fonts are served locally. Layouts adapt
+to phones and tablets; the hero animation respects reduced-motion preferences.
+
+Validate with `pnpm --filter @leetlogic/web build` and
+`pnpm --filter @leetlogic/web typecheck`.
+
+Selling, sourcing, and careers calls to action open a relevant contact inquiry.
+The contact form validates input and prepares an email draft for the visitor to
+review and send; it does not send or store inquiries on the server. An inquiry API
+and production marketplace onboarding are not part of the supplied marketing
+screens. Social icons and the branded WhatsApp number remain informational until
+real profile URLs and a numeric WhatsApp contact are supplied.
+
+### Netlify deployment
+
+When deploying `apps/web` as its own repository, install its dependencies (including
+dev dependencies), use `npm run build`, and publish `.next`. The web package declares
+its own TypeScript compiler and Node.js types so it can build without the monorepo.
+Do not omit dev dependencies during the build installation step.
+
+When deploying this entire monorepo, leave Netlify's base directory at the repository
+root, set the package directory to `apps/web`, use
+`pnpm --filter @leetlogic/web build`, and publish `apps/web/.next`.
+Use Netlify's automatically detected Next.js runtime for either setup.
+
 ## Prerequisites
 
 - Node.js 22+
@@ -39,3 +71,19 @@ tool and should not be deployed with the production stack.
 
 In development, `OTP_PROVIDER=console` logs OTP codes rather than sending SMS. Do not use the
 console provider in production.
+
+## Repository and deployment workflow
+
+All apps are tracked by the root Leetlogic Git repository. Run Git commands from
+this root and deploy `apps/web` from the same GitHub repository using the monorepo
+Netlify settings above. The previous separate web repository can remain as an archive.
+Changing local Git tracking does not switch the connected repository in Netlify;
+update that site's repository connection separately and verify a deployment.
+
+## API logs
+
+Development logs display one readable line per event with timestamp, level, message,
+request ID, HTTP status and response time. Production emits structured JSON for log
+collection. Set `LOG_LEVEL=debug` for more detail. Request bodies, query strings and
+headers are omitted from request logs. Console OTP codes are printed only outside
+production; production requires a real SMS provider.

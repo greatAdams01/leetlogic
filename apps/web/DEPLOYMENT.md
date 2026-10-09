@@ -1,25 +1,25 @@
 # Netlify
 
-For the standalone `leetlogic-web` repository:
+Deploy this website from the `greatAdams01/leetlogic` monorepo:
 
+- Repository: `git@github.com:greatAdams01/leetlogic.git`.
 - Base directory: repository root (leave blank).
-- Build command: `npm run build`.
-- Publish directory: `.next`.
-- Install development dependencies during the build. If custom installation flags
-  omit them, remove those flags or use `npm install --include=dev`.
+- Package directory: `apps/web`.
+- Build command: `pnpm --filter @leetlogic/web build`.
+- Publish directory: `apps/web/.next`.
+- Install development dependencies during the build.
 - Keep Netlify's automatically detected Next.js runtime enabled.
 
-`typescript`, `@types/node`, and React type definitions are declared in this
-package because Next.js needs them during production builds. Do not rely on
-dependencies installed in a parent workspace.
+Commit and push from the Leetlogic root. In the existing Netlify site, change its
+connected repository from `leetlogic-web` to `leetlogic`, apply these settings,
+and verify a deployment. The existing site and domain can be retained. Local
+repository consolidation does not change Netlify's remote connection.
 
-The Next.js configuration selects the parent pnpm workspace only when one exists,
-so this package also works as a nested Git checkout during local development.
+The old standalone repository remains an archive. Its local Git metadata and
+complete commit history were preserved in the monorepo's `.git/web-repository-backup`
+and `.git/web-history.bundle`; these are local backups, not deployed files.
 
-After updating the repository, trigger a new Netlify deploy. A missing build-cache
-warning on the first build is informational, not a deployment failure.
-
-See [Netlify's build configuration documentation](https://docs.netlify.com/build/configure-builds/overview/).
+See [Netlify's monorepo documentation](https://docs.netlify.com/build/configure-builds/monorepos/).
 
 ## Search and social metadata
 

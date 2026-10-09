@@ -1,7 +1,8 @@
+import { logger } from "../lib/logger.js";
 import { getConfig } from "../config.js";
 
 export interface OtpProvider { readonly name: "CONSOLE" | "TERMII" | "AFRICAS_TALKING"; send(phone: string, code: string): Promise<void> }
-export class ConsoleOtpProvider implements OtpProvider { readonly name = "CONSOLE" as const; async send(phone: string, code: string) { console.info(`[development OTP] ${phone}: ${code}`); } }
+export class ConsoleOtpProvider implements OtpProvider { readonly name = "CONSOLE" as const; async send(phone: string, code: string) { if (getConfig().NODE_ENV === "production") throw new Error("Console OTP provider is development-only"); logger.info({ phone, code }, "Development OTP — use this code to verify"); } }
 export class TermiiOtpProvider implements OtpProvider {
   readonly name = "TERMII" as const;
   async send(phone: string, code: string) {
