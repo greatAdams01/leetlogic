@@ -1,0 +1,10 @@
+ALTER TABLE trade_orders ADD CONSTRAINT order_amounts_valid CHECK ("totalMinor" > 0 AND "heldMinor" >= 0 AND "releasedMinor" >= 0 AND "refundedMinor" >= 0 AND "heldMinor" + "releasedMinor" + "refundedMinor" <= "totalMinor" AND quantity > 0);
+ALTER TABLE trade_orders ADD CONSTRAINT order_buyer_fk FOREIGN KEY ("buyerId") REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE trade_orders ADD CONSTRAINT order_listing_fk FOREIGN KEY ("listingId") REFERENCES listings(id) ON DELETE RESTRICT;
+ALTER TABLE trade_orders ADD CONSTRAINT order_farmer_fk FOREIGN KEY ("farmerProfileId") REFERENCES farmer_profiles(id) ON DELETE RESTRICT;
+ALTER TABLE farmer_wallets ADD CONSTRAINT wallet_amounts_valid CHECK ("balanceMinor" >= 0 AND "reservedMinor" >= 0 AND "reservedMinor" <= "balanceMinor");
+ALTER TABLE farmer_wallets ADD CONSTRAINT wallet_farmer_fk FOREIGN KEY ("farmerProfileId") REFERENCES farmer_profiles(id) ON DELETE RESTRICT;
+ALTER TABLE withdrawals ADD CONSTRAINT withdrawal_positive CHECK ("amountMinor" > 0);
+ALTER TABLE escrow_entries ADD CONSTRAINT escrow_positive CHECK ("amountMinor" > 0);
+ALTER TABLE support_tickets ADD CONSTRAINT ticket_user_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE risk_alerts ADD CONSTRAINT risk_user_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE RESTRICT;

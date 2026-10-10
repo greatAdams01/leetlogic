@@ -6,6 +6,7 @@ const levels: Record<number, string> = { 10: "TRACE", 20: "DEBUG", 30: "INFO", 4
 export function formatLogLine(record: Record<string, unknown>): string {
   const { time, level, msg, pid: _pid, hostname: _hostname, ...fields } = record;
   const timestamp = typeof time === "number" ? new Date(time).toISOString() : String(time);
+  void _pid; void _hostname;
   const details = Object.entries(fields).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(" ");
   return `${timestamp} ${levels[Number(level)] ?? level} ${String(msg ?? "").replace(/[\r\n]/g, " ")}${details ? ` | ${details}` : ""}\n`;
 }

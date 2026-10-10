@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:admin": "node --env-file=../../.env scripts/test-admin.mjs"
   },
   "dependencies": {
     "@leetlogic/contracts": "workspace:*",
@@ -30,5 +31,9 @@
     "swagger-ui-express": "^5.0.0",
     "zod": "^3.25.0"
   },
-  "devDependencies": { "tsx": "^4.20.0", "supertest": "^7.1.0", "@types/supertest": "^6.0.0" }
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "supertest": "^7.1.0",
+    "@types/supertest": "^6.0.0"
+  }
 }

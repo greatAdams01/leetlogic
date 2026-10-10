@@ -1,3 +1,5 @@
+"use client";
+import { useEffect, useState } from "react";
 const questions = [
   [
     "Is it safe to buy on Leetlogic?",
@@ -25,9 +27,27 @@ const questions = [
   ],
 ];
 export function Faq() {
+  const [published, setPublished] = useState<string[][]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/content/faq?locale=en&audience=BUYERS", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data?.items)
+          setPublished(
+            data.items.map((item: { question: string; answer: string }) => [
+              item.question,
+              item.answer,
+            ]),
+          );
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
   return (
     <div className="faq-list" id="faq">
-      {questions.map(([question, answer], index) => (
+      {(published.length ? published : questions).map(([question, answer], index) => (
         <details key={question} open={index === 0}>
           <summary>
             {question}

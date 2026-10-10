@@ -35,7 +35,7 @@ export const verificationDecisionSchema = z.object({
   reason: z.string().trim().min(3).max(500), internalNotes: z.string().trim().max(2000).optional(),
 });
 export const adminInvitationSchema = z.object({
-  phone: z.string().min(10).max(20), fullName: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(254).transform(value => value.toLowerCase()), fullName: z.string().trim().min(2).max(120),
   roleCode: z.enum(["SUPER_ADMIN", "OPERATIONS_MANAGER", "VERIFICATION_OFFICER", "FINANCE_DISPUTES_OFFICER", "SUPPORT_CONTENT_OFFICER"]),
 });
 

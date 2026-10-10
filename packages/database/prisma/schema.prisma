@@ -132,6 +132,10 @@ model User {
   sessions        Session[]
   farmerProfile   FarmerProfile?
 
+  ordersBought   TradeOrder[]
+  supportTickets SupportTicket[]
+  riskAlerts     RiskAlert[]
+
   @@map("users")
 }
 
@@ -237,6 +241,9 @@ model FarmerProfile {
   verificationCases  VerificationCase[]
   listings           Listing[]
 
+  tradeOrders TradeOrder[]
+  wallet      FarmerWallet?
+
   @@map("farmer_profiles")
 }
 
@@ -299,7 +306,9 @@ model VerificationReview {
 
 model AdminAccount {
   id                  String                @id @default(uuid()) @db.Uuid
-  phoneE164           String                @unique @map("phone_e164")
+  phoneE164           String?               @unique @map("phone_e164")
+  email               String?               @unique @db.VarChar(254)
+  passwordHash        String?               @map("password_hash") @db.VarChar(500)
   fullName            String                @map("full_name") @db.VarChar(120)
   status              AdminStatus           @default(INVITED)
   totpSecretEncrypted String?               @map("totp_secret_encrypted") @db.Text
@@ -313,8 +322,22 @@ model AdminAccount {
   roles               AdminRoleAssignment[]
   recoveryCodes       AdminRecoveryCode[]
   reviews             VerificationReview[]
+  invitations         AdminInvitation[]
 
   @@map("admin_accounts")
+}
+
+model AdminInvitation {
+  id        String       @id @default(uuid()) @db.Uuid
+  adminId   String       @db.Uuid
+  tokenHash String       @unique @db.Char(64)
+  purpose   String       @default("SETUP") @db.VarChar(20)
+  expiresAt DateTime     @db.Timestamptz(6)
+  usedAt    DateTime?    @db.Timestamptz(6)
+  createdAt DateTime     @default(now()) @db.Timestamptz(6)
+  admin     AdminAccount @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("admin_invitations")
 }
 
 model AdminRole {
@@ -455,6 +478,8 @@ model Listing {
   movements         InventoryMovement[]
   reservations      InventoryReservation[]
 
+  tradeOrders TradeOrder[]
+
   @@index([status, categoryId])
   @@index([farmerProfileId, status])
   @@map("listings")
@@ -521,4 +546,218 @@ model IdempotencyRecord {
   @@unique([scope, idempotencyKey])
   @@index([expiresAt])
   @@map("idempotency_records")
+}
+
+model TradeOrder {
+  id                  String             @id @default(uuid()) @db.Uuid
+  reference           String             @unique @db.VarChar(60)
+  buyerId             String             @db.Uuid
+  farmerProfileId     String             @db.Uuid
+  listingId           String             @db.Uuid
+  quantity            Decimal            @db.Decimal(18, 3)
+  totalMinor          BigInt
+  heldMinor           BigInt             @default(0)
+  releasedMinor       BigInt             @default(0)
+  refundedMinor       BigInt             @default(0)
+  feeBasisPoints      Int                @default(600)
+  status              String             @default("AWAITING_PAYMENT") @db.VarChar(40)
+  deliveryConfirmedAt DateTime?          @db.Timestamptz(6)
+  createdAt           DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime           @updatedAt @db.Timestamptz(6)
+  shipment            Shipment?
+  ledger              EscrowEntry[]
+  tickets             SupportTicket[]
+  compliance          ComplianceReview[]
+
+  buyer         User          @relation(fields: [buyerId], references: [id], onDelete: Restrict, map: "order_buyer_fk")
+  listing       Listing       @relation(fields: [listingId], references: [id], onDelete: Restrict, map: "order_listing_fk")
+  farmerProfile FarmerProfile @relation(fields: [farmerProfileId], references: [id], onDelete: Restrict, map: "order_farmer_fk")
+
+  @@index([status, createdAt])
+  @@index([farmerProfileId])
+  @@map("trade_orders")
+}
+
+model Shipment {
+  id          String     @id @default(uuid()) @db.Uuid
+  orderId     String     @unique @db.Uuid
+  carrier     String     @db.VarChar(120)
+  trackingRef String     @db.VarChar(120)
+  status      String     @default("ASSIGNED") @db.VarChar(40)
+  evidence    String?    @db.VarChar(500)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(6)
+  order       TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("shipments")
+}
+
+model EscrowEntry {
+  id          String     @id @default(uuid()) @db.Uuid
+  orderId     String     @db.Uuid
+  kind        String     @db.VarChar(30)
+  amountMinor BigInt
+  feeMinor    BigInt     @default(0)
+  externalRef String?    @unique @db.VarChar(160)
+  mutationKey String     @unique @db.VarChar(200)
+  actorId     String     @db.Uuid
+  reason      String     @db.VarChar(500)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(6)
+  order       TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@map("escrow_entries")
+}
+
+model FarmerWallet {
+  farmerProfileId String       @id @db.Uuid
+  balanceMinor    BigInt       @default(0)
+  reservedMinor   BigInt       @default(0)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(6)
+  withdrawals     Withdrawal[]
+
+  farmerProfile FarmerProfile @relation(fields: [farmerProfileId], references: [id], onDelete: Restrict, map: "wallet_farmer_fk")
+
+  @@map("farmer_wallets")
+}
+
+model Withdrawal {
+  id              String       @id @default(uuid()) @db.Uuid
+  farmerProfileId String       @db.Uuid
+  amountMinor     BigInt
+  bankName        String       @db.VarChar(120)
+  accountLastFour String       @db.VarChar(4)
+  status          String       @default("REQUESTED") @db.VarChar(30)
+  reason          String?      @db.VarChar(500)
+  authorizedBy    String?      @db.Uuid
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(6)
+  wallet          FarmerWallet @relation(fields: [farmerProfileId], references: [farmerProfileId], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@map("withdrawals")
+}
+
+model SupportTicket {
+  id         String           @id @default(uuid()) @db.Uuid
+  subject    String           @db.VarChar(160)
+  kind       String           @default("SUPPORT") @db.VarChar(30)
+  userId     String?          @db.Uuid
+  orderId    String?          @db.Uuid
+  priority   String           @default("NORMAL") @db.VarChar(20)
+  status     String           @default("OPEN") @db.VarChar(30)
+  assignedTo String?          @db.Uuid
+  resolution String?          @db.Text
+  createdAt  DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime         @updatedAt @db.Timestamptz(6)
+  order      TradeOrder?      @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  messages   SupportMessage[]
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict, map: "ticket_user_fk")
+
+  @@index([kind, status, createdAt])
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  ticketId  String        @db.Uuid
+  authorId  String        @db.Uuid
+  body      String        @db.Text
+  internal  Boolean       @default(false)
+  createdAt DateTime      @default(now()) @db.Timestamptz(6)
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}
+
+model FaqArticle {
+  id        String   @id @default(uuid()) @db.Uuid
+  question  String   @db.VarChar(240)
+  answer    String   @db.Text
+  audience  String   @default("FARMERS") @db.VarChar(30)
+  locale    String   @default("en") @db.VarChar(10)
+  status    String   @default("DRAFT") @db.VarChar(30)
+  updatedBy String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("faq_articles")
+}
+
+model TranslationEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @db.VarChar(200)
+  locale    String   @db.VarChar(10)
+  source    String   @db.Text
+  value     String   @db.Text
+  status    String   @default("DRAFT") @db.VarChar(30)
+  updatedBy String   @db.Uuid
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([key, locale])
+  @@map("translation_entries")
+}
+
+model RiskAlert {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  title      String   @db.VarChar(160)
+  reason     String   @db.Text
+  severity   String   @default("MEDIUM") @db.VarChar(20)
+  status     String   @default("OPEN") @db.VarChar(30)
+  resolution String?  @db.Text
+  reviewedBy String?  @db.Uuid
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict, map: "risk_user_fk")
+
+  @@map("risk_alerts")
+}
+
+model ComplianceReview {
+  id          String     @id @default(uuid()) @db.Uuid
+  orderId     String     @db.Uuid
+  destination String     @db.VarChar(80)
+  documentRef String     @db.VarChar(500)
+  status      String     @default("PENDING_REVIEW") @db.VarChar(30)
+  reason      String?    @db.Text
+  reviewedBy  String?    @db.Uuid
+  createdAt   DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(6)
+  order       TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("compliance_reviews")
+}
+
+model SystemIncident {
+  id        String   @id @default(uuid()) @db.Uuid
+  service   String   @db.VarChar(80)
+  severity  String   @default("DEGRADED") @db.VarChar(30)
+  message   String   @db.Text
+  status    String   @default("INVESTIGATING") @db.VarChar(30)
+  isPublic  Boolean  @default(false)
+  updatedBy String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("system_incidents")
+}
+
+model MarketplaceSettings {
+  id                     String   @id @default("marketplace") @db.VarChar(40)
+  platformFeeBasisPoints Int      @default(600)
+  exportFeeBasisPoints   Int      @default(250)
+  escrowHoldHours        Int      @default(72)
+  disputeGraceHours      Int      @default(24)
+  supportPhone           String   @default("") @db.VarChar(20)
+  supportEmail           String   @default("") @db.VarChar(254)
+  version                Int      @default(1)
+  updatedBy              String?  @db.Uuid
+  updatedAt              DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("marketplace_settings")
 }
