@@ -1,0 +1,12 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="20" height="28" viewBox="0 0 20 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="jira_ops">
+<path id="vector" fill-rule="evenodd" clip-rule="evenodd" d="M17.3913 8.61539L2.76595 22.1907C2.97459 22.4017 3.17505 22.6044 3.41642 22.7989L9.18882 27.7226C9.62401 28.0925 10.2591 28.0925 10.6943 27.7226C11.7334 26.8289 13.7666 25.0911 16.1844 23.0306C20.8277 19.0627 21.2368 13.2412 17.3913 8.61539Z" fill="url(#paint0_linear_0_196)"/>
+<path id="vector_2" fill-rule="evenodd" clip-rule="evenodd" d="M2.65171 8.61655C-0.978695 12.6497 -0.84638 18.4989 2.83364 22.1846L10.0986 15.5164C14.5436 11.4336 14.8868 4.13661 10.4997 0C10.4997 0 6.28212 4.58336 2.65171 8.61655Z" fill="#2684FF"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_196" x1="4.59462" y1="16.3236" x2="15.3971" y2="18.209" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0052CC"/>
+<stop offset="1" stop-color="#2684FF"/>
+</linearGradient>
+</defs>
+</svg>

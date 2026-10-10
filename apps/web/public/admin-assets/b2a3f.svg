@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="user-circle" clip-path="url(#clip0_0_146)">
+<path id="Icon" d="M4.87327 17.8185C5.4309 16.5048 6.73285 15.5833 8.25 15.5833H13.75C15.2672 15.5833 16.5691 16.5048 17.1267 17.8185M14.6667 8.70833C14.6667 10.7334 13.025 12.375 11 12.375C8.97496 12.375 7.33333 10.7334 7.33333 8.70833C7.33333 6.68329 8.97496 5.04167 11 5.04167C13.025 5.04167 14.6667 6.68329 14.6667 8.70833ZM20.1667 11C20.1667 16.0626 16.0626 20.1667 11 20.1667C5.93739 20.1667 1.83333 16.0626 1.83333 11C1.83333 5.93739 5.93739 1.83333 11 1.83333C16.0626 1.83333 20.1667 5.93739 20.1667 11Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_0_146">
+<rect width="22" height="22" fill="white"/>
+</clipPath>
+</defs>
+</svg>

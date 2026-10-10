@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { indexable, siteUrl, structuredData } from "../lib/seo";
-import { Header, Footer } from "../components/site";
+import { PublicFrame } from "../components/public-frame";
 import "./fonts.css";
 import "./design.css";
 import "./globals.css";
@@ -17,13 +17,18 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        {indexable && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />}
+        {indexable && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+            }}
+          />
+        )}
         <a href="#main-content" className="skip-link">
           Skip to content
         </a>
-        <Header />
-        <main id="main-content">{children}</main>
-        <Footer />
+        <PublicFrame>{children}</PublicFrame>
       </body>
     </html>
   );

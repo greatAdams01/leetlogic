@@ -1,0 +1,1532 @@
+.admin-design {
+  --admin-green: #14532d;
+  --admin-paper: #faf7f0;
+  --admin-muted: #66736b;
+  color: #1c1c1c;
+  background: var(--admin-paper);
+  font-family: Inter, sans-serif;
+  min-height: 100vh;
+}
+.admin-design button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: inherit;
+}
+.admin-design [hidden] {
+  display: none !important;
+}
+.admin-workspace {
+  min-height: 100vh;
+  position: relative;
+}
+.admin-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.admin-workspace > [data-node-id] {
+  min-height: 100vh;
+}
+.admin-workspace > [data-node-id] > [data-name="Staff sidebar"],
+.admin-workspace > [data-node-id] > [data-name="Staff navigation"],
+.admin-workspace > [data-node-id] > [data-name="Staff rail"],
+.admin-dispute-layout > [data-name="Staff sidebar"] {
+  min-height: 100vh;
+  height: auto;
+  align-self: stretch;
+}
+.admin-dispute-layout {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+  background: var(--admin-paper);
+}
+.admin-design a[aria-current="page"] {
+  font-weight: 700;
+}
+.admin-design [data-name="Navigation item"] a {
+  flex: 1;
+}
+.admin-design [data-name="Navigation item"]:has(a):hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.admin-design [data-admin-control]:hover {
+  filter: brightness(0.95);
+}
+.admin-design [data-admin-control] {
+  transition: filter 0.15s;
+}
+.admin-design img[src$=".svg"] {
+  width: auto;
+  height: auto;
+}
+.admin-design [data-name="Status badge"] p {
+  white-space: normal;
+}
+.admin-design .admin-timeline-glyph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.admin-design [data-name="Filter chip"][aria-pressed="true"] {
+  background: #14532d;
+  color: #fff;
+}
+.admin-design [data-name="Filter chip"][aria-pressed="true"] p {
+  color: #fff;
+}
+.admin-design [data-name="Filter chip"][aria-pressed="false"] {
+  background: #faf7f0;
+  color: #1c1c1c;
+}
+.admin-design [data-name="Filter chip"][aria-pressed="false"] p {
+  color: #1c1c1c;
+}
+.admin-design [data-name="Filter chip"][aria-pressed="false"] img {
+  display: none;
+}
+.admin-design [data-name="Check state"][aria-checked="false"] {
+  background: #c3d4cc;
+}
+.admin-design [data-name="Check state"][aria-checked="false"] > * {
+  visibility: hidden;
+}
+.admin-design .admin-field {
+  min-width: 0;
+  width: 100%;
+  height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #e2ddd5;
+  border-radius: 8px;
+  background: #fff;
+  color: #1c1c1c;
+  font: inherit;
+  outline-offset: 2px;
+}
+.admin-design [data-name="Input"] > .admin-field {
+  height: 100%;
+}
+.admin-design .admin-search {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  height: auto;
+  min-height: 23px;
+  color: var(--admin-muted);
+  font-size: 14px;
+}
+.admin-design [data-name="Code digit"].admin-field {
+  width: 56px;
+  height: 64px;
+  text-align: center;
+  font-size: 24px;
+  padding: 8px;
+}
+.admin-demo-tools {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  z-index: 30;
+  color: white;
+  background: #0b4222;
+  border: 1px solid #ffffff30;
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  box-shadow: 0 2px 8px #0002;
+}
+.admin-demo-tools > span {
+  opacity: 0.7;
+}
+.admin-demo-tools button {
+  color: white;
+  font-weight: 600;
+}
+.admin-workspace-menu {
+  position: fixed;
+  bottom: 58px;
+  left: 14px;
+  z-index: 31;
+  width: 270px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 50px #0003;
+  display: grid;
+  gap: 3px;
+}
+.admin-workspace-menu a {
+  display: block;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 6px;
+}
+.admin-workspace-menu a:hover,
+.admin-workspace-menu a[aria-current] {
+  background: #e5f1e9;
+  color: var(--admin-green);
+}
+.admin-auth {
+  padding: 40px 20px 70px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.admin-auth > [data-node-id] {
+  width: 520px;
+  max-width: 100%;
+  min-height: 0;
+  height: auto;
+}
+.admin-design .admin-notice {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  max-width: 460px;
+  z-index: 40;
+  padding: 16px;
+  background: #14532d;
+  color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px #0002;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.admin-notice button {
+  color: inherit;
+  font-size: 24px;
+}
+.admin-empty {
+  position: fixed;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  padding: 18px 24px;
+  border: 1px solid #e2ddd5;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px #0001;
+  z-index: 20;
+}
+.admin-empty button {
+  color: var(--admin-green);
+  text-decoration: underline;
+}
+.admin-design .admin-dialog {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  color: #1c1c1c;
+  background: #fff;
+  border: 1px solid #e2ddd5;
+  padding: 28px;
+  border-radius: 16px;
+}
+.admin-dialog::backdrop {
+  background: #0b422280;
+}
+.admin-dialog h2 {
+  font:
+    700 24px/1.3 Montserrat,
+    sans-serif;
+  margin-bottom: 16px;
+}
+.admin-dialog p {
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+.admin-dialog label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.admin-dialog textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #e2ddd5;
+  border-radius: 8px;
+  padding: 12px;
+}
+.admin-dialog-actions {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.admin-design .admin-dialog-actions button,
+.admin-dialog-actions a {
+  background: #e5f1e9;
+  color: #14532d;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.admin-design .admin-dialog-actions button[type="submit"],
+.admin-dialog-actions a {
+  background: #14532d;
+  color: #fff;
+}
+@media (max-width: 1200px) {
+  .admin-design [data-name="Operational metrics"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-design [data-name="Operational overview"] {
+    flex-direction: column;
+  }
+  .admin-design [data-name="Priority and logistics"],
+  .admin-design [data-name="Recent activity"] {
+    width: 100%;
+  }
+  .admin-design [data-name="Workspace content"],
+  .admin-design [data-name="Main content"],
+  .admin-design [data-name="Dispute workspace"] {
+    padding: 24px;
+  }
+  .admin-design [data-name="Staff toolbar"] {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+@media (max-width: 760px) {
+  .admin-workspace > [data-node-id] > [data-name="Staff sidebar"],
+  .admin-workspace > [data-node-id] > [data-name="Staff navigation"],
+  .admin-workspace > [data-node-id] > [data-name="Staff rail"],
+  .admin-dispute-layout > [data-name="Staff sidebar"] {
+    display: none;
+  }
+  .admin-design [data-name="Workspace"],
+  .admin-design [data-name="Operations workspace"] {
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-workspace > [data-node-id] {
+    width: 100%;
+    overflow: visible;
+  }
+  .admin-design [data-name="Workspace content"],
+  .admin-design [data-name="Main content"],
+  .admin-design [data-name="Dispute workspace"] {
+    padding: 20px 16px 80px;
+  }
+  .admin-design [data-name="Staff toolbar"],
+  .admin-design [data-name="Operations topbar"] {
+    padding: 16px;
+    flex-wrap: wrap;
+  }
+  .admin-design [data-name="Operational metrics"] {
+    gap: 12px;
+  }
+  .admin-design [data-name="Operational metrics"] > * {
+    width: 100%;
+  }
+  .admin-design [data-name="Status badge"] {
+    max-width: 100%;
+  }
+  .admin-design [data-name="Status badge"] p {
+    white-space: normal;
+  }
+  .admin-design [data-name="Records table"],
+  .admin-design [data-name*="table specimen"],
+  .admin-design [data-name="Arbitration bench"] {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  .admin-design [data-name="Records table"] > * {
+    min-width: 650px;
+  }
+  .admin-design [data-name*="table specimen"] > * {
+    min-width: 900px;
+  }
+  .admin-design [data-name="Operational overview"] {
+    gap: 16px;
+  }
+  .admin-auth {
+    padding: 20px 12px 75px;
+  }
+  .admin-auth > [data-node-id] {
+    padding: 24px;
+  }
+  .admin-design [data-name="Code entry"] {
+    gap: 8px;
+  }
+  .admin-design [data-name="Code digit"].admin-field {
+    width: calc((100% - 40px) / 6);
+    min-width: 0;
+  }
+  .admin-demo-tools {
+    left: 12px;
+    bottom: 12px;
+  }
+  .admin-design .admin-notice {
+    bottom: 64px;
+    right: 12px;
+    left: 12px;
+    max-width: none;
+    font-size: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-design * {
+    transition: none !important;
+    scroll-behavior: auto;
+  }
+}
+@media (max-width: 760px) {
+  .admin-workspace > [data-node-id] > [data-name="Operations sidebar"] {
+    display: none;
+  }
+  .admin-workspace > [data-node-id] > :last-child {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-design div,
+  .admin-design p,
+  .admin-design button {
+    max-width: 100%;
+  }
+  .admin-design [data-name="Live support workspace"] {
+    flex-direction: column;
+  }
+  .admin-design [data-name="Buyer and linked order"] {
+    width: 100%;
+  }
+  .admin-design [data-name="Top bar"],
+  .admin-design [data-name="Language tabs"],
+  .admin-design [data-name="Details"],
+  .admin-design [data-name="Row"] {
+    flex-wrap: wrap;
+  }
+  .admin-design [data-name="Shipment record"] {
+    flex-wrap: nowrap !important;
+    min-width: 1100px;
+  }
+  .admin-design [data-name="Table cell"] {
+    flex-shrink: 0;
+  }
+  .admin-design [data-name="Dispatch table"] {
+    overflow-x: auto;
+    width: 100%;
+  }
+  .admin-design [data-name="Workspace heading"],
+  .admin-design [data-name="Heading copy"] {
+    width: 100%;
+    flex-basis: 100%;
+  }
+  .admin-design [data-name="Records table"] [data-name="Record"],
+  .admin-design [data-name="Column headings"],
+  .admin-design [data-name="Column"] {
+    flex-wrap: nowrap !important;
+  }
+  .admin-design [data-name*="table specimen"] > [data-name="Content"] {
+    flex-wrap: nowrap !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-design .admin-element-4fc05b874 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7111b676c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-73f1ccf97 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3b377d908 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ed8971f7b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-bfa73d2c9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-254931561 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b13473824 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c93a8f5ce {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-985cf802b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-758bff74f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9d70dc4c1 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-fbf59a71a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d6fdf0b93 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0f896c36f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-680c79a38 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e6503ba75 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ecfad9b8a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-311e6f066 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-47aacf6d1 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f254ba843 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1b42e2902 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-129e75d51 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-fff5b0051 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8f7fe7dd6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-41f1f00da {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c6beac91c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c034bf4c8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2e889c29a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2b1633058 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-039b2f996 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c86c09c12 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-12fb33283 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-392f38cb7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-34fbfd9b0 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7f911a3ac {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-643263e29 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-687e8a08e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-bc3f9ad08 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-4a6cc29e3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d774422c6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-09e33ad68 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-88cb7a7b8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5301e7ea7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-826a38a85 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8d6799bad {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-34d33d007 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f9034e18a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b68cea1c5 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9a5e76aab {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-048b51150 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3b644e38b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-46d84f92c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-bff64daf5 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-45367f628 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-704252aea {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d65fbd0f7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e8210ba62 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2f6385a38 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d731f387c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3536005f7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-07f0df8c3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-47a6d5635 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-87601b9de {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a7f65761d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-aa1ba3e9d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-56d772759 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-541e2d31c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e10cb974a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-17ac516f3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-069d041f1 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7d91083ec {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-313de2712 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2df2152bf {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-11c62ba4b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-da5734d8e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6493c1942 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5c5eb91aa {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7fb69917d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c427675f0 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-aa68627bc {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9d5d7dbe6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-196b6b246 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-083183e04 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5de13c3f8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-33f0362a6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8da3d0308 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2ff9e050e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e0cc2f58b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-18c8f415c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3737832a2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ac2f1ea3f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c56046226 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3af50ae4b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-43b931eb5 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-08750506f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9dbab10e7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e258431f6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-29acdfb84 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d3fc68828 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a520fcd12 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9cc2e4867 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-044ae9cfe {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-00cd3ef50 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-10bc32e20 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-22279b820 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-076eee34e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0a675a3d6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9cbf89019 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-510dd9248 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b290e2233 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-020455542 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-73fe6d119 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-98158d220 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c1a398a39 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7be54ff5f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-dbc418fe8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-465edac12 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-bd5907dd7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-af554657c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-30edcdda5 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-452d34671 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-62f0e5146 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-41f6217fb {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b51bd6192 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6c708945f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-93a863fa2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-429d47e3a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-01af0b6c2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-97e833bbc {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-eaedce306 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-47a7309de {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-484a41d44 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-fe0667641 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a5849317e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9fa633d05 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5a14dac53 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f2596f5c7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-303107dfb {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d226f4a2f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-77ac1a8a3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-834dc2dc7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d604c2d6d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5c0da5112 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-79d589f2d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-590f17ea6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f6e1b4904 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-37a6f72e9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-837d69a46 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-05d0cbbe9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c684b246a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1694c44dd {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ce920da9b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-92d6aa1c9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5e0fe846e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c580ee9e9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0a6d6cb3e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3d1d64192 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-eac6edf38 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b6d30eb31 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-776862a10 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8cac725cd {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-4053d201f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a05dd5d28 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-fd27d6d4b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6ead3a8a3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8a6df7f1d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-438f4284a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6fb77566c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-4db0deff7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e07384787 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-241af3d69 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-57cd0aef2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-aa3821b85 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f1f452f29 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5d457794a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-bf950a4ba {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-852ad9382 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a2fbf29ff {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-179b1befe {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0ce0ef522 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-343a8b950 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-cbdb01462 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5414d55e2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-eb6012389 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-00ba2fa33 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6747faf61 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-90e3b2382 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-259fec944 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8f1c37355 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-934fe5f6f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-78ff86c3f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-62dd21e41 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c0bdbf938 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c24bb60d2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c490d6ecc {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-780cdc4b9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5aa1b320c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2af30b822 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9a5a2656f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-88b19ccdc {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6c230f485 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0f9e104ce {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b7944e898 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7b293e7a7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-79fd8dd29 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-da75651ff {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-fbb4bd81d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d21894f0a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b24ecfc6e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-814adb519 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3054ac058 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-482f1fdf4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0fef492ee {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b36667804 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6e3ce650e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-20b52f4c4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-dbce6422a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f8cf47301 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-acc1ff6b3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-809b2842b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9886988e7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-13f4a88b3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-65b4672ff {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-53e5d70f9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7c707f74d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2d862b5ca {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-df264a64f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-946ba2d7a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6a233c377 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-601c95847 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-da5f457f4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c702cc51c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-70a624467 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b98b2258c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7291e39de {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1695ef614 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1911377c6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c81a43f17 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f0adebf56 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-bf5b17a54 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8766898ad {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-240ad4a4f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-49c1c05d6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0bab63b93 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8bc8c6970 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-960ce5768 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-46ab3a9b8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1bf9a096a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a6b1b2ce7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-daabceae5 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f66af158c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f6af4495a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d799fba86 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a39b9ed11 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c0e6388ed {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1ab2f0d1d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-63231d36d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-0e8ef47af {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-64070171b {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-50e0e3a4d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-14ef993ea {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3fbb3e70c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7abd32769 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-fa034075d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6ee55dfa3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8168e843e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5a294230a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7e8b60cc1 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c45c17760 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ad3903416 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-978921456 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-35d3629de {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3ecb999ef {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d0d06bbd0 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5e52b5266 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-61426f31e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c6d2d846f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c6f5f0c30 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5c941ab3a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-10ccd443e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-281d5e73e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-34b9b0446 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-4a9ad909c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-85fecde8d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d744263b4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c8ecde5c8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-cfe17ec50 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-70e9c7096 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e12c1b1e4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a14631f11 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-96f7aef84 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-25c62eec8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f59e44889 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-877c1acf4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f6c411b84 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ed8ee0ae6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f39f57b50 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-eaf1d18b1 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f0bcf4b82 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7b245c1b6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d02ee07c4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e29ec57a9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c7f95f022 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-41447df6e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-884c19e75 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2858c9fd8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-840149908 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d1ad1b6de {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-11cab9a90 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-597854f38 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2336acf1f {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8bf62be33 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-7757f91b3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a9db18b5c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-3836d7798 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f2c05119d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b5a1c5b2d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-651901cfc {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-5c99ef5f2 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-67faeda4d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ee793de92 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-813c9db11 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b8fe2cb1d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ec984602d {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6ea78c079 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1cdd01654 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-e95742a1c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-257923b0a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-c2ecf0a11 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-43743f9c8 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ec95c5192 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f38a6df36 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-68c9ec4e0 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-46a9038a7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2bb850639 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a8045f925 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-b9b1984f4 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-d7e789040 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-9f7cd5cdd {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-46fe7a4f5 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-6baff759a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8bc2f4f96 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a09965ab9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-896e3cc2e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-40ee1bfc7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-ee5c69f9a {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-8830c4e63 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1181f1154 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-02b5effd3 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-86984e61c {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-006f51d71 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-462465721 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f8f450c42 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-4b50656f6 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f4e90be63 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-1bee4fe88 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-a80d6a3e7 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-eb5a20036 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-80146c8c9 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-60f8c1910 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-2fd50ba26 {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-f75173c4e {
+    flex-wrap: wrap;
+  }
+  .admin-design .admin-element-99291b251 {
+    flex-wrap: wrap;
+  }
+}
