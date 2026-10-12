@@ -47,7 +47,10 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
     });
-    if (response.ok && route.startsWith("verifications/documents/"))
+    if (
+      response.ok &&
+      (route.startsWith("verifications/documents/") || route.startsWith("produce-photos/"))
+    )
       return new NextResponse(response.body, {
         status: response.status,
         headers: {

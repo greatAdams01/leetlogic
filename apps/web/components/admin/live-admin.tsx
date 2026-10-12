@@ -1,4 +1,5 @@
 "use client";
+import { CustomerDelivery } from "../customer-delivery";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -556,7 +557,13 @@ function Workspace({ route, title }: { route: string; title: string }) {
         <Link href="/admin" className="live-brand">
           LeetLogic <small>Admin console</small>
         </Link>
-        <button className="live-sidebar-close" aria-label="Close navigation" onClick={() => setMenu(false)}>×</button>
+        <button
+          className="live-sidebar-close"
+          aria-label="Close navigation"
+          onClick={() => setMenu(false)}
+        >
+          ×
+        </button>
         <nav aria-label="Staff workspaces">
           {pages
             .filter(([, , permission]) => can(permission!))
@@ -923,6 +930,18 @@ function Workspace({ route, title }: { route: string; title: string }) {
                 (evidence: Row) =>
                   evidence.note && <p key={evidence.id}>Farm evidence: {evidence.note}</p>,
               )}
+              {resource === "listings" &&
+                selected.media?.map(
+                  (media: Row) =>
+                    media.objectKey?.startsWith("produce/") && (
+                      <img
+                        key={media.id}
+                        src={`/api/admin/produce-photos/${media.objectKey.split("/")[1]}`}
+                        alt="Farmer produce"
+                        style={{ maxWidth: 300 }}
+                      />
+                    ),
+                )}
               {resource === "audit" && (
                 <pre className="live-audit-change">
                   {JSON.stringify(
@@ -1038,6 +1057,13 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   >
                     Manage escrow
                   </button>
+                )}
+                {resource === "orders" && selected?.id && (
+                  <CustomerDelivery
+                    id={selected.id}
+                    staff
+                    staffPermissions={staff?.permissions || []}
+                  />
                 )}
                 {resource === "logistics" && can("orders.manage") && (
                   <button

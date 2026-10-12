@@ -465,6 +465,7 @@ model Listing {
   unitPriceMinor    BigInt                 @map("unit_price_minor")
   availableQuantity Decimal                @map("available_quantity") @db.Decimal(18, 3)
   reservedQuantity  Decimal                @default(0) @map("reserved_quantity") @db.Decimal(18, 3)
+  sourceLocale      String                 @default("en") @db.VarChar(10)
   shippingScope     ShippingScope          @map("shipping_scope")
   status            ListingStatus          @default(DRAFT)
   createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -564,6 +565,7 @@ model TradeOrder {
   deliveryConfirmedAt DateTime?          @db.Timestamptz(6)
   createdAt           DateTime           @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime           @updatedAt @db.Timestamptz(6)
+  delivery            Delivery?
   shipment            Shipment?
   ledger              EscrowEntry[]
   tickets             SupportTicket[]
@@ -663,6 +665,7 @@ model SupportMessage {
   id        String        @id @default(uuid()) @db.Uuid
   ticketId  String        @db.Uuid
   authorId  String        @db.Uuid
+  sourceLocale String @default("en") @db.VarChar(10)
   body      String        @db.Text
   internal  Boolean       @default(false)
   createdAt DateTime      @default(now()) @db.Timestamptz(6)
@@ -760,4 +763,124 @@ model MarketplaceSettings {
   updatedAt              DateTime @updatedAt @db.Timestamptz(6)
 
   @@map("marketplace_settings")
+}
+
+
+model Delivery {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @unique @db.Uuid
+  status String @default("QUOTE_REQUIRED") @db.VarChar(40)
+  pickup Json?
+  destination Json?
+  package Json?
+  selectedQuoteId String? @db.Uuid
+  shippingMinor BigInt @default(0)
+  paidMinor BigInt @default(0)
+  paymentRef String? @unique @db.VarChar(160)
+  providerShipmentId String? @unique @db.VarChar(160)
+  trackingUrl String? @db.Text
+  courier String? @db.VarChar(120)
+  lastSyncedAt DateTime? @db.Timestamptz(6)
+  cancelAttemptedAt DateTime? @db.Timestamptz(6)
+  cancelRequestedAt DateTime? @db.Timestamptz(6)
+  bookingStartedAt DateTime? @db.Timestamptz(6)
+  nextSyncAt DateTime @default(now()) @db.Timestamptz(6)
+  leaseUntil DateTime? @db.Timestamptz(6)
+  failureCode String? @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  order TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  quotes DeliveryQuote[]
+  events DeliveryEvent[]
+  @@index([status, nextSyncAt])
+  @@map("deliveries")
+}
+
+model DeliveryQuote {
+  id String @id @default(uuid()) @db.Uuid
+  deliveryId String @db.Uuid
+  requestToken String @db.Text
+  serviceCode String @db.VarChar(120)
+  courier String @db.VarChar(120)
+  amountMinor BigInt
+  eta String? @db.VarChar(180)
+  inputHash String @db.VarChar(64)
+  expiresAt DateTime @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  @@index([deliveryId])
+  @@map("delivery_quotes")
+}
+
+model DeliveryEvent {
+  id String @id @default(uuid()) @db.Uuid
+  deliveryId String @db.Uuid
+  dedupeKey String @unique @db.VarChar(200)
+  status String @db.VarChar(40)
+  source String @db.VarChar(30)
+  actorId String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  notifications DeliveryNotification[]
+  @@index([deliveryId, createdAt])
+  @@map("delivery_events")
+}
+
+model ContentTranslation {
+  id String @id @default(uuid()) @db.Uuid
+  resourceType String @db.VarChar(30)
+  resourceId String @db.Uuid
+  sourceVersion String @db.VarChar(64)
+  sourceLocale String @db.VarChar(10)
+  targetLocale String @db.VarChar(10)
+  text String @db.Text
+  provider String @default("azure") @db.VarChar(30)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([resourceType, resourceId, sourceVersion, targetLocale])
+  @@map("content_translations")
+}
+
+model TranslationUsage {
+  month String @id @db.VarChar(7)
+  characters Int @default(0)
+  @@map("translation_usage")
+}
+
+model ListingDraft {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  fields Json
+  confirmed Boolean @default(false)
+  listingId String? @unique @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@index([userId])
+  @@map("listing_drafts")
+}
+
+
+model ProducePhoto {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  listingId String? @db.Uuid
+  mimeType String @db.VarChar(30)
+  checksum String @db.VarChar(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([listingId])
+  @@map("produce_photos")
+}
+
+
+model DeliveryNotification {
+  id String @id @default(uuid()) @db.Uuid
+  eventId String @db.Uuid
+  userId String @db.Uuid
+  orderId String @db.Uuid
+  locale String @db.VarChar(10)
+  messageKey String @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  event DeliveryEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  @@unique([eventId, userId])
+  @@index([userId, createdAt])
+  @@map("delivery_notifications")
 }

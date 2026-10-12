@@ -1,16 +1,19 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LanguageSelector, useLanguage } from "./language-provider";
+import type { MessageKey } from "../lib/locales/messages";
 import { useState } from "react";
 
 const links = [
-  ["About", "/about"],
-  ["How It Works", "/how-it-works"],
-  ["For Buyers", "/for-buyers"],
-  ["Impact", "/impact"],
-  ["Team", "/team"],
+  ["nav.about", "/about"],
+  ["nav.how", "/how-it-works"],
+  ["nav.buyers", "/for-buyers"],
+  ["nav.impact", "/impact"],
+  ["nav.team", "/team"],
 ];
 export function Navigation() {
+  const { t } = useLanguage();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   return (
@@ -21,7 +24,7 @@ export function Navigation() {
         aria-controls="main-navigation"
         onClick={() => setOpen(!open)}
       >
-        {open ? "Close" : "Menu"}
+        {t(open ? "nav.close" : "nav.menu")}
       </button>
       <nav
         id="main-navigation"
@@ -35,9 +38,11 @@ export function Navigation() {
             aria-current={pathname === href ? "page" : undefined}
             onClick={() => setOpen(false)}
           >
-            {label}
+            {t(label as MessageKey)}
           </Link>
         ))}
+        <Link href="/account">{t("nav.account")}</Link>
+        <LanguageSelector />
       </nav>
     </>
   );

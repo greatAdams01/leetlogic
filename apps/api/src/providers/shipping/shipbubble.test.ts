@@ -1,0 +1,93 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("../../config.js", () => ({
+  getConfig: () => ({
+    DELIVERY_ENABLED: true,
+    SHIPBUBBLE_API_KEY: "test-key",
+    SHIPBUBBLE_MODE: "test",
+    SHIPBUBBLE_TEST_KEY_CONFIRMED: true,
+    SHIPBUBBLE_CATEGORY_ID: 1,
+  }),
+}));
+import { Shipbubble } from "./shipbubble.js";
+describe("Shipbubble protocol", () => {
+  const fetcher = vi.fn();
+  const provider = new Shipbubble(fetcher as typeof fetch);
+  const contact = {
+    name: "Farmer",
+    email: "farmer@example.test",
+    phone: "+2348012345678",
+    address: "12 Example Road Lagos",
+    state: "Lagos",
+    country: "NG" as const,
+  };
+  beforeEach(() => {
+    fetcher.mockReset();
+  });
+  it("uses address validation and VAT-inclusive pickup quotes only", async () => {
+    fetcher
+      .mockResolvedValueOnce(Response.json({ status: "success", data: { address_code: 1 } }))
+      .mockResolvedValueOnce(Response.json({ status: "success", data: { address_code: 2 } }))
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "success",
+          data: {
+            request_token: "token",
+            couriers: [
+              {
+                service_code: "pickup",
+                courier_name: "Courier",
+                total: 120.5,
+                service_type: "pickup",
+                delivery_eta: "Tomorrow",
+              },
+              { service_code: "drop", courier_name: "Station", total: 50, service_type: "dropoff" },
+            ],
+          },
+        }),
+      );
+    const quotes = await provider.quotes({
+      pickup: contact,
+      destination: contact,
+      parcel: {
+        weightKg: 2,
+        length: 10,
+        width: 10,
+        height: 10,
+        pickupDate: "2026-11-01",
+        handling: "STANDARD",
+      },
+      name: "Produce",
+      valueMinor: 50000n,
+    });
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]?.amountMinor).toBe(12050n);
+    expect(JSON.parse(fetcher.mock.calls[2]![1].body)).toMatchObject({
+      reciever_address_code: 2,
+      package_items: [{ quantity: 1, unit_amount: 500, unit_weight: 2 }],
+    });
+  });
+  it("creates labels using the stored request token and service code", async () => {
+    fetcher.mockResolvedValue(
+      Response.json({
+        status: "success",
+        data: {
+          order_id: "SB-123",
+          status: "pending",
+          tracking_url: "https://example.test/track",
+          courier: { name: "Courier" },
+        },
+      }),
+    );
+    await expect(
+      provider.book({ requestToken: "token", serviceCode: "courier" }),
+    ).resolves.toMatchObject({ id: "SB-123" });
+    expect(fetcher.mock.calls[0]![0]).toBe("https://api.shipbubble.com/v1/shipping/labels");
+  });
+  it("propagates failures without issuing a second booking", async () => {
+    fetcher.mockRejectedValue(new Error("timeout"));
+    await expect(
+      provider.book({ requestToken: "token", serviceCode: "courier" }),
+    ).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});

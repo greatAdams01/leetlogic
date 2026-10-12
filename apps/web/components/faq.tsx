@@ -1,4 +1,5 @@
 "use client";
+import { useLanguage } from "./language-provider";
 import { useEffect, useState } from "react";
 const questions = [
   [
@@ -27,10 +28,12 @@ const questions = [
   ],
 ];
 export function Faq() {
+  const { locale } = useLanguage();
   const [published, setPublished] = useState<string[][]>([]);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/content/faq?locale=en&audience=BUYERS", { signal: controller.signal })
+    setPublished([]);
+    fetch(`/api/content/faq?locale=${locale}&audience=BUYERS`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (data?.items)
@@ -43,7 +46,7 @@ export function Faq() {
       })
       .catch(() => {});
     return () => controller.abort();
-  }, []);
+  }, [locale]);
 
   return (
     <div className="faq-list" id="faq">

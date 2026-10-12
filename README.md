@@ -87,3 +87,7 @@ request ID, HTTP status and response time. Production emits structured JSON for 
 collection. Set `LOG_LEVEL=debug` for more detail. Request bodies, query strings and
 headers are omitted from request logs. Console OTP codes are printed only outside
 production; production requires a real SMS provider.
+
+## Delivery and language pilot
+
+Delivery, customer language selection, cached Azure translation, and typed produce drafts extend the existing app. See [delivery and language operations](docs/delivery-language.md) for configuration, APIs, tests, and launch blockers. Voice remains disabled until a free Igbo speech service passes the required validation. Provider switches default off.

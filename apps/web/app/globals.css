@@ -953,3 +953,17 @@ main img[src$=".svg"] {
     padding-inline: 16px;
   }
 }
+
+.language-selector select { border: 1px solid #ccc; border-radius: 6px; padding: 8px; background: white; color: #163b25; max-width: 125px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.customer-panel { max-width: 760px; margin: 40px auto; padding: 24px; background: #fff; color: #163b25; }
+.customer-panel form { display: grid; gap: 16px; margin: 24px 0; }
+.customer-panel label { display: grid; gap: 6px; }
+.customer-panel input, .customer-panel select, .customer-panel textarea { padding: 10px; border: 1px solid #a6b3a9; border-radius: 6px; font: inherit; max-width: 100%; }
+.customer-panel button { background: #174f30; color: white; border: 0; border-radius: 6px; padding: 12px 18px; margin: 5px; cursor: pointer; }
+.customer-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.customer-panel fieldset { display: grid; gap: 12px; border: 1px solid #dde4df; padding: 16px; }
+.customer-panel article, .customer-panel aside { background: #f2f6f3; padding: 16px; margin: 16px 0; border-radius: 8px; }
+.customer-panel img { max-width: 100%; height: auto; }
+.customer-panel dt { font-weight: 600; margin-top: 10px; }
+.customer-panel dd { margin: 4px 0; }

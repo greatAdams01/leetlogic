@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
+    "test:delivery": "node --env-file=../../.env scripts/test-delivery.mjs",
     "test:admin": "node --env-file=../../.env scripts/test-admin.mjs"
   },
   "dependencies": {

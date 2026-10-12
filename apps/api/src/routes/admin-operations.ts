@@ -1,3 +1,4 @@
+import { queueBooking } from "./delivery.js";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma, Prisma } from "@leetlogic/database";
@@ -56,6 +57,7 @@ const resources = {
     include: {
       farmerProfile: { include: { user: { include: { profile: true } } } },
       category: true,
+      media: true,
     },
   },
   orders: {
@@ -240,7 +242,11 @@ operationsRouter.post(
   requirePermission("support.manage"),
   async (req, res) => {
     const body = z
-      .object({ body: z.string().trim().min(1).max(10000), internal: z.boolean().default(false) })
+      .object({
+        body: z.string().trim().min(1).max(10000),
+        sourceLocale: z.enum(["en", "pcm", "ha", "ig", "yo"]).default("en"),
+        internal: z.boolean().default(false),
+      })
       .parse(req.body);
     const ticketId = id.parse(req.params.id);
     const item = await prisma.$transaction(async (tx) => {
@@ -657,6 +663,33 @@ operationsRouter.post(
         return previous;
       }
       const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+      const delivery = await tx.delivery.findUnique({ where: { orderId } });
+      if (body.kind === "FUND" && delivery && delivery.status !== "MANUAL_REVIEW") {
+        const quote = delivery.selectedQuoteId
+          ? await tx.deliveryQuote.findUnique({ where: { id: delivery.selectedQuoteId } })
+          : null;
+        if (!quote || quote.expiresAt <= new Date())
+          throw new AppError(409, "QUOTE_EXPIRED", "Refresh delivery quotes before funding");
+      }
+      if (
+        body.kind === "REFUND" &&
+        delivery &&
+        [
+          "BOOKING_QUEUED",
+          "BOOKING",
+          "BOOKING_UNCERTAIN",
+          "BOOKED",
+          "PICKED_UP",
+          "IN_TRANSIT",
+          "FAILED_ATTEMPT",
+          "RETURNING",
+        ].includes(delivery.status)
+      )
+        throw new AppError(
+          409,
+          "DELIVERY_ACTIVE",
+          "Reconcile or cancel the active delivery before refunding produce escrow",
+        );
       const amount = BigInt(body.amountMinor);
       const feeMinor =
         body.kind === "RELEASE" ? (amount * BigInt(order.feeBasisPoints)) / 10000n : 0n;
@@ -737,6 +770,7 @@ operationsRouter.post(
       );
       return entry;
     });
+    if (body.kind === "FUND") await queueBooking(orderId).catch(() => {});
     res.json(json(item));
   },
 );
@@ -750,6 +784,8 @@ operationsRouter.post("/logistics", requirePermission("orders.manage"), async (r
     .parse(req.body);
   const item = await prisma.$transaction(async (tx) => {
     const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: body.orderId } });
+    if (await tx.delivery.findUnique({ where: { orderId: body.orderId } }))
+      throw new AppError(409, "PROVIDER_DELIVERY_EXISTS", "Use delivery operations for this order");
     if (order.status !== "FUNDED")
       throw new AppError(409, "ORDER_NOT_FUNDED", "Fund the order before dispatch");
     const item = await tx.shipment.create({ data: body });
@@ -777,6 +813,12 @@ operationsRouter.post(
       const shipment = await tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${shipment.orderId}::uuid FOR UPDATE`;
       const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: shipment.orderId } });
+      if (await tx.delivery.findUnique({ where: { orderId: order.id } }))
+        throw new AppError(
+          409,
+          "PROVIDER_DELIVERY_EXISTS",
+          "Carrier updates must be reconciled through delivery operations",
+        );
       if (!["FUNDED", "DELIVERED"].includes(order.status) || order.heldMinor <= 0n)
         throw new AppError(409, "ORDER_NOT_FUNDED", "Shipment order is no longer funded");
       if (

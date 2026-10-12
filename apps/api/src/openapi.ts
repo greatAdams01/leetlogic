@@ -1,3 +1,4 @@
+import { deliveryOpenApiPaths } from "./delivery-openapi.js";
 const text = (minLength: number, maxLength?: number) => ({ type: "string", minLength, ...(maxLength ? { maxLength } : {}) });
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required });
 const phone = { ...text(10, 20), description: "Nigerian phone number, in local or +234 format", example: "+2348012345678" };
@@ -16,6 +17,7 @@ export const openapi = {
   servers: [{ url: "/v1" }],
   components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } }, schemas: { Error: { type: "object", properties: { error: { type: "object", required: ["code", "message", "requestId"], properties: { code: { type: "string" }, message: { type: "string" }, fieldErrors: { type: "object" }, requestId: { type: "string", format: "uuid" }, retryAfterSeconds: { type: "integer" } } } } } } },
   paths: {
+    ...deliveryOpenApiPaths,
     "/auth/otp/request": { post: { summary: "Request customer OTP", requestBody: body(otp), responses: { "202": { description: "Accepted" }, "422": { description: "Invalid request" } } } },
     "/auth/otp/verify": { post: { summary: "Verify customer OTP", description: "Creates a buyer account for a new phone number, or signs in an existing customer. Returns access and refresh tokens.", requestBody: body(verifyOtp), responses: { "200": { description: "Authenticated" } } } },
     "/auth/refresh": { post: { summary: "Rotate customer refresh token", requestBody: body(refresh), responses: { "200": { description: "Rotated" } } } },
