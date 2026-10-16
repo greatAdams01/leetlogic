@@ -1,0 +1,1 @@
+Nigeria state/LGA names derived from https://github.com/temikeezy/nigeria-geojson-data/blob/3cd13e6088bf72b0873d7d6fa7cf4cf0294ad9a6/data/lgas.json (MIT; see NIGERIA-DATA-LICENSE.txt). Bundled for offline forms; 36 states plus FCT and 774 LGAs. Sorted names; source aliases Oboma Ngwa and Municipal are displayed as Obi Ngwa and Abuja Municipal. No coordinates or wards included.

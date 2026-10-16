@@ -15,6 +15,7 @@ export const updateMeSchema = z.object({
 });
 export const updateLocaleSchema = z.object({ locale: localeSchema });
 export const sellerProfileSchema = z.object({
+  line1: z.string().trim().min(5).max(180).optional(),
   farmName: z.string().trim().min(2).max(160), farmType: z.string().trim().min(2).max(80),
   description: z.string().trim().max(1000).optional(), state: z.string().trim().min(2).max(80),
   lga: z.string().trim().min(2).max(80), city: z.string().trim().min(2).max(100),

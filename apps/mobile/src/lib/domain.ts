@@ -1,0 +1,109 @@
+export function toMinor(value: string): string {
+  if (!/^\d{1,10}(\.\d{1,2})?$/.test(value.trim()))
+    throw new Error("Enter a price in naira with at most two decimal places.");
+  const [whole, fraction = ""] = value.trim().split(".");
+  const amount = BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, "0"));
+  if (amount <= 0n) throw new Error("Price must be greater than zero.");
+  return amount.toString();
+}
+export function money(value: string | number | undefined): string {
+  const n = BigInt(value || 0);
+  const sign = n < 0n ? "-" : "";
+  const amount = n < 0n ? -n : n;
+  return `${sign}₦${(amount / 100n).toLocaleString("en-NG")}${amount % 100n ? "." + (amount % 100n).toString().padStart(2, "0") : ""}`;
+}
+export function quantity(value: string): string {
+  if (!/^\d{1,9}(\.\d{1,3})?$/.test(value) || Number(value) <= 0)
+    throw new Error("Enter a positive quantity with at most three decimal places.");
+  return value;
+}
+export const statusLabel = (s: string) =>
+  s
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/^./, (x) => x.toUpperCase());
+export const safeHttps = (url: string) => {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+export type Listing = {
+  id: string;
+  title: string;
+  description: string | null;
+  categoryId: string;
+  sourceLocale: string;
+  unitCode: string;
+  unitPriceMinor: string;
+  availableQuantity: string;
+  reservedQuantity: string;
+  status: string;
+  media: { objectKey: string }[];
+  farmerProfile: { farmName: string; verificationStatus: string };
+  locationAddress: { state: string; city: string };
+};
+export type Address = {
+  id: string;
+  label: string;
+  state: string;
+  city: string;
+  lga: string;
+  line1: string;
+};
+export type Customer = {
+  id: string;
+  phoneE164: string;
+  preferredLocale: string;
+  profile: { fullName?: string; displayName?: string; email?: string } | null;
+  farmerProfile: { farmName: string; verificationStatus: string } | null;
+  addresses: Address[];
+};
+export type Order = {
+  id: string;
+  reference: string;
+  status: string;
+  totalMinor: string;
+  listing: { title: string };
+  delivery: { status: string; shippingMinor: string } | null;
+};
+export type Contact = {
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  state: string;
+  country: "NG";
+};
+export type DeliveryData = {
+  order: {
+    id: string;
+    reference: string;
+    status: string;
+    title: string;
+    description: string;
+    listingId: string;
+    totalMinor: string;
+    isBuyer: boolean;
+    suggestedPickup: Contact;
+  };
+  delivery: null | {
+    id: string;
+    status: string;
+    shippingMinor: string;
+    paidMinor: string;
+    selectedQuoteId: string | null;
+    trackingUrl: string | null;
+    courier: string | null;
+    destination: Contact;
+    quotes: {
+      id: string;
+      courier: string;
+      amountMinor: string;
+      eta: string | null;
+      expiresAt: string;
+    }[];
+    events: { id: string; status: string; source: string; createdAt: string }[];
+  };
+};

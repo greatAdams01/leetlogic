@@ -5,8 +5,9 @@ export default tseslint.config(
   { ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  { files: ["apps/mobile/**/*.ts", "apps/mobile/**/*.tsx"], rules: { "@typescript-eslint/no-require-imports": "off" } },
   {
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.tsx"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off"
     }

@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "LeetLogic",
+    "slug": "leetlogic",
+    "scheme": "leetlogic",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.leetlogic.marketplace",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take a photo of the produce you want to list.",
+        "NSPhotoLibraryUsageDescription": "Choose a photo of your produce."
+      }
+    },
+    "android": {
+      "package": "com.leetlogic.marketplace",
+      "permissions": ["CAMERA"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a photo of your produce.",
+          "cameraPermission": "Take a photo of your produce.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-font",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/brand-logo.png",
+          "imageWidth": 128,
+          "resizeMode": "contain",
+          "backgroundColor": "#faf7f0"
+        }
+      ]
+    ]
+  }
+}

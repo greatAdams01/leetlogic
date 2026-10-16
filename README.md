@@ -91,3 +91,7 @@ production; production requires a real SMS provider.
 ## Delivery and language pilot
 
 Delivery, customer language selection, cached Azure translation, and typed produce drafts extend the existing app. See [delivery and language operations](docs/delivery-language.md) for configuration, APIs, tests, and launch blockers. Voice remains disabled until a free Igbo speech service passes the required validation. Provider switches default off.
+
+## Native mobile app
+
+The Expo/React Native customer app is in `apps/mobile` and connects to the same API as the website. Run `pnpm --filter @leetlogic/mobile ios` or `pnpm --filter @leetlogic/mobile android` after starting the API. See [mobile scope, simulator setup and test checklist](docs/mobile.md). No mobile admin, wallet provider, or unvalidated voice feature is introduced.

@@ -14,7 +14,8 @@
     "db:migrate": "pnpm --filter @leetlogic/database migrate",
     "db:seed": "pnpm --filter @leetlogic/database seed",
     "locales:check": "pnpm --filter @leetlogic/localization check",
-    "verify": "pnpm locales:check && pnpm build && pnpm typecheck && pnpm test"
+    "verify": "pnpm locales:check && pnpm build && pnpm typecheck && pnpm test",
+    "dev:mobile": "pnpm --filter @leetlogic/mobile start"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

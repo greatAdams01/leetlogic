@@ -14,3 +14,11 @@ packages/database/prisma/dev.db
 
 # Local private verification documents
 .private-objects/
+
+# Native mobile generated files
+apps/mobile/.expo/
+apps/mobile/ios/
+apps/mobile/android/
+
+# Local development terminal output (can include development OTPs)
+.local/

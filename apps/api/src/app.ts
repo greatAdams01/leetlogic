@@ -1,3 +1,4 @@
+import { marketplaceRouter } from "./routes/marketplace.js";
 import { producePhotosRouter, staffProducePhotosRouter } from "./routes/produce-photos.js";
 import {
   customerDeliveryRouter,
@@ -68,6 +69,7 @@ export function createApp(): Express {
   app.use("/v1/translations", languageRouter);
   app.use("/v1/listing-drafts", listingDraftRouter);
   app.use("/v1/content", contentRouter);
+  app.use("/v1/marketplace", marketplaceRouter);
   app.use("/v1/auth", authRouter);
   app.use("/v1/me", meRouter);
   app.use("/v1/seller/verification", verificationRouter);

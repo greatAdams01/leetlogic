@@ -295,15 +295,12 @@ suite("delivery and language database workflows", () => {
     await runDeliveryJobs();
     await runDeliveryJobs();
     expect(book).toHaveBeenCalledTimes(1);
-    const refund = await request(app)
-      .post(`/v1/admin/orders/${orderId}/escrow`)
-      .set(admin())
-      .send({
-        kind: "REFUND",
-        amountMinor: "10000",
-        reason: "Attempt while delivery remains uncertain",
-        mutationKey: randomUUID(),
-      });
+    const refund = await request(app).post(`/v1/admin/orders/${orderId}/escrow`).set(admin()).send({
+      kind: "REFUND",
+      amountMinor: "10000",
+      reason: "Attempt while delivery remains uncertain",
+      mutationKey: randomUUID(),
+    });
     expect(refund.status).toBe(409);
     expect(refund.body.error.code).toBe("DELIVERY_ACTIVE");
     expect((await prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } })).status).toBe(
@@ -593,5 +590,106 @@ suite("delivery and language database workflows", () => {
           .send({ confirmed: true })
       ).body.listing.id,
     ).toBe(submit.body.listing.id);
+  });
+  it("exposes only public listing fields and requires customer authentication to order", async () => {
+    const listing = await request(app).get(`/v1/marketplace/listings/${listingId}`);
+    expect(listing.status).toBe(200);
+    expect(listing.body.item.locationAddress.line1).toBeUndefined();
+    expect(listing.body.item.farmerProfile.userId).toBeUndefined();
+    expect((await request(app).get("/v1/marketplace/categories")).status).toBe(200);
+    expect(
+      (await request(app).post("/v1/marketplace/orders").send({ listingId, quantity: "1" })).status,
+    ).toBe(401);
+  });
+  it("atomically reserves customer orders and replays concurrent duplicate submissions", async () => {
+    const before = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    const key = randomUUID();
+    const create = () =>
+      request(app)
+        .post("/v1/marketplace/orders")
+        .set(customer())
+        .set("Idempotency-Key", key)
+        .send({ listingId, quantity: "2" });
+    const [first, second] = await Promise.all([create(), create()]);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(first.body.order.id).toBe(second.body.order.id);
+    expect(first.body.order.totalMinor).toBe("20000");
+    const after = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    expect(after.reservedQuantity.minus(before.reservedQuantity).toString()).toBe("2");
+    expect(
+      (
+        await request(app)
+          .post("/v1/marketplace/orders")
+          .set(customer())
+          .set("Idempotency-Key", key)
+          .send({ listingId, quantity: "3" })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post("/v1/marketplace/orders")
+          .set(customer())
+          .set("Idempotency-Key", randomUUID())
+          .send({ listingId, quantity: "99999" })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post("/v1/marketplace/orders")
+          .set({ Authorization: `Bearer ${seller}` })
+          .set("Idempotency-Key", randomUUID())
+          .send({ listingId, quantity: "1" })
+      ).status,
+    ).toBe(422);
+  });
+  it("cancels only owned unpaid customer orders and releases inventory once", async () => {
+    const created = await request(app)
+      .post("/v1/marketplace/orders")
+      .set(customer())
+      .set("Idempotency-Key", randomUUID())
+      .send({ listingId, quantity: "1" });
+    expect(created.status).toBe(201);
+    const id = created.body.order.id;
+    const before = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    expect(
+      (
+        await request(app)
+          .post(`/v1/marketplace/orders/${id}/cancel`)
+          .set({ Authorization: `Bearer ${outsider}` })
+      ).status,
+    ).toBe(404);
+    for (let i = 0; i < 2; i++)
+      expect(
+        (await request(app).post(`/v1/marketplace/orders/${id}/cancel`).set(customer())).status,
+      ).toBe(200);
+    const after = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    expect(before.reservedQuantity.minus(after.reservedQuantity).toString()).toBe("1");
+  });
+  it("saves Nigerian addresses against the signed-in customer only", async () => {
+    const saved = await request(app)
+      .post("/v1/me/addresses")
+      .set(customer())
+      .send({
+        label: "Home",
+        state: "Lagos",
+        lga: "Ikeja",
+        city: "Lagos",
+        line1: "24 Example Road",
+        userId: verifyAccessToken(seller, "customer").sub,
+        countryCode: "US",
+      });
+    expect(saved.status).toBe(201);
+    expect(saved.body.address.countryCode).toBe("NG");
+    expect(saved.body.address.userId).toBe(verifyAccessToken(buyer, "customer").sub);
+    expect(
+      (
+        await request(app)
+          .get("/v1/marketplace/my-listings")
+          .set({ Authorization: `Bearer ${outsider}` })
+      ).body.items,
+    ).toHaveLength(0);
   });
 });

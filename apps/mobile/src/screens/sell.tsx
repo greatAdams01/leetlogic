@@ -1,0 +1,373 @@
+import { LocalizedText as Text } from "../localization";
+import React, { useState, useEffect } from "react";
+import { View, Pressable, Image } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
+import { useApp, useResource } from "../state";
+import { Page, Heading, Label, Field, Button, Card, Notice, s, colors } from "../components/ui";
+import { api, API_URL, authHeaders } from "../lib/api";
+import { money, toMinor, quantity, type Listing, type Address } from "../lib/domain";
+import { ListingPhoto } from "./market";
+export async function choosePhoto(camera = false) {
+  const permission = camera
+    ? await ImagePicker.requestCameraPermissionsAsync()
+    : await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted)
+    throw new Error(
+      camera
+        ? "Camera permission was denied. Choose a photo from your library or enable camera access in Settings."
+        : "Photo access was denied. Enable it in Settings to attach produce.",
+    );
+  const result = await (
+    camera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync
+  )({ mediaTypes: ["images"], quality: 0.8, allowsEditing: false });
+  if (result.canceled) return null;
+  const photo = result.assets[0]!;
+  if (photo.fileSize && photo.fileSize > 10 * 1024 * 1024)
+    throw new Error("Choose a photo smaller than 10 MB.");
+  if (photo.mimeType && !["image/jpeg", "image/png"].includes(photo.mimeType))
+    throw new Error("Choose a JPEG or PNG image.");
+  return photo;
+}
+export async function photoBlob(uri: string, mime?: string) {
+  const response = await fetch(uri);
+  const data = await response.blob();
+  if (!data.size || data.size > 10 * 1024 * 1024)
+    throw new Error("Choose a photo smaller than 10 MB.");
+  return new Blob([data], { type: mime || data.type || "image/jpeg" });
+}
+type Form = {
+  title: string;
+  description: string;
+  categoryId: string;
+  unitCode: string;
+  quantity: string;
+  price: string;
+  addressId: string;
+  photoId?: string;
+  photoUri?: string;
+};
+const initial: Form = {
+  title: "",
+  description: "",
+  categoryId: "",
+  unitCode: "",
+  quantity: "",
+  price: "",
+  addressId: "",
+};
+export function Sell() {
+  const a = useApp(),
+    r = useResource<{
+      categories: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
+      units: { code: string }[];
+      addresses: Address[];
+      verificationStatus: string;
+    }>("/listing-drafts/catalogue"),
+    [form, setForm] = useState<Form>(initial),
+    [ready, setReady] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const storage = `listing-draft:${a.user!.id}`;
+  useEffect(() => {
+    AsyncStorage.getItem(storage).then((v) => {
+      if (v)
+        try {
+          setForm(JSON.parse(v));
+        } catch {
+          /* discard corrupt draft */
+        }
+      setReady(true);
+    });
+  }, [storage]);
+  useEffect(() => {
+    if (!ready) return;
+    const timer = setTimeout(() => {
+      AsyncStorage.setItem(storage, JSON.stringify(form)).catch(() =>
+        setError("Could not save this draft on your device."),
+      );
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [form, ready, storage]);
+  const field = (k: keyof Form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const upload = async (camera: boolean) => {
+    setBusy(true);
+    setError("");
+    try {
+      const p = await choosePhoto(camera);
+      if (p) {
+        const r = await api<{ id: string }>("/listing-photos", {
+          method: "POST",
+          blob: await photoBlob(p.uri, p.mimeType),
+        });
+        setForm((f) => ({ ...f, photoId: r.id, photoUri: p.uri }));
+      }
+    } catch (e) {
+      setError(a.error(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Page
+      title="Create listing"
+      back={a.back}
+      loading={r.loading}
+      footer={
+        <Button
+          title={busy ? "Saving…" : a.t("sell.review")}
+          disabled={busy || !ready || r.data?.verificationStatus !== "APPROVED"}
+          onPress={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              quantity(form.quantity);
+              const { photoUri, price, ...fields } = form;
+              void photoUri;
+              const draft = await api<{ id: string }>("/listing-drafts", {
+                method: "POST",
+                body: { ...fields, sourceLocale: a.locale, unitPriceMinor: toMinor(price) },
+              });
+              a.go("review", draft.id);
+            } catch (e) {
+              setError(a.error(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      }
+    >
+      <Text style={s.badge}>Draft · saved on this device</Text>
+      <Heading>Describe your produce.</Heading>
+      <Label muted>Required fields are marked *. Review every detail before submitting.</Label>
+      {r.data?.verificationStatus !== "APPROVED" && (
+        <>
+          <Notice text="Farmer approval is required before submitting produce. Your typed draft can still be saved on this device." />
+          <Button title="Seller application" secondary onPress={() => a.go("seller")} />
+        </>
+      )}
+      <Card>
+        <Field
+          label={`${a.t("sell.product")} *`}
+          value={form.title}
+          onChangeText={(v) => field("title", v)}
+        />
+        <Field
+          label={a.t("sell.description")}
+          multiline
+          value={form.description}
+          onChangeText={(v) => field("description", v)}
+        />
+        <Label style={s.fieldLabel}>Category *</Label>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {r.data?.categories.map((c) => (
+            <Pressable
+              key={c.id}
+              onPress={() => field("categoryId", c.id)}
+              style={{
+                padding: 10,
+                borderRadius: 12,
+                backgroundColor: form.categoryId === c.id ? colors.green : colors.mint,
+              }}
+            >
+              <Label
+                style={{ fontSize: 13, color: form.categoryId === c.id ? "white" : colors.green }}
+              >
+                {c.translations.find((t) => t.locale === a.locale)?.name ||
+                  c.translations.find((t) => t.locale === "en")?.name ||
+                  c.slug}
+              </Label>
+            </Pressable>
+          ))}
+        </View>
+        <Label style={s.fieldLabel}>{a.t("sell.unit")} *</Label>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {r.data?.units.map((u) => (
+            <Pressable key={u.code} onPress={() => field("unitCode", u.code)}>
+              <Text
+                style={[
+                  s.badge,
+                  form.unitCode === u.code && { backgroundColor: colors.green, color: "white" },
+                ]}
+              >
+                {a.unit(u.code)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Field
+          label={`${a.t("sell.price")} *`}
+          value={form.price}
+          keyboardType="decimal-pad"
+          onChangeText={(v) => field("price", v)}
+        />
+        <Field
+          label={`${a.t("sell.quantity")} *`}
+          value={form.quantity}
+          keyboardType="decimal-pad"
+          onChangeText={(v) => field("quantity", v)}
+        />
+      </Card>
+      <Text style={s.sectionTitle}>Location and delivery</Text>
+      {r.data?.addresses.map((ad) => (
+        <Pressable
+          key={ad.id}
+          onPress={() => field("addressId", ad.id)}
+          style={[s.choice, form.addressId === ad.id && s.selected]}
+        >
+          <Label>
+            {ad.label} · {ad.line1}, {ad.city}, {ad.state}
+          </Label>
+        </Pressable>
+      ))}
+      <Button title="Add pickup address" secondary onPress={() => a.go("addresses")} />
+      <Notice text="Delivery coverage and package eligibility are checked before payment. Bulk and cold-chain orders need staff review." />
+      <Text style={s.sectionTitle}>{a.t("sell.photo")}</Text>
+      {form.photoUri && (
+        <Image
+          source={{ uri: form.photoUri }}
+          style={{ width: "100%", height: 200, borderRadius: 16 }}
+        />
+      )}
+      <View style={{ gap: 8 }}>
+        <Button title="Take a photo" secondary disabled={busy} onPress={() => void upload(true)} />
+        <Button
+          title="Choose from library"
+          secondary
+          disabled={busy}
+          onPress={() => void upload(false)}
+        />
+      </View>
+      <Notice text={a.t("sell.voiceBlocked")} />
+      {(error || r.error) && <Notice text={error || r.error} error />}
+    </Page>
+  );
+}
+export function Review() {
+  const a = useApp(),
+    r = useResource<{
+      id: string;
+      fields: Omit<Form, "price"> & { unitPriceMinor: string };
+      listingId: string | null;
+    }>(`/listing-drafts/${a.route.id}`),
+    [confirmed, setConfirmed] = useState(false),
+    [busy, setBusy] = useState(false),
+    [done, setDone] = useState(false),
+    [error, setError] = useState("");
+  const f = r.data?.fields;
+  return (
+    <Page
+      title="Review listing"
+      back={a.back}
+      loading={r.loading}
+      footer={
+        done ? (
+          <Button title="My listings" onPress={() => a.reset("myListings")} />
+        ) : (
+          <Button
+            title={busy ? "Submitting…" : a.t("sell.submit")}
+            disabled={!confirmed || busy || !f}
+            onPress={async () => {
+              setBusy(true);
+              try {
+                await api(`/listing-drafts/${a.route.id}/submit`, {
+                  method: "POST",
+                  body: { confirmed: true },
+                });
+                await AsyncStorage.removeItem(`listing-draft:${a.user!.id}`);
+                setDone(true);
+              } catch (e) {
+                setError(a.error(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        )
+      }
+    >
+      {done ? (
+        <>
+          <Heading>Submitted for review</Heading>
+          <Notice text="Your produce is awaiting moderation. It becomes visible to buyers after approval." />
+        </>
+      ) : (
+        <>
+          <Heading>Check this.</Heading>
+          <Label muted>Review your produce details before submitting.</Label>
+          {f?.photoId && (
+            <Image
+              source={{ uri: `${API_URL}/v1/listing-photos/${f.photoId}`, headers: authHeaders() }}
+              style={{ width: "100%", height: 200, borderRadius: 16 }}
+            />
+          )}
+          {f && (
+            <Card>
+              {[
+                ["Produce", f.title],
+                ["Description", f.description],
+                ["Quantity", `${f.quantity} ${a.unit(f.unitCode)}`],
+                ["Price", `${money(f.unitPriceMinor)} / ${a.unit(f.unitCode)}`],
+                [
+                  "Farm location",
+                  a.user?.addresses.find((ad) => ad.id === f.addressId)?.line1 ||
+                    "Saved pickup address",
+                ],
+              ].map(([k, v]) => (
+                <View
+                  key={k}
+                  style={[
+                    s.between,
+                    { paddingVertical: 8, borderBottomWidth: 1, borderColor: "#f4f4f3" },
+                  ]}
+                >
+                  <Label muted style={{ flex: 1 }}>
+                    {k}
+                  </Label>
+                  <Label style={{ flex: 1, textAlign: "right", fontFamily: "NotoBold" }}>{v}</Label>
+                </View>
+              ))}
+            </Card>
+          )}
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: confirmed }}
+            onPress={() => setConfirmed(!confirmed)}
+            style={[s.choice, confirmed && s.selected]}
+          >
+            <Text style={{ fontSize: 22, color: colors.green }}>{confirmed ? "☑" : "□"}</Text>
+            <Label style={{ flex: 1 }}>{a.t("sell.confirm")}</Label>
+          </Pressable>
+          <Notice text="Submission follows the existing moderation rules. Voice and automatic photo identification are not enabled." />
+        </>
+      )}
+      {(error || r.error) && <Notice text={error || r.error} error />}
+    </Page>
+  );
+}
+export function MyListings() {
+  const a = useApp(),
+    r = useResource<{ items: Listing[] }>("/marketplace/my-listings");
+  return (
+    <Page
+      title="My listings"
+      back={a.back}
+      loading={r.loading}
+      footer={<Button title="Create listing" onPress={() => a.go("sell")} />}
+    >
+      {r.error && <Notice text={r.error} error />}
+      {!r.loading && !r.data?.items.length && <Notice text="You haven’t listed any produce yet." />}
+      {r.data?.items.map((i) => (
+        <Card key={i.id}>
+          <ListingPhoto item={i} />
+          <Label style={{ fontFamily: "NotoBold" }}>{i.title}</Label>
+          <Text style={s.badge}>{a.status(i.status)}</Text>
+          <Label>
+            {money(i.unitPriceMinor)} / {a.unit(i.unitCode)}
+          </Label>
+        </Card>
+      ))}
+    </Page>
+  );
+}
