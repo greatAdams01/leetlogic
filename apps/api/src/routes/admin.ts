@@ -120,12 +120,13 @@ adminRouter.get("/verifications/:id", requirePermission("verification.read"), as
     verification: {
       ...item,
       documents,
-      evidence: item.evidence.map((evidence) => ({
+      evidence: await Promise.all(item.evidence.map(async (evidence) => ({
         id: evidence.id,
         verificationCaseId: evidence.verificationCaseId,
         note: evidence.note,
         createdAt: evidence.createdAt,
-      })),
+        readUrl: evidence.encryptedObjectKey ? await storage.createReadUrl(evidence.id, 300) : null,
+      }))),
     },
   });
 });

@@ -77,12 +77,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [locale, ready]);
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      // The verification wizard owns Back within its separate application stages.
+      if (route.name === "seller") return false;
       if (stack.length <= 1) return false;
       back();
       return true;
     });
     return () => sub.remove();
-  }, [stack.length, back]);
+  }, [stack.length, route.name, back]);
   const changeLocale = (l: Locale) => {
     setOverrides({});
     setLocale(l);

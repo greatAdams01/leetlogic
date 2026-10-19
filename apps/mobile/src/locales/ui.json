@@ -2364,5 +2364,334 @@
     "Haɗa noma da kiwo",
     "Ọrụ ugbo agwakọtara",
     "Iṣẹ́ àgbẹ̀ àdàlù"
+  ],
+  [
+    "Farm and pickup locations",
+    "Farm and pickup locations",
+    "Wuraren gona da ɗaukar kaya",
+    "Ebe ugbo na ebe a na-eburu ihe ubi",
+    "Àwọn ibi oko àti gbígbé ẹrù"
+  ],
+  [
+    "Manage where you farm and where produce is collected",
+    "Manage where your farm dey and where dem go collect produce",
+    "Sarrafa inda kake noma da inda ake ɗaukar amfanin gona",
+    "Hazie ebe ị na-akọ ugbo na ebe a na-eburu ihe ubi",
+    "Ṣètò ibi tí o ti ń ṣiṣẹ́ àgbẹ̀ àti ibi tí a ti ń gbé èso oko"
+  ],
+  [
+    "Manage where your orders are delivered",
+    "Manage where dem go deliver your orders",
+    "Sarrafa inda ake kai ododinka",
+    "Hazie ebe a na-ebuga ihe ị zụrụ",
+    "Ṣètò ibi tí a ó ti fi àwọn ohun tí o rà ránṣẹ́"
+  ],
+  [
+    "Where do you operate?",
+    "Where you dey farm or collect produce?",
+    "A ina kake gudanar da aikinka?",
+    "Ebee ka ị na-arụ ọrụ ugbo?",
+    "Níbo ni o ti ń ṣiṣẹ́ àgbẹ̀?"
+  ],
+  [
+    "Where should your orders be delivered?",
+    "Where dem go deliver your orders?",
+    "Ina za a kai ododinka?",
+    "Ebee ka a ga-ebuga ihe ị zụrụ?",
+    "Ibo ni kí a fi àwọn ohun tí o rà ránṣẹ́ sí?"
+  ],
+  [
+    "Add your farm or collection point in Nigeria. This is where produce is picked up, not the buyer’s delivery destination.",
+    "Add your farm or collection point for Nigeria. Na here dem go pick produce, no be where buyer go receive am.",
+    "Ƙara gonarka ko wurin karɓar kaya a Najeriya. Nan ne ake ɗaukar amfanin gona, ba inda ake kai wa mai saye ba.",
+    "Tinye ugbo gị ma ọ bụ ebe a na-eburu ihe ubi na Naịjirịa. Ọ bụ ebe a na-eburu ihe ubi, ọ bụghị ebe a na-ebuga ya nye onye zụrụ ya.",
+    "Fi oko rẹ tàbí ibi gbígbé ẹrù ní Nàìjíríà kún un. Ibí ni a ti ń gbé èso oko, kì í ṣe ibi tí a ó ti fi ránṣẹ́ sí olùrà."
+  ],
+  [
+    "Save the addresses where you want to receive your orders.",
+    "Save where you wan receive your orders.",
+    "Ajiye adiresoshin da kake son karɓar ododinka.",
+    "Chekwaa adreesị ebe ịchọrọ ịnata ihe ị zụrụ.",
+    "Fi àdírẹ́sì ibi tí o fẹ́ gba àwọn ohun tí o rà pamọ́."
+  ],
+  [
+    "Pickup location saved.",
+    "Pickup location don save.",
+    "An ajiye wurin ɗaukar kaya.",
+    "Echekwara ebe a ga-eburu ihe ubi.",
+    "A ti fi ibi gbígbé ẹrù pamọ́."
+  ],
+  [
+    "Delivery address saved.",
+    "Delivery address don save.",
+    "An ajiye adireshin isarwa.",
+    "Echekwara adreesị nnyefe.",
+    "A ti fi àdírẹ́sì ìfiránṣẹ́ pamọ́."
+  ],
+  [
+    "Add a pickup location",
+    "Add where dem go pick produce",
+    "Ƙara wurin ɗaukar kaya",
+    "Tinye ebe a ga-eburu ihe ubi",
+    "Fi ibi gbígbé ẹrù kún un"
+  ],
+  [
+    "Add a delivery address",
+    "Add delivery address",
+    "Ƙara adireshin isarwa",
+    "Tinye adreesị nnyefe",
+    "Fi àdírẹ́sì ìfiránṣẹ́ kún un"
+  ],
+  [
+    "Save pickup location",
+    "Save pickup location",
+    "Ajiye wurin ɗaukar kaya",
+    "Chekwaa ebe a ga-eburu ihe ubi",
+    "Fi ibi gbígbé ẹrù pamọ́"
+  ],
+  [
+    "Add farm evidence photo",
+    "Add farm proof photo",
+    "Ƙara hoton shaidar gona",
+    "Tinye foto ihe akaebe ugbo",
+    "Fi fọ́tò ẹ̀rí oko kún un"
+  ],
+  [
+    "After submission, your application is read-only while it is under review.",
+    "After you submit, you no fit edit until review finish.",
+    "Bayan aikawa, ba za ka iya gyara aikace-aikacen yayin dubawa ba.",
+    "Mgbe izigachara, ị gaghị edezi akwụkwọ arịrịọ gị mgbe a na-enyocha ya.",
+    "Lẹ́yìn fífi ránṣẹ́, o kò lè ṣàtúnṣe rẹ nígbà àyẹ̀wò."
+  ],
+  [
+    "Application submitted",
+    "Application don submit",
+    "An aika aikace-aikacen",
+    "Ezigala akwụkwọ arịrịọ",
+    "A ti fi ìbéèrè ránṣẹ́"
+  ],
+  [
+    "Changes are required before you submit again.",
+    "You need make corrections before you submit again.",
+    "Ana buƙatar gyare-gyare kafin sake aikawa.",
+    "A chọrọ mgbanwe tupu i ziga ọzọ.",
+    "O nílò àtúnṣe kí o tó tún fi ránṣẹ́."
+  ],
+  [
+    "Check that the name, photo and all edges are readable before continuing.",
+    "Check say name, photo and all edges clear before you continue.",
+    "Tabbatar suna, hoto da dukkan gefuna suna bayyana kafin ci gaba.",
+    "Lelee na aha, foto na akụkụ niile doro anya tupu ịga n’ihu.",
+    "Rí i pé orúkọ, fọ́tò àti gbogbo ẹ̀gbẹ́ hàn kedere kí o tó tẹ̀síwájú."
+  ],
+  [
+    "Check your details.",
+    "Check your details.",
+    "Duba bayananka.",
+    "Lelee nkọwa gị.",
+    "Ṣàyẹ̀wò àwọn àlàyé rẹ."
+  ],
+  [
+    "Choose your document.",
+    "Choose your document.",
+    "Zaɓi takardarka.",
+    "Họrọ akwụkwọ gị.",
+    "Yan ìwé rẹ."
+  ],
+  [
+    "Edit farm details",
+    "Edit farm details",
+    "Gyara bayanan gona",
+    "Dezie nkọwa ugbo",
+    "Ṣàtúnṣe àlàyé oko"
+  ],
+  [
+    "Edit farm evidence",
+    "Edit farm proof",
+    "Gyara shaidar gona",
+    "Dezie ihe akaebe ugbo",
+    "Ṣàtúnṣe ẹ̀rí oko"
+  ],
+  [
+    "Edit identity document",
+    "Edit identity document",
+    "Gyara takardar shaida",
+    "Dezie akwụkwọ njirimara",
+    "Ṣàtúnṣe ìwé ìdánimọ̀"
+  ],
+  [
+    "Explain what you grow and how the evidence belongs to your farm or business.",
+    "Explain wetin you dey grow and how this proof belong to your farm or business.",
+    "Bayyana abin da kake nomawa da yadda shaidar ta shafi gonarka ko kasuwancinka.",
+    "Kọwaa ihe ị na-akọ na otú ihe akaebe si metụta ugbo gị ma ọ bụ azụmahịa gị.",
+    "Ṣàlàyé ohun tí o ń gbìn àti bí ẹ̀rí náà ṣe jẹ́ ti oko tàbí iṣẹ́ rẹ."
+  ],
+  [
+    "Farm evidence uploaded privately.",
+    "Farm proof don upload privately.",
+    "An loda shaidar gona cikin sirri.",
+    "Ebugola ihe akaebe ugbo na nzuzo.",
+    "A ti gbé ẹ̀rí oko sókè ní ìkọ̀kọ̀."
+  ],
+  [
+    "Farm profile",
+    "Farm profile",
+    "Bayanan gona",
+    "Profaịlụ ugbo",
+    "Àkọsílẹ̀ oko"
+  ],
+  [
+    "I can read the name and see all edges",
+    "I fit read the name and see all edges",
+    "Zan iya karanta suna da ganin dukkan gefuna",
+    "Enwere m ike ịgụ aha ma hụ akụkụ niile",
+    "Mo lè ka orúkọ kí n sì rí gbogbo ẹ̀gbẹ́"
+  ],
+  [
+    "Identity document preview",
+    "Identity document preview",
+    "Duban takardar shaida",
+    "Nlele akwụkwọ njirimara",
+    "Àwòkọ́ṣe ìwé ìdánimọ̀"
+  ],
+  [
+    "Is your document clear?",
+    "Your document clear?",
+    "Takardarka tana bayyana sosai?",
+    "Akwụkwọ gị ọ doro anya?",
+    "Ṣé ìwé rẹ hàn kedere?"
+  ],
+  [
+    "Please contact support about your application.",
+    "Contact support about your application.",
+    "Tuntuɓi tallafi game da aikace-aikacenka.",
+    "Kpọtụrụ ndị nkwado gbasara akwụkwọ arịrịọ gị.",
+    "Kàn sí ìrànlọ́wọ́ nípa ìbéèrè rẹ."
+  ],
+  [
+    "Retry",
+    "Try again",
+    "Sake gwadawa",
+    "Nwaa ọzọ",
+    "Gbìyànjú lẹ́ẹ̀kan sí i"
+  ],
+  [
+    "Show your farm or business.",
+    "Show your farm or business.",
+    "Nuna gonarka ko kasuwancinka.",
+    "Gosi ugbo gị ma ọ bụ azụmahịa gị.",
+    "Fi oko tàbí iṣẹ́ rẹ hàn."
+  ],
+  [
+    "Step {step} of {total}",
+    "Step {step} of {total}",
+    "Mataki {step} cikin {total}",
+    "Nzọụkwụ {step} n’ime {total}",
+    "Ìgbésẹ̀ {step} nínú {total}"
+  ],
+  [
+    "Supporting written note",
+    "Written note to support your proof",
+    "Rubutaccen bayani na goyon baya",
+    "Nkọwa edere iji kwado ihe akaebe",
+    "Àkọsílẹ̀ àfikún ẹ̀rí"
+  ],
+  [
+    "Take identity photo",
+    "Take identity photo",
+    "Ɗauki hoton takardar shaida",
+    "See foto akwụkwọ njirimara",
+    "Ya fọ́tò ìwé ìdánimọ̀"
+  ],
+  [
+    "Use one valid identity document that belongs to you.",
+    "Use one valid identity document wey be your own.",
+    "Yi amfani da ingantacciyar takardar shaida guda ɗaya taka.",
+    "Jiri otu akwụkwọ njirimara dị irè nke gị.",
+    "Lo ìwé ìdánimọ̀ kan tó pé tí ó jẹ́ tìrẹ."
+  ],
+  [
+    "Where is your farm or pickup point?",
+    "Where your farm or pickup point dey?",
+    "Ina gonarka ko wurin ɗaukar kaya yake?",
+    "Ebee ka ugbo gị ma ọ bụ ebe a na-eburu ihe ubi dị?",
+    "Níbo ni oko rẹ tàbí ibi gbígbé ẹrù wà?"
+  ],
+  [
+    "You can edit any section before submitting.",
+    "You fit edit any section before you submit.",
+    "Za ka iya gyara kowane sashe kafin aikawa.",
+    "Ị nwere ike idezi ngalaba ọ bụla tupu iziga.",
+    "O lè ṣàtúnṣe apá èyíkéyìí kí o tó fi ránṣẹ́."
+  ],
+  [
+    "Your application was not approved.",
+    "Dem no approve your application.",
+    "Ba a amince da aikace-aikacenka ba.",
+    "A kwadoghị akwụkwọ arịrịọ gị.",
+    "A kò fọwọ́ sí ìbéèrè rẹ."
+  ],
+  [
+    "Your farm evidence stays private and is used only for verification.",
+    "Your farm proof dey private; na only verification dem go use am for.",
+    "Shaidar gonarka tana sirri kuma don tantancewa kawai.",
+    "Ihe akaebe ugbo gị na-anọ na nzuzo, a na-eji ya naanị maka nkwenye.",
+    "Ẹ̀rí oko rẹ wà ní ìkọ̀kọ̀, àyẹ̀wò nìkan ni a fi ń lò ó."
+  ],
+  [
+    "Your farmer profile is approved.",
+    "Dem don approve your farmer profile.",
+    "An amince da bayanan manominka.",
+    "A kwadoro profaịlụ onye ọrụ ugbo gị.",
+    "A ti fọwọ́ sí àkọsílẹ̀ àgbẹ̀ rẹ."
+  ],
+  [
+    "Your identity document stays private and is used only for verification.",
+    "Your identity document dey private; na only verification dem go use am for.",
+    "Takardar shaidarka tana sirri kuma don tantancewa kawai.",
+    "Akwụkwọ njirimara gị na-anọ na nzuzo, a na-eji ya naanị maka nkwenye.",
+    "Ìwé ìdánimọ̀ rẹ wà ní ìkọ̀kọ̀, àyẹ̀wò nìkan ni a fi ń lò ó."
+  ],
+  [
+    "Save and continue",
+    "Save and continue",
+    "Ajiye kuma ci gaba",
+    "Chekwaa wee gaa n’ihu",
+    "Fi pamọ́ kí o sì tẹ̀síwájú"
+  ],
+  [
+    "Review seller application",
+    "Review seller application",
+    "Duba aikace-aikacen mai sayarwa",
+    "Nyochaa akwụkwọ arịrịọ onye na-ere ahịa",
+    "Ṣàyẹ̀wò ìbéèrè olùtà"
+  ],
+  [
+    "Seller profile · Identity",
+    "Seller profile · Identity",
+    "Bayanan mai sayarwa · Shaida",
+    "Profaịlụ onye na-ere ahịa · Njirimara",
+    "Àkọsílẹ̀ olùtà · Ìdánimọ̀"
+  ],
+  [
+    "Seller profile · Check document",
+    "Seller profile · Check document",
+    "Bayanan mai sayarwa · Duba takarda",
+    "Profaịlụ onye na-ere ahịa · Lelee akwụkwọ",
+    "Àkọsílẹ̀ olùtà · Ṣàyẹ̀wò ìwé"
+  ],
+  [
+    "Seller profile · Evidence",
+    "Seller profile · Evidence",
+    "Bayanan mai sayarwa · Shaida",
+    "Profaịlụ onye na-ere ahịa · Ihe akaebe",
+    "Àkọsílẹ̀ olùtà · Ẹ̀rí"
+  ],
+  [
+    "Farm evidence preview",
+    "Farm proof preview",
+    "Duban shaidar gona",
+    "Nlele ihe akaebe ugbo",
+    "Àwòkọ́ṣe ẹ̀rí oko"
   ]
 ]

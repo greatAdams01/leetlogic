@@ -8,6 +8,33 @@ The approved Figma website is implemented in `apps/web` using Next.js App Router
 React, TypeScript, and plain CSS. Run `pnpm dev:web` and open
 `http://localhost:3001`. The API remains on port 3000.
 
+### Start the web app and admin dashboard locally
+
+After completing Setup below, run this in your terminal:
+
+```sh
+cd /Users/greatadams/Documents/ChatGPT/LEETLOGIC
+pnpm dev:web
+```
+
+- Website: [http://localhost:3001](http://localhost:3001)
+- Admin dashboard: [http://localhost:3001/admin](http://localhost:3001/admin)
+
+Keep that terminal open to see web logs. Press `Ctrl+C` to stop the web server.
+The admin dashboard is part of the same Next.js app.
+
+Admin login and backend actions also require PostgreSQL, Redis, and the API.
+If they are not already running, use a separate terminal:
+
+```sh
+cd /Users/greatadams/Documents/ChatGPT/LEETLOGIC
+docker compose up -d
+pnpm dev
+```
+
+Keep the API terminal open for backend logs. If Docker and the API are already
+running, only run `pnpm dev:web`; do not start a second API process.
+
 Pages: `/`, `/about`, `/team`, `/for-buyers`, `/how-it-works`, `/impact`, and `/contact`.
 The original Figma images, SVGs, and design fonts are served locally. Layouts adapt
 to phones and tablets; the hero animation respects reduced-motion preferences.

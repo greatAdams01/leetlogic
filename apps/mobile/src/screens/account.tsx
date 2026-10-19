@@ -4,10 +4,9 @@ import { View, Pressable } from "react-native";
 import { useApp, useResource } from "../state";
 import { Page, Heading, Label, Field, Button, Card, Notice, Icon, s } from "../components/ui";
 import { Select } from "../components/Select";
-import { changeState, farmTypes, localGovernments, nigeriaStates } from "../lib/locations";
+import { changeState, localGovernments, nigeriaStates } from "../lib/locations";
 import { api } from "../lib/api";
 import { Navigation } from "./market";
-import { choosePhoto, photoBlob } from "./sell";
 export function Profile() {
   const a = useApp(),
     [error, setError] = useState("");
@@ -33,8 +32,11 @@ export function Profile() {
         {[
           { label: "Personal details", sub: "Name, display name and email", route: "details" },
           {
-            label: "Delivery addresses",
-            sub: "Manage produce delivery and pickup locations",
+            label: a.role === "SELLER" ? "Farm and pickup locations" : "Delivery addresses",
+            sub:
+              a.role === "SELLER"
+                ? "Manage where you farm and where produce is collected"
+                : "Manage where your orders are delivered",
             route: "addresses",
           },
           {
@@ -137,10 +139,20 @@ export function Addresses() {
   const a = useApp(),
     [form, setForm] = useState({ label: "", line1: "", state: "", lga: "", city: "" }),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [saved, setSaved] = useState(false);
+  const seller = a.role === "SELLER";
   return (
-    <Page title="Saved addresses" back={a.back}>
-      <Heading>Where should produce go?</Heading>
+    <Page title={seller ? "Farm and pickup locations" : "Saved addresses"} back={a.back}>
+      <Heading>
+        {seller ? "Where do you operate?" : "Where should your orders be delivered?"}
+      </Heading>
+      <Label muted>
+        {seller
+          ? "Add your farm or collection point in Nigeria. This is where produce is picked up, not the buyer’s delivery destination."
+          : "Save the addresses where you want to receive your orders."}
+      </Label>
+      {saved && <Notice text={seller ? "Pickup location saved." : "Delivery address saved."} />}
       {a.user?.addresses.map((ad) => (
         <Card key={ad.id}>
           <Label style={{ fontFamily: "NotoBold" }}>{ad.label}</Label>
@@ -149,7 +161,9 @@ export function Addresses() {
           </Label>
         </Card>
       ))}
-      <Text style={s.sectionTitle}>Add a Nigerian address</Text>
+      <Text style={s.sectionTitle}>
+        {seller ? "Add a pickup location" : "Add a delivery address"}
+      </Text>
       <Card>
         {(["label", "line1", "city"] as const).map((k) => (
           <Field
@@ -182,14 +196,17 @@ export function Addresses() {
         />
       </Card>
       <Button
-        title={busy ? "Saving…" : "Save address"}
+        title={busy ? "Saving…" : seller ? "Save pickup location" : "Save address"}
         disabled={busy || !form.state || !form.lga}
         onPress={async () => {
           setBusy(true);
           try {
+            setSaved(false);
+            setError("");
             await api("/me/addresses", { method: "POST", body: form });
             await a.loadUser();
             setForm({ label: "", line1: "", state: "", lga: "", city: "" });
+            setSaved(true);
           } catch (e) {
             setError(a.error(e));
           } finally {
@@ -249,176 +266,4 @@ export function Help() {
     </Page>
   );
 }
-export function Seller() {
-  const a = useApp(),
-    [form, setForm] = useState({
-      farmName: a.user?.farmerProfile?.farmName || "",
-      farmType: "Crop farming",
-      line1: "",
-      description: "",
-      state: "",
-      lga: "",
-      city: "",
-    }),
-    [saved, setSaved] = useState(!!a.user?.farmerProfile),
-    [doc, setDoc] = useState(false),
-    [declaration, setDeclaration] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [note, setNote] = useState(""),
-    [documentType, setDocumentType] = useState("NIN_SLIP");
-  const status = a.user?.farmerProfile?.verificationStatus;
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    setError("");
-    try {
-      await fn();
-    } catch (e) {
-      setError(a.error(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Page title="Seller profile · Farm details" back={a.back}>
-      <Heading>Tell us about your farm.</Heading>
-      {status && <Text style={s.badge}>{a.status(status)}</Text>}
-      {status === "APPROVED" ? (
-        <>
-          <Notice text="Your farmer profile is approved. You can create produce listings for moderation." />
-          <Button title="Create listing" onPress={() => a.go("sell")} />
-        </>
-      ) : ["SUBMITTED", "IN_REVIEW"].includes(status || "") ? (
-        <Notice text="Your application is being reviewed. You can keep buying while you wait." />
-      ) : (
-        <>
-          <Card>
-            {(["farmName", "line1", "description", "city"] as const).map((k) => (
-              <Field
-                key={k}
-                label={
-                  {
-                    farmName: "Farm / business name *",
-                    farmType: "Farm type *",
-                    line1: "Full farm address *",
-                    description: "Description (optional)",
-                    state: "State *",
-                    lga: "Local government area *",
-                    city: "City / town *",
-                  }[k]
-                }
-                value={form[k]}
-                onChangeText={(v) => setForm((f) => ({ ...f, [k]: v }))}
-              />
-            ))}
-            <Select
-              label="Farm type *"
-              value={form.farmType}
-              options={farmTypes}
-              onChange={(farmType) => setForm((f) => ({ ...f, farmType }))}
-            />
-            <Select
-              label="State *"
-              value={form.state}
-              options={nigeriaStates}
-              onChange={(state) => setForm((f) => changeState(f, state))}
-            />
-            <Select
-              label="Local government area *"
-              value={form.lga}
-              options={localGovernments(form.state)}
-              disabled={!form.state}
-              onChange={(lga) => setForm((f) => ({ ...f, lga }))}
-            />
-          </Card>
-          <Button
-            title={busy ? "Saving…" : "Save farm profile"}
-            disabled={busy || !form.state || !form.lga || !form.farmType}
-            onPress={() =>
-              void run(async () => {
-                await api("/me/seller-profile", { method: "POST", body: form });
-                await a.loadUser();
-                setSaved(true);
-              })
-            }
-          />
-          {saved && (
-            <>
-              <Text style={s.sectionTitle}>Identity document</Text>
-              <Label muted style={s.small}>
-                Upload a clear JPEG or PNG of your own document. It stays private for authorized
-                verification staff.
-              </Label>
-              {["NIN_SLIP", "VOTER_CARD", "DRIVERS_LICENSE", "PASSPORT"].map((v) => (
-                <Pressable
-                  key={v}
-                  onPress={() => setDocumentType(v)}
-                  style={[s.choice, documentType === v && s.selected]}
-                >
-                  <Label>{a.status(v)}</Label>
-                </Pressable>
-              ))}
-              <Button
-                title={doc ? "Replace identity photo" : "Choose identity photo"}
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  void run(async () => {
-                    const p = await choosePhoto();
-                    if (p) {
-                      await api(`/seller/verification/uploads?documentType=${documentType}`, {
-                        method: "POST",
-                        blob: await photoBlob(p.uri, p.mimeType),
-                      });
-                      setDoc(true);
-                    }
-                  })
-                }
-              />
-              {doc && <Notice text="Identity document uploaded privately." />}
-              <Field
-                label="Farm / business evidence note"
-                value={note}
-                multiline
-                onChangeText={setNote}
-              />
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: declaration }}
-                style={[s.choice, declaration && s.selected]}
-                onPress={() => setDeclaration(!declaration)}
-              >
-                <Label style={{ flex: 1 }}>
-                  {declaration ? "☑" : "□"}{" "}
-                  {a.ui(
-                    "I confirm that these details and identity documents are mine and accurate.",
-                  )}
-                </Label>
-              </Pressable>
-              <Button
-                title="Submit seller application"
-                disabled={busy || !doc || !declaration}
-                onPress={() =>
-                  void run(async () => {
-                    if (note)
-                      await api("/seller/verification/evidence", {
-                        method: "POST",
-                        body: { note },
-                      });
-                    await api("/seller/verification/submit", {
-                      method: "POST",
-                      body: { declarationAccepted: true },
-                    });
-                    await a.loadUser();
-                    a.reset("profile");
-                  })
-                }
-              />
-            </>
-          )}
-        </>
-      )}
-      {error && <Notice text={error} error />}
-    </Page>
-  );
-}
+export { Seller } from "./seller";

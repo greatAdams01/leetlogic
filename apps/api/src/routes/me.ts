@@ -39,22 +39,52 @@ meRouter.patch("/locale", async (req, res) => {
 meRouter.post("/seller-profile", async (req, res) => {
   const body = sellerProfileSchema.parse(req.body);
   const result = await prisma.$transaction(async (tx) => {
+    const existing = await tx.farmerProfile.findUnique({
+      where: { userId: req.auth!.sub },
+      include: { primaryAddress: true },
+    });
+    if (existing) {
+      const latest = await tx.verificationCase.findFirst({
+        where: { farmerProfileId: existing.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (
+        !["NOT_STARTED", "DRAFT", "RESUBMISSION_REQUIRED"].includes(
+          latest?.status || existing.verificationStatus,
+        )
+      )
+        throw new AppError(
+          409,
+          "VERIFICATION_LOCKED",
+          "Your application cannot be edited in its current state",
+        );
+    }
     await tx.userCapability.upsert({
       where: { userId_capability: { userId: req.auth!.sub, capability: "SELLER" } },
       create: { userId: req.auth!.sub, capability: "SELLER" },
       update: {},
     });
-    const address = await tx.address.create({
-      data: {
-        userId: req.auth!.sub,
-        countryCode: "NG",
-        state: body.state,
-        lga: body.lga,
-        city: body.city,
-        line1: body.line1 ?? "Farm location pending full address",
-        isDefaultFarm: true,
-      },
-    });
+    const previousAddress = existing?.primaryAddress;
+    const sameAddress =
+      previousAddress &&
+      !previousAddress.deletedAt &&
+      previousAddress.state === body.state &&
+      previousAddress.lga === body.lga &&
+      previousAddress.city === body.city &&
+      previousAddress.line1 === body.line1;
+    const address = sameAddress
+      ? previousAddress
+      : await tx.address.create({
+          data: {
+            userId: req.auth!.sub,
+            countryCode: "NG",
+            state: body.state,
+            lga: body.lga,
+            city: body.city,
+            line1: body.line1 ?? "Farm location pending full address",
+            isDefaultFarm: true,
+          },
+        });
     const farmer = await tx.farmerProfile.upsert({
       where: { userId: req.auth!.sub },
       create: {
@@ -74,6 +104,7 @@ meRouter.post("/seller-profile", async (req, res) => {
     const verification =
       (await tx.verificationCase.findFirst({
         where: { farmerProfileId: farmer.id, status: { in: ["DRAFT", "RESUBMISSION_REQUIRED"] } },
+        orderBy: { createdAt: "desc" },
       })) ?? (await tx.verificationCase.create({ data: { farmerProfileId: farmer.id } }));
     return { farmer, verification };
   });

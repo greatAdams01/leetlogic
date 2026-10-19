@@ -926,10 +926,16 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   {review.internalNotes && <p>Internal note: {review.internalNotes}</p>}
                 </article>
               ))}
-              {selected.evidence?.map(
-                (evidence: Row) =>
-                  evidence.note && <p key={evidence.id}>Farm evidence: {evidence.note}</p>,
-              )}
+              {selected.evidence?.map((evidence: Row) => (
+                <div key={evidence.id}>
+                  {evidence.note && <p>Farm evidence: {evidence.note}</p>}
+                  {evidence.readUrl && (
+                    <a href={evidence.readUrl} target="_blank" rel="noreferrer">
+                      Open private farm evidence
+                    </a>
+                  )}
+                </div>
+              ))}
               {resource === "listings" &&
                 selected.media?.map(
                   (media: Row) =>

@@ -249,6 +249,12 @@ integration("admin PostgreSQL and Redis workflows", () => {
     const verification = await prisma.verificationCase.create({
       data: { farmerProfileId: farmerId, status: "DRAFT" },
     });
+    const farmAddress = await prisma.address.findFirstOrThrow({ where: { userId: sellerId } });
+    await prisma.farmerProfile.update({
+      where: { id: farmerId },
+      data: { primaryAddressId: farmAddress.id },
+    });
+
     const customer = await createSession({
       subject: "CUSTOMER",
       principalId: sellerId,
@@ -259,6 +265,35 @@ integration("admin PostgreSQL and Redis workflows", () => {
       .set({ Authorization: `Bearer ${customer.accessToken}`, "Content-Type": "application/pdf" })
       .send(Buffer.from("%PDF-1.4\nTest private document\n%%EOF"));
     expect(uploaded.status).toBe(201);
+    const customerAuth = { Authorization: `Bearer ${customer.accessToken}` };
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/submit")
+          .set(customerAuth)
+          .send({ declarationAccepted: true })
+      ).status,
+    ).toBe(422);
+    const evidencePhoto = await request(app)
+      .post("/v1/seller/verification/uploads?kind=evidence")
+      .set({ ...customerAuth, "Content-Type": "image/png" })
+      .send(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]));
+    expect(evidencePhoto.status).toBe(201);
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/evidence")
+          .set(customerAuth)
+          .send({ note: "Produce grown on our farm" })
+      ).status,
+    ).toBe(201);
+    const draft = await request(app).get("/v1/seller/verification").set(customerAuth);
+    expect(draft.body.verification.evidence.some((e: { hasPhoto: boolean }) => e.hasPhoto)).toBe(
+      true,
+    );
+    expect(JSON.stringify(draft.body)).not.toContain("encryptedObjectKey");
+    expect(JSON.stringify(draft.body)).not.toContain("internalNotes");
+
     expect(
       (
         await request(app)
@@ -271,6 +306,43 @@ integration("admin PostgreSQL and Redis workflows", () => {
       .get(`/v1/admin/verifications/${verification.id}`)
       .set(auth());
     expect(reviewed.status).toBe(200);
+    const evidenceLink = reviewed.body.verification.evidence
+      .find((e: { readUrl: string }) => e.readUrl)
+      .readUrl.replace("/api/admin/", "/v1/admin/");
+    expect((await request(app).get(evidenceLink)).status).toBe(401);
+    expect((await request(app).get(evidenceLink).set(auth())).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/submit")
+          .set(customerAuth)
+          .send({ declarationAccepted: true })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/evidence")
+          .set(customerAuth)
+          .send({ note: "An edited note" })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post("/v1/me/seller-profile")
+          .set(customerAuth)
+          .send({
+            farmName: "Changed farm",
+            farmType: "Crop farming",
+            state: "Lagos",
+            lga: "Ikeja",
+            city: "Lagos",
+            line1: "Changed farm street",
+          })
+      ).status,
+    ).toBe(409);
+
     const link = reviewed.body.verification.documents[0].readUrl.replace(
       "/api/admin/",
       "/v1/admin/",
@@ -294,6 +366,14 @@ integration("admin PostgreSQL and Redis workflows", () => {
           .send({ reason: "Identity and farm evidence checked" })
       ).status,
     ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/submit")
+          .set(customerAuth)
+          .send({ declarationAccepted: true })
+      ).status,
+    ).toBe(409);
     expect(
       (
         await request(app)

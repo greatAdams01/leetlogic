@@ -34,10 +34,13 @@ adminDocumentsRouter.get(
         "DOCUMENT_LINK_EXPIRED",
         "Refresh the verification review to open this document",
       );
-    const document = await prisma.verificationDocument.findUniqueOrThrow({
-      where: { id: documentId },
-    });
-    const objectKey = decryptSecret(document.encryptedObjectKey);
+    const document = await prisma.verificationDocument.findUnique({ where: { id: documentId } });
+    const evidence = document
+      ? null
+      : await prisma.farmEvidence.findUnique({ where: { id: documentId } });
+    const encryptedKey = document?.encryptedObjectKey || evidence?.encryptedObjectKey;
+    if (!encryptedKey) throw new AppError(404, "DOCUMENT_UNAVAILABLE", "Document is unavailable");
+    const objectKey = decryptSecret(encryptedKey);
     if (
       !/^[a-zA-Z0-9_./-]+$/.test(objectKey) ||
       objectKey.split("/").some((part) => part === ".." || part === ".")
@@ -56,16 +59,25 @@ adminDocumentsRouter.get(
         "Document file is unavailable in private storage",
       );
     }
-    if (createHash("sha256").update(bytes).digest("hex") !== document.checksumSha256.toLowerCase())
+    if (
+      document &&
+      createHash("sha256").update(bytes).digest("hex") !== document.checksumSha256.toLowerCase()
+    )
       throw new AppError(409, "DOCUMENT_INTEGRITY_FAILED", "Document checksum does not match");
     await audit(req, {
       action: "verification.document.viewed",
-      entityType: "verification_document",
-      entityId: document.id,
+      entityType: document ? "verification_document" : "farm_evidence",
+      entityId: documentId,
     });
     res
       .set({
-        "Content-Type": document.mimeType,
+        "Content-Type":
+          document?.mimeType ||
+          (bytes.subarray(0, 5).toString() === "%PDF-"
+            ? "application/pdf"
+            : bytes[0] === 137
+              ? "image/png"
+              : "image/jpeg"),
         "Content-Disposition": 'inline; filename="verification-document"',
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
@@ -79,9 +91,13 @@ documentUploadsRouter.post(
   requireAuth("customer"),
   raw({ type: ["image/jpeg", "image/png", "application/pdf"], limit: "10mb" }),
   async (req, res) => {
-    const documentType = z
-      .enum(["NIN_SLIP", "VOTER_CARD", "DRIVERS_LICENSE", "PASSPORT"])
-      .parse(req.query.documentType);
+    const kind = z.enum(["identity", "evidence"]).default("identity").parse(req.query.kind);
+    const documentType =
+      kind === "identity"
+        ? z
+            .enum(["NIN_SLIP", "VOTER_CARD", "DRIVERS_LICENSE", "PASSPORT"])
+            .parse(req.query.documentType)
+        : null;
     const mimeType = z
       .enum(["image/jpeg", "image/png", "application/pdf"])
       .parse(req.get("Content-Type"));
@@ -100,32 +116,37 @@ documentUploadsRouter.post(
       where: { userId: req.auth!.sub },
     });
     const verification = await prisma.verificationCase.findFirst({
-      where: { farmerProfileId: farmer.id, status: { in: ["DRAFT", "RESUBMISSION_REQUIRED"] } },
+      where: { farmerProfileId: farmer.id },
       orderBy: { createdAt: "desc" },
     });
-    if (!verification)
+    if (!verification || !["DRAFT", "RESUBMISSION_REQUIRED"].includes(verification.status))
       throw new AppError(409, "VERIFICATION_LOCKED", "No editable verification case is available");
     const objectKey = `${farmer.id}/${randomUUID()}`;
     await mkdir(resolve(root(), farmer.id), { recursive: true, mode: 0o700 });
     await writeFile(resolve(root(), objectKey), bytes, { mode: 0o600, flag: "wx" });
+    if (kind === "evidence") {
+      const evidence = await prisma.farmEvidence.create({
+        data: { verificationCaseId: verification.id, encryptedObjectKey: encryptSecret(objectKey) },
+      });
+      res.status(201).json({ evidence: { id: evidence.id, hasPhoto: true } });
+      return;
+    }
     const document = await prisma.verificationDocument.create({
       data: {
         verificationCaseId: verification.id,
-        documentType,
+        documentType: documentType!,
         mimeType,
         checksumSha256: createHash("sha256").update(bytes).digest("hex"),
         encryptedObjectKey: encryptSecret(objectKey),
       },
     });
-    res
-      .status(201)
-      .json({
-        document: {
-          id: document.id,
-          documentType,
-          mimeType,
-          checksumSha256: document.checksumSha256,
-        },
-      });
+    res.status(201).json({
+      document: {
+        id: document.id,
+        documentType,
+        mimeType,
+        checksumSha256: document.checksumSha256,
+      },
+    });
   },
 );
