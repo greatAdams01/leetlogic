@@ -137,13 +137,46 @@ export function Field({
 export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   return <View style={[s.card, style]}>{children}</View>;
 }
-export function Notice({ text, error = false }: { text: string; error?: boolean }) {
+export function Notice({
+  text,
+  error = false,
+  success = false,
+}: {
+  text: string;
+  error?: boolean;
+  success?: boolean;
+}) {
+  const tint = error ? "#9b3525" : colors.green;
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={[s.notice, error && { backgroundColor: "#fff0e8" }]}
+      style={[
+        s.notice,
+        {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 12,
+          borderWidth: 1,
+          borderColor: error ? "#f2c9bc" : "#c9dfd0",
+          backgroundColor: error ? "#fff4ef" : "#f0f7f2",
+        },
+      ]}
     >
-      <Label style={{ color: error ? "#9b3525" : colors.green, fontSize: 14 }}>{text}</Label>
+      <View
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: tint,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ color: "white", fontFamily: "NotoBold", fontSize: 14 }}>
+          {error ? "!" : success ? "✓" : "i"}
+        </Text>
+      </View>
+      <Label style={{ flex: 1, color: tint, fontSize: 14, lineHeight: 22 }}>{text}</Label>
     </View>
   );
 }
@@ -155,6 +188,7 @@ export function Page({
   green = false,
   loading = false,
   brand = false,
+  backgroundColor = colors.paper,
 }: {
   children: React.ReactNode;
   title?: string;
@@ -163,15 +197,16 @@ export function Page({
   green?: boolean;
   loading?: boolean;
   brand?: boolean;
+  backgroundColor?: string;
 }) {
   const tr = useUI();
   return (
     <SafeAreaView
-      style={{ flex: 1, backgroundColor: green ? colors.green : colors.paper }}
+      style={{ flex: 1, backgroundColor: green ? colors.green : backgroundColor }}
       edges={["top", "left", "right"]}
     >
       <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: colors.paper }}
+        style={{ flex: 1, backgroundColor }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {title && (
@@ -211,7 +246,7 @@ export function Page({
           {children}
         </ScrollView>
         {footer && (
-          <SafeAreaView edges={["bottom"]} style={s.footer}>
+          <SafeAreaView edges={["bottom"]} style={[s.footer, { backgroundColor }]}>
             {footer}
           </SafeAreaView>
         )}

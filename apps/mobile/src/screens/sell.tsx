@@ -1,3 +1,4 @@
+import { Confirmation } from "../components/feedback";
 import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect } from "react";
 import { View, Pressable, Image } from "react-native";
@@ -330,15 +331,11 @@ export function Review() {
               ))}
             </Card>
           )}
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: confirmed }}
-            onPress={() => setConfirmed(!confirmed)}
-            style={[s.choice, confirmed && s.selected]}
-          >
-            <Text style={{ fontSize: 22, color: colors.green }}>{confirmed ? "☑" : "□"}</Text>
-            <Label style={{ flex: 1 }}>{a.t("sell.confirm")}</Label>
-          </Pressable>
+          <Confirmation
+            checked={confirmed}
+            onChange={() => setConfirmed(!confirmed)}
+            label={a.t("sell.confirm")}
+          />
           <Notice text="Submission follows the existing moderation rules. Voice and automatic photo identification are not enabled." />
         </>
       )}

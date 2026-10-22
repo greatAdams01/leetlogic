@@ -1,3 +1,4 @@
+import { Feedback, type FeedbackMessage } from "./components/feedback";
 import { LocaleProvider } from "./localization";
 import { ui, localizedError, unitLabel, dateLabel, localizedStatus } from "./lib/localization";
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
@@ -12,6 +13,7 @@ import {
   type MessageKey,
 } from "../../../packages/localization/src/customer-messages";
 import { type Route, openLanguageScreen, finishLanguageSelection } from "./lib/navigation";
+import { accountRoleKey, restoredAccount } from "./lib/onboarding";
 const Context = createContext<any>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [stack, setStack] = useState<Route[]>([{ name: "language" }]),
@@ -20,6 +22,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [ready, setReady] = useState(false),
     [role, setRole] = useState<"BUYER" | "SELLER">("BUYER"),
     [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
+  const feedbackId = useRef(0);
   const localeWrites = useRef<Promise<void>>(Promise.resolve());
   const route = stack[stack.length - 1]!;
   const go = useCallback(
@@ -45,7 +49,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const preferred = validLocale(user.preferredLocale);
             setLocale(preferred);
             await AsyncStorage.setItem("locale", preferred);
-            reset("home");
+            const restored = restoredAccount(
+              user,
+              await AsyncStorage.getItem(accountRoleKey(user.id)),
+            );
+            setRole(restored.role);
+            reset(restored.route);
           } catch {
             await clearSession();
           }
@@ -128,6 +137,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           role,
           setRole,
           signOut,
+          notify: (text: string) => setFeedback({ id: ++feedbackId.current, text }),
           t: (key: MessageKey) => overrides[key] || ui(locale, en[key] || "Update"),
           ui: (source: string, params?: Record<string, string | number>) =>
             ui(locale, source, params),
@@ -144,6 +154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }}
       >
         {children}
+        <Feedback message={feedback} dismiss={() => setFeedback(null)} />
       </Context.Provider>
     </LocaleProvider>
   );
@@ -166,6 +177,7 @@ export function useApp() {
     role: "BUYER" | "SELLER";
     setRole: (r: "BUYER" | "SELLER") => void;
     signOut: () => Promise<void>;
+    notify: (text: string) => void;
     t: (key: MessageKey) => string;
     ui: (source: string, params?: Record<string, string | number>) => string;
     error: (value: unknown) => string;

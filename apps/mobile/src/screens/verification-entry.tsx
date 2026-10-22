@@ -1,3 +1,5 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { accountRoleKey } from "../lib/onboarding";
 import React, { useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -269,9 +271,11 @@ export function Otp() {
         body: { phone: a.route.id, deviceId: await deviceId(), code },
       });
       await saveSession(result);
-      await a.loadUser();
+      const user = await a.loadUser();
+      await AsyncStorage.setItem(accountRoleKey(user.id), a.role);
       await a.changeLocale(a.locale);
       a.reset(a.role === "SELLER" ? "seller" : "home");
+      a.notify("Phone verified");
     } catch (e) {
       setError(a.error(e));
     } finally {

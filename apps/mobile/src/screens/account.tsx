@@ -12,7 +12,7 @@ export function Profile() {
     [error, setError] = useState("");
   return (
     <Page title="My account" footer={<Navigation />}>
-      <Text style={s.badge}>Phone verified</Text>
+      <Notice text="Phone verified" success />
       <Heading>
         {a.user?.profile?.fullName || a.user?.profile?.displayName || "Your account"}
       </Heading>

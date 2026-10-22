@@ -1,12 +1,15 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
-export const API_URL = (
-  process.env.EXPO_PUBLIC_API_URL ||
-  (Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000")
-).replace(/\/$/, "");
-if (!__DEV__ && !API_URL.startsWith("https://"))
-  throw new Error("Production API URL must use HTTPS.");
+import Constants from "expo-constants";
+import { resolveApiUrl } from "./api-url";
+export const API_URL = resolveApiUrl({
+  explicitUrl: process.env.EXPO_PUBLIC_API_URL,
+  hostUri: Constants.expoConfig?.hostUri,
+  platform: Platform.OS,
+  development: __DEV__,
+});
+if (__DEV__) console.info(`[LeetLogic API] ${API_URL}`);
 type Session = { accessToken: string; refreshToken: string };
 let session: Session | null = null;
 let refresh: Promise<void> | null = null;

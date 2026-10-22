@@ -42,7 +42,21 @@ pnpm --filter @leetlogic/mobile ios
 pnpm --filter @leetlogic/mobile android
 ```
 
-The iOS simulator uses `http://localhost:3000`; the standard Android emulator uses `http://10.0.2.2:3000`. For a physical device, copy `apps/mobile/.env.example` to `apps/mobile/.env` and set `EXPO_PUBLIC_API_URL` to the computer's reachable LAN address. Only the API origin belongs in an Expo public variable; provider keys remain on the server. Release builds require HTTPS. Console OTP is for local development only: read the actual code from the API terminal. No fixed test OTP or authentication bypass is included.
+For Expo Go on a physical phone, keep the phone and computer on the same Wi-Fi and start Metro in LAN mode:
+
+```sh
+pnpm --filter @leetlogic/mobile start --go --lan --clear --port 8082
+```
+
+Scan the QR code with Expo Go. The app automatically uses Metro's local network host for the API on port 3000 and prints `[LeetLogic API] http://<computer-address>:3000` in the Metro console. The backend must also be running in its own terminal (`pnpm dev`); Metro does not start it. Simulator loopback remains supported: iOS uses `localhost`, and Android uses `10.0.2.2`.
+
+If connection fails:
+
+1. Open `http://<computer-address>:3000/health/ready` in the phone's browser. Find the Mac's Wi-Fi address with `ipconfig getifaddr en0`. The response should say `ready`. If it fails on the Mac too, start the backend and PostgreSQL/Redis; if it works only on the Mac, check Wi-Fi isolation, firewall access, and Expo Go's Local Network permission in iOS Settings.
+2. Check the `[LeetLogic API]` console line. An old `EXPO_PUBLIC_API_URL` override takes priority over detection. Remove it or set it to the correct reachable API origin in `apps/mobile/.env`, then restart Metro with `--clear` and reload Expo Go.
+3. A Metro tunnel forwards the JavaScript bundle only, not the backend. Use LAN mode for console-OTP testing. With a separately deployed backend, explicitly configure its HTTPS origin through `EXPO_PUBLIC_API_URL`.
+
+To override detection, copy `apps/mobile/.env.example` to `apps/mobile/.env` and set `EXPO_PUBLIC_API_URL` to the desired API origin. Only the API origin belongs in an Expo public variable; provider keys remain on the server. Release builds require HTTPS. Console OTP is for local development only: read the actual code from the API terminal. No fixed test OTP or authentication bypass is included.
 
 SDK 57 uses the compatible Expo Go build installed by Expo CLI. See [Expo simulator setup](https://docs.expo.dev/workflow/ios-simulator/) and [version compatibility](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/). A device build will need the normal app signing and permission checks before distribution.
 

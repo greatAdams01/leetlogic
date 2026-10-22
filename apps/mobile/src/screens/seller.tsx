@@ -1,8 +1,12 @@
+import { Confirmation } from "../components/feedback";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { accountRoleKey } from "../lib/onboarding";
+import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useRef, useState } from "react";
-import { BackHandler, Image, Pressable } from "react-native";
+import { BackHandler, Image, Pressable, View } from "react-native";
 import { LocalizedText as Text } from "../localization";
 import { useApp } from "../state";
-import { Page, Heading, Label, Field, Button, Card, Notice, s } from "../components/ui";
+import { Page, Heading, Label, Field, Button, Card, Notice, colors, s } from "../components/ui";
 import { Select } from "../components/Select";
 import { api } from "../lib/api";
 import { changeState, farmTypes, localGovernments, nigeriaStates } from "../lib/locations";
@@ -45,6 +49,8 @@ export function Seller() {
     city: "",
     line1: "",
   });
+  const draftKey = `seller-onboarding-${a.user!.id}`;
+  const draftWrites = useRef(Promise.resolve());
   const savedFarm = useRef<FarmForm | null>(null);
   const [evidencePhotos, setEvidencePhotos] = useState<string[]>([]);
   const [verification, setVerification] = useState<Verification | null>(null);
@@ -72,6 +78,8 @@ export function Seller() {
   const initialize = async () => {
     setError("");
     try {
+      await AsyncStorage.setItem(accountRoleKey(a.user!.id), "SELLER");
+      let currentStatus = status;
       if (status === "APPROVED") {
         setReady(true);
         return;
@@ -95,6 +103,7 @@ export function Seller() {
         savedFarm.current = restoredForm;
         setVerification(result.verification);
         setStatus(result.verification.status);
+        currentStatus = result.verification.status;
         const latestNote = result.verification.evidence.filter((e) => e.note).at(-1)?.note || "";
         setNote(latestNote);
         setSavedNote(latestNote);
@@ -108,6 +117,29 @@ export function Seller() {
               ),
         );
       }
+      // Private form drafts are scoped to the authenticated account, never shared across users.
+      try {
+        const raw = await SecureStore.getItemAsync(draftKey);
+        const draft = raw ? JSON.parse(raw) : null;
+        if (
+          draft &&
+          editableVerification(currentStatus) &&
+          verificationSteps.includes(draft.step)
+        ) {
+          const validForm =
+            draft.form && Object.keys(form).every((key) => typeof draft.form[key] === "string");
+          if (validForm && ["details", "location"].includes(draft.step)) {
+            setForm(draft.form);
+            setStep(
+              draft.step === "location" && !farmDetailsValid(draft.form) ? "details" : draft.step,
+            );
+          } else if (a.user?.farmerProfile && draft.step === "document") {
+            setStep("document");
+          }
+        }
+      } catch {
+        // A missing or invalid local draft falls back to authoritative server progress.
+      }
       setReady(true);
     } catch (e) {
       if (mounted.current) setError(a.error(e));
@@ -120,6 +152,17 @@ export function Seller() {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!ready) return;
+    draftWrites.current = draftWrites.current
+      .catch(() => {})
+      .then(async () => {
+        if (editableVerification(status))
+          await SecureStore.setItemAsync(draftKey, JSON.stringify({ step, form }));
+        else await SecureStore.deleteItemAsync(draftKey);
+      });
+    void draftWrites.current.catch(() => {});
+  }, [ready, step, form, status, draftKey]);
   const move = (next: VerificationStep) => {
     setError("");
     setDeclaration(false);
@@ -221,6 +264,7 @@ export function Seller() {
                 await refresh();
                 setPhoto(null);
                 setReadable(false);
+                a.notify("Identity document uploaded privately.");
               }
               continueTo("evidence");
             })
@@ -265,6 +309,7 @@ export function Seller() {
               });
               // Reflect successful submission even if refreshing the account fails.
               setStatus("SUBMITTED");
+              a.notify("Application submitted");
               await a.loadUser();
             })
           }
@@ -277,7 +322,30 @@ export function Seller() {
       title={blocked ? "Seller profile" : titles[step]}
       back={back}
       loading={!ready && !error}
-      footer={action}
+      footer={
+        action && (
+          <>
+            {step === "document" && photo && (
+              <Confirmation
+                checked={readable}
+                disabled={busy}
+                onChange={() => setReadable((v) => !v)}
+                label="I can read the name and see all edges"
+              />
+            )}
+            {step === "review" && !blocked && (
+              <Confirmation
+                checked={declaration}
+                disabled={busy}
+                onChange={() => setDeclaration((v) => !v)}
+                label="I confirm that these details and identity documents are mine and accurate."
+              />
+            )}
+            {action}
+          </>
+        )
+      }
+      backgroundColor={colors.white}
     >
       {!ready ? (
         error && (
@@ -336,7 +404,7 @@ export function Seller() {
           {step === "details" && (
             <>
               <Heading>Tell us about your farm.</Heading>
-              <Card>
+              <View style={{ gap: 24 }}>
                 <Field
                   label="Farm / business name *"
                   value={form.farmName}
@@ -356,14 +424,14 @@ export function Seller() {
                   multiline
                   onChangeText={(v) => update("description", v)}
                 />
-              </Card>
+              </View>
             </>
           )}
           {step === "location" && (
             <>
               <Heading>Farm location</Heading>
               <Label>Where is your farm or pickup point?</Label>
-              <Card>
+              <View style={{ gap: 24 }}>
                 <Select
                   label="State *"
                   value={form.state}
@@ -389,7 +457,7 @@ export function Seller() {
                   maxLength={180}
                   onChangeText={(v) => update("line1", v)}
                 />
-              </Card>
+              </View>
             </>
           )}
           {step === "identity" && (
@@ -429,45 +497,55 @@ export function Seller() {
                   resizeMode="contain"
                 />
               )}
-              {document && !photo && <Notice text="Identity document uploaded privately." />}
-              <Button
-                title="Take identity photo"
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  void run(async () => {
-                    const chosen = await choosePhoto(true);
-                    if (chosen) {
-                      setPhoto(chosen);
-                      setReadable(false);
-                    }
-                  })
-                }
-              />
-              <Button
-                title={photo || document ? "Replace identity photo" : "Choose identity photo"}
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  void run(async () => {
-                    const chosen = await choosePhoto();
-                    if (chosen) {
-                      setPhoto(chosen);
-                      setReadable(false);
-                    }
-                  })
-                }
-              />
-              {photo && (
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: readable }}
-                  style={[s.choice, readable && s.selected]}
-                  onPress={() => setReadable((v) => !v)}
-                >
-                  <Label>I can read the name and see all edges</Label>
-                </Pressable>
+              {document && !photo && (
+                <Notice text="Identity document uploaded privately." success />
               )}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 20 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  style={{
+                    minHeight: 48,
+                    justifyContent: "center",
+                    paddingVertical: 12,
+                    opacity: busy ? 0.5 : 1,
+                  }}
+                  onPress={() =>
+                    void run(async () => {
+                      const chosen = await choosePhoto(true);
+                      if (chosen) {
+                        setPhoto(chosen);
+                        setReadable(false);
+                      }
+                    })
+                  }
+                >
+                  <Text style={s.link}>Take identity photo</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  style={{
+                    minHeight: 48,
+                    justifyContent: "center",
+                    paddingVertical: 12,
+                    opacity: busy ? 0.5 : 1,
+                  }}
+                  onPress={() =>
+                    void run(async () => {
+                      const chosen = await choosePhoto();
+                      if (chosen) {
+                        setPhoto(chosen);
+                        setReadable(false);
+                      }
+                    })
+                  }
+                >
+                  <Text style={s.link}>
+                    {photo || document ? "Replace identity photo" : "Choose identity photo"}
+                  </Text>
+                </Pressable>
+              </View>
               <Notice text="Your identity document stays private and is used only for verification." />
             </>
           )}
@@ -488,7 +566,7 @@ export function Seller() {
                 multiline
               />
               {verification?.evidence.some((e) => e.hasPhoto) && (
-                <Notice text="Farm evidence uploaded privately." />
+                <Notice text="Farm evidence uploaded privately." success />
               )}
               {evidencePhotos.map((uri) => (
                 <Image
@@ -544,23 +622,10 @@ export function Seller() {
                 <Text style={s.sectionTitle}>Farm / business evidence note</Text>
                 <Label>{savedNote}</Label>
                 {verification?.evidence.some((e) => e.hasPhoto) && (
-                  <Notice text="Farm evidence uploaded privately." />
+                  <Notice text="Farm evidence uploaded privately." success />
                 )}
                 <Button title="Edit farm evidence" secondary onPress={() => edit("evidence")} />
               </Card>
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: declaration }}
-                style={[s.choice, declaration && s.selected]}
-                onPress={() => setDeclaration((v) => !v)}
-              >
-                <Label>
-                  {declaration ? "☑" : "□"}{" "}
-                  {a.ui(
-                    "I confirm that these details and identity documents are mine and accurate.",
-                  )}
-                </Label>
-              </Pressable>
               <Notice text="After submission, your application is read-only while it is under review." />
             </>
           )}
