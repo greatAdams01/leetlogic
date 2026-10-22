@@ -14,6 +14,7 @@ import cors from "cors";
 import express, { type Express, type Request } from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
+import type { Logger } from "pino";
 import { logger } from "./lib/logger.js";
 import swaggerUi from "swagger-ui-express";
 import { authRouter } from "./routes/auth.js";
@@ -27,7 +28,7 @@ import { openapi } from "./openapi.js";
 import { prisma } from "@leetlogic/database";
 import { redis } from "./lib/redis.js";
 
-export function createApp(): Express {
+export function createApp(requestLogger: Logger = logger): Express {
   const app = express();
   app.disable("x-powered-by");
   app.use(helmet());
@@ -36,9 +37,12 @@ export function createApp(): Express {
   app.use(requestContext);
   app.use(
     pinoHttp({
-      logger,
+      logger: requestLogger,
+      wrapSerializers: false,
       genReqId: (req: Request) => req.requestId,
       serializers: {
+        // Error details have already been sanitized by the error handler.
+        err: (error) => error,
         req: (req) => ({
           requestId: req.id,
           method: req.method,
@@ -48,6 +52,22 @@ export function createApp(): Express {
       },
       customLogLevel: (_req, res, error) =>
         error || res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info",
+      customErrorMessage: (req, res) =>
+        `${req.method} ${String(req.url).split("?")[0]} → ${res.statusCode}`,
+      customErrorObject: (_req, res, _error, value) => ({
+        ...value,
+        err: (res as express.Response).locals?.requestError || {
+          type: "Error",
+          code: "REQUEST_FAILED",
+          message: "The request could not be completed.",
+        },
+      }),
+      customSuccessObject: (_req, res, value) => ({
+        ...value,
+        ...((res as express.Response).locals?.requestError
+          ? { err: (res as express.Response).locals.requestError }
+          : {}),
+      }),
       customSuccessMessage: (req, res) =>
         `${req.method} ${String(req.url).split("?")[0]} → ${res.statusCode}`,
     }),

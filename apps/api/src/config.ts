@@ -11,6 +11,7 @@ const encryptionKeySchema = z.string().refine((value) => {
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  LOG_FORMAT: z.enum(["pretty", "json"]).optional(),
   DELIVERY_ENABLED: z
     .enum(["true", "false"])
     .default("false")

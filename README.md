@@ -109,11 +109,28 @@ update that site's repository connection separately and verify a deployment.
 
 ## API logs
 
-Development logs display one readable line per event with timestamp, level, message,
-request ID, HTTP status and response time. Production emits structured JSON for log
-collection. Set `LOG_LEVEL=debug` for more detail. Request bodies, query strings and
-headers are omitted from request logs. Console OTP codes are printed only outside
-production; production requires a real SMS provider.
+Development request logs show timestamp, level, method, path, HTTP status, duration,
+and request ID on one summary line. Failures add indented `Cause`, `Type`, and `Fix`
+lines instead of a JSON blob with escaped stack traces. The original error category
+is retained; database and Redis outages return HTTP 503 with a named error code.
+Set `LOG_LEVEL=debug` to include source stack frames. Production always emits
+structured JSON; set `LOG_FORMAT=json` to use JSON in development too.
+
+Request bodies, query strings, headers, SQL query values and connection credentials
+are omitted from request logs. Console OTP codes are printed only outside production;
+production requires a real SMS provider.
+
+If translations or login fail, check the dependencies before restarting the API:
+
+```sh
+docker compose up -d postgres redis
+docker compose ps
+curl http://localhost:3000/health/ready
+```
+
+Docker Desktop must be running. A healthy API returns `{"status":"ready"}`.
+PostgreSQL and Redis use `restart: unless-stopped` so they recover after an
+unexpected exit; services explicitly stopped still need the command above.
 
 ## Delivery and language pilot
 
