@@ -1,4 +1,9 @@
 export const icons = {
+  phoneBack: require("../assets/figma/58d8f.svg"),
+  otpBack: require("../assets/figma/3b9d9.svg"),
+  nigeriaFlag: require("../assets/figma/b355f.svg"),
+  countryLock: require("../assets/figma/dc5bc.svg"),
+  phoneFormatInfo: require("../assets/figma/8e464.svg"),
   arrow: require("../assets/figma/f9ed5.svg"),
   back: require("../assets/figma/12417.svg"),
   backLight: require("../assets/figma/4a9b7.svg"),

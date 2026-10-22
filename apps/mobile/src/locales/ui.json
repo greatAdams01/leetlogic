@@ -294,11 +294,11 @@
     "Nọ́ńbà fóònù Nàìjíríà"
   ],
   [
-    "Use 08012345678, 8012345678, or +2348012345678.",
-    "Use 08012345678, 8012345678, or +2348012345678.",
-    "Yi amfani da 08012345678, 8012345678, ko +2348012345678.",
-    "Jiri 08012345678, 8012345678, ma ọ bụ +2348012345678.",
-    "Lo 08012345678, 8012345678, tàbí +2348012345678."
+    "Use 080****, 80****, or +23480****.",
+    "Use 080****, 80****, or +23480****.",
+    "Yi amfani da 080****, 80****, ko +23480****.",
+    "Jiri 080****, 80****, ma ọ bụ +23480****.",
+    "Lo 080****, 80****, tàbí +23480****."
   ],
   [
     "Sending…",
@@ -2714,5 +2714,68 @@
     "Shafin baya",
     "Slaịd gara aga",
     "Ojú ìwé tó ṣáájú"
+  ],
+  [
+    "Phone number",
+    "Phone number",
+    "Lambar waya",
+    "Nọmba ekwentị",
+    "Nọ́ńbà fóònù"
+  ],
+  [
+    "Nigeria country code +234",
+    "Nigeria country code +234",
+    "Lambar ƙasar Najeriya +234",
+    "Koodu obodo Naịjirịa +234",
+    "Kóòdù orílẹ̀ èdè Nàìjíríà +234"
+  ],
+  [
+    "Change role",
+    "Change role",
+    "Canja rawa",
+    "Gbanwee ọrụ",
+    "Yí ipa padà"
+  ],
+  [
+    "Use any of these formats: 080****, 80****, or +23480****.",
+    "Use any format: 080****, 80****, or +23480****.",
+    "Yi amfani da ɗaya daga cikin waɗannan: 080****, 80****, ko +23480****.",
+    "Jiri otu n’ime usoro ndị a: 080****, 80****, ma ọ bụ +23480****.",
+    "Lo èyíkéyìí nínú wọ̀nyí: 080****, 80****, tàbí +23480****."
+  ],
+  [
+    "By continuing, you agree to our",
+    "As you continue, you agree to our",
+    "Idan ka ci gaba, ka amince da",
+    "Site n’ịga n’ihu, ị kwenyere na",
+    "Nípa títẹ̀síwájú, o gbà láti tẹ̀lé"
+  ],
+  [
+    "Terms",
+    "Terms",
+    "Sharuɗɗa",
+    "Usoro",
+    "Àwọn òfin"
+  ],
+  [
+    "and",
+    "and",
+    "da",
+    "na",
+    "àti"
+  ],
+  [
+    "Privacy Policy",
+    "Privacy Policy",
+    "Manufar Sirri",
+    "Iwu Nzuzo",
+    "Ètò ìpamọ́"
+  ],
+  [
+    "This policy has not been published yet.",
+    "We never publish this policy yet.",
+    "Ba a wallafa wannan manufa tukuna ba.",
+    "Ebipụtabeghị iwu a.",
+    "A kò tíì tẹ ètò yìí jáde."
   ]
 ]

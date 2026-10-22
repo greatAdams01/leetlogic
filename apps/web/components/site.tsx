@@ -105,6 +105,9 @@ export function Footer() {
       </div>
       <div className="footer-legal">
         <p>© 2026 Leetlogic Global Enterprise. Registered under CAC BN No. 3575993</p>
+        <p>
+          <Link href="/terms">Terms</Link> · <Link href="/privacy">Privacy Policy</Link>
+        </p>
         <p>Designed & built in Ebonyi State, Nigeria</p>
       </div>
     </footer>

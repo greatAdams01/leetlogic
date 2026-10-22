@@ -28,7 +28,15 @@ export const colors = {
   white: "#fff",
   gold: "#e3a008",
 };
-export function Icon({ name, size = 22 }: { name: keyof typeof icons; size?: number }) {
+export function Icon({
+  name,
+  size = 22,
+  nativeSize,
+}: {
+  name: keyof typeof icons;
+  size?: number;
+  nativeSize?: { width: number; height: number };
+}) {
   const [xml, setXml] = React.useState<string | null>(null);
   React.useEffect(() => {
     let active = true;
@@ -43,6 +51,12 @@ export function Icon({ name, size = 22 }: { name: keyof typeof icons; size?: num
       active = false;
     };
   }, [name]);
+  if (nativeSize)
+    return (
+      <View style={{ ...nativeSize, alignItems: "center", justifyContent: "center" }}>
+        {xml && <SvgXml xml={xml} />}
+      </View>
+    );
   return xml ? (
     <SvgXml xml={xml} width={name === "wordmark" ? size * 5.068 : size} height={size} />
   ) : (
