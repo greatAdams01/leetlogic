@@ -19,7 +19,14 @@ export function deviceId() {
     const id = uuid();
     await SecureStore.setItemAsync("leetlogic-device", id);
     return id;
-  })());
+  })().catch(() => {
+    devicePromise = null;
+    throw new ApiError(
+      0,
+      "DEVICE_STORAGE_UNAVAILABLE",
+      "Cannot access secure storage on this device. Restart the app and try again.",
+    );
+  }));
 }
 export async function hydrateSession() {
   const saved = await SecureStore.getItemAsync("leetlogic-session");
@@ -41,12 +48,17 @@ export async function clearSession() {
   await SecureStore.deleteItemAsync("leetlogic-session");
 }
 export class ApiError extends Error {
+  requestId?: string;
+  retryAfterSeconds?: number;
   constructor(
     public status: number,
     public code: string,
     message: string,
+    details: { requestId?: string; retryAfterSeconds?: number } = {},
   ) {
     super(message);
+    this.requestId = details.requestId;
+    this.retryAfterSeconds = details.retryAfterSeconds;
   }
 }
 async function rotate() {
@@ -97,14 +109,38 @@ export async function api<T = any>(
     }
   } catch (e) {
     if (e instanceof ApiError) throw e;
-    throw new Error("Cannot reach LeetLogic. Check your connection and try again.");
+    const timeout = e instanceof Error && ["AbortError", "TimeoutError"].includes(e.name);
+    throw new ApiError(
+      0,
+      timeout ? "REQUEST_TIMEOUT" : "NETWORK_ERROR",
+      timeout
+        ? "The server took too long to respond. Please try again."
+        : "Cannot connect to the server. Check your connection and that the backend is running.",
+    );
   }
-  const data = response.status === 204 ? null : await response.json();
+  let data;
+  try {
+    data = response.status === 204 ? null : await response.json();
+  } catch {
+    throw new ApiError(
+      response.status,
+      "INVALID_SERVER_RESPONSE",
+      "The server returned an unreadable response. Contact support if this continues.",
+    );
+  }
   if (!response.ok)
     throw new ApiError(
       response.status,
       data?.error?.code || "REQUEST_FAILED",
       data?.error?.message || "Request failed. Please try again.",
+      {
+        requestId: data?.error?.requestId || response.headers.get("x-request-id") || undefined,
+        retryAfterSeconds:
+          data?.error?.retryAfterSeconds ??
+          (response.headers.get("retry-after")
+            ? Number(response.headers.get("retry-after"))
+            : undefined),
+      },
     );
   return data;
 }

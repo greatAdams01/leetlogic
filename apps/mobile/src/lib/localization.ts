@@ -21,23 +21,56 @@ export function ui(locale: Locale, source: string, params: Record<string, string
   return `${source.match(/^\s*/)?.[0] || ""}${result}${required ? " *" : ""}${source.match(/\s*$/)?.[0] || ""}`;
 }
 export function localizedError(locale: Locale, value: unknown): string {
-  const error = value as { code?: string; message?: string };
+  const error = value as {
+    code?: string;
+    message?: string;
+    requestId?: string;
+    retryAfterSeconds?: number;
+  };
   const message = typeof value === "string" ? value : error?.message || "";
-  if (catalogue[message]) return ui(locale, message);
   const code = error?.code || message;
+  if (
+    ["OTP_RESEND_TOO_SOON", "OTP_RATE_LIMITED", "RATE_LIMITED"].includes(code) &&
+    Number.isFinite(error.retryAfterSeconds) &&
+    error.retryAfterSeconds! > 0
+  )
+    return ui(
+      locale,
+      code === "OTP_RESEND_TOO_SOON"
+        ? "A code was already sent. Wait {seconds} seconds before resending."
+        : "Too many code requests. Try again in {seconds} seconds.",
+      {
+        seconds: Math.ceil(error.retryAfterSeconds!),
+      },
+    );
   const codes: Record<string, string> = {
-    INVALID_NIGERIAN_PHONE: "Enter a valid Nigerian phone number.",
+    INVALID_NIGERIAN_PHONE:
+      "This number is not recognized as a Nigerian mobile number. Check its prefix and digits.",
+    NETWORK_ERROR:
+      "Cannot connect to the server. Check your connection and that the backend is running.",
+    REQUEST_TIMEOUT: "The server took too long to respond. Please try again.",
+    INVALID_SERVER_RESPONSE:
+      "The server returned an unreadable response. Contact support if this continues.",
+    DEVICE_STORAGE_UNAVAILABLE:
+      "Cannot access secure storage on this device. Restart the app and try again.",
+    DATABASE_UNAVAILABLE:
+      "The account database is unavailable. Please try again when the service is restored.",
+    REDIS_UNAVAILABLE:
+      "The verification service is unavailable. Please try again when the service is restored.",
+    DEPENDENCY_UNAVAILABLE: "A required server service is unavailable. Please try again later.",
+    DATABASE_SCHEMA_MISMATCH: "The server database needs an update. Please contact support.",
+    INTERNAL_ERROR: "The server could not process this request. Please contact support.",
     AUTH_REQUIRED: "Please sign in again.",
     SESSION_EXPIRED: "Please sign in again.",
     SIGN_IN_REQUIRED: "Please sign in again.",
-    OTP_INVALID: "The code is invalid or expired. Request a new code.",
-    OTP_EXPIRED: "The code is invalid or expired. Request a new code.",
+    OTP_INVALID: "That verification code is incorrect. Check the code and try again.",
+    OTP_EXPIRED: "This verification code has expired. Request a new code.",
     INVALID_OTP: "The code is invalid or expired. Request a new code.",
     RATE_LIMITED: "Too many attempts. Please wait and try again.",
     OTP_RATE_LIMITED: "Too many attempts. Please wait and try again.",
-    OTP_RESEND_TOO_SOON: "Too many attempts. Please wait and try again.",
-    OTP_ATTEMPTS_EXCEEDED: "Too many attempts. Please wait and try again.",
-    OTP_DELIVERY_FAILED: "Request failed. Please try again.",
+    OTP_RESEND_TOO_SOON: "A code was already requested. Wait before resending.",
+    OTP_ATTEMPTS_EXCEEDED: "Too many incorrect codes. Request a new code.",
+    OTP_DELIVERY_FAILED: "The SMS provider could not send your code. Please try again later.",
     INVENTORY_UNAVAILABLE: "This produce is no longer available in that quantity.",
     OWN_LISTING: "You cannot buy your own produce.",
     VALIDATION_ERROR: "Check the required fields and try again.",
@@ -53,7 +86,13 @@ export function localizedError(locale: Locale, value: unknown): string {
     VERIFIED_FARMER_REQUIRED: "Complete farmer verification before submitting produce.",
     CANCELLATION_REQUIRES_STAFF: "Contact support to cancel a paid or dispatched order.",
   };
-  return ui(locale, codes[code] || "Request failed. Please try again.");
+  const description = ui(
+    locale,
+    codes[code] || (catalogue[message] ? message : "Request failed. Please try again."),
+  );
+  return error?.requestId
+    ? `${description}\n${ui(locale, "Reference: {requestId}", { requestId: error.requestId })}`
+    : description;
 }
 export function unitLabel(locale: Locale, code: string) {
   const names: Record<string, string> = {

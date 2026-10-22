@@ -14,6 +14,35 @@ import {
 } from "./localization";
 import { en } from "../../../../packages/localization/src/customer-messages";
 describe("complete mobile interface localization", () => {
+  it("distinguishes verification failures and preserves support references and cooldown details", () => {
+    const invalid = localizedError("en", { code: "OTP_INVALID" });
+    const expired = localizedError("en", { code: "OTP_EXPIRED" });
+    expect(invalid).toContain("incorrect");
+    expect(expired).toContain("expired");
+    expect(invalid).not.toBe(expired);
+    expect(localizedError("en", { code: "OTP_DELIVERY_FAILED" })).toContain("SMS provider");
+    expect(
+      localizedError("en", { code: "DATABASE_UNAVAILABLE", requestId: "support-ref" }),
+    ).toContain("account database");
+    expect(
+      localizedError("ig", { code: "DATABASE_UNAVAILABLE", requestId: "support-ref" }),
+    ).toContain("support-ref");
+    expect(localizedError("yo", { code: "OTP_RESEND_TOO_SOON", retryAfterSeconds: 23 })).toContain(
+      "23",
+    );
+    for (const locale of localeOrder) {
+      for (const code of [
+        "NETWORK_ERROR",
+        "REQUEST_TIMEOUT",
+        "INVALID_SERVER_RESPONSE",
+        "DEVICE_STORAGE_UNAVAILABLE",
+        "REDIS_UNAVAILABLE",
+      ])
+        expect(localizedError(locale, { code })).not.toBe(
+          ui(locale, "Request failed. Please try again."),
+        );
+    }
+  });
   it("has an explicit translation for every phrase in every language", () => {
     expect(new Set(rows.map((row) => row[0])).size).toBe(rows.length);
     for (const row of rows) {

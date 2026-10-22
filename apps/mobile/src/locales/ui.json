@@ -2777,5 +2777,159 @@
     "Ba a wallafa wannan manufa tukuna ba.",
     "Ebipụtabeghị iwu a.",
     "A kò tíì tẹ ètò yìí jáde."
+  ],
+  [
+    "Enter your phone number.",
+    "Enter your phone number.",
+    "Shigar da lambar wayarka.",
+    "Tinye nọmba ekwentị gị.",
+    "Tẹ nọ́ńbà fóònù rẹ sí i."
+  ],
+  [
+    "Enter all 11 digits of your phone number.",
+    "Enter all 11 digits of your number.",
+    "Shigar da duk lambobi 11 na lambar wayarka.",
+    "Tinye ọnụọgụ 11 niile nke nọmba ekwentị gị.",
+    "Tẹ gbogbo díjíìtì 11 nọ́ńbà fóònù rẹ sí i."
+  ],
+  [
+    "Enter 10 digits without the starting 0, or 11 digits with it.",
+    "Enter 10 digits without the first 0, or 11 digits with am.",
+    "Shigar da lambobi 10 ba tare da 0 na farko ba, ko lambobi 11 tare da shi.",
+    "Tinye ọnụọgụ 10 na-enweghị 0 mbụ, ma ọ bụ ọnụọgụ 11 tinyere ya.",
+    "Tẹ díjíìtì 10 láìsí 0 àkọ́kọ́, tàbí díjíìtì 11 pẹ̀lú rẹ̀."
+  ],
+  [
+    "Enter 10 digits, or 11 digits starting with 0. The country code is already selected.",
+    "Enter 10 digits, or 11 wey start with 0. Country code don select already.",
+    "Shigar da lambobi 10, ko lambobi 11 masu farawa da 0. An riga an zaɓi lambar ƙasa.",
+    "Tinye ọnụọgụ 10, ma ọ bụ ọnụọgụ 11 malitere na 0. A họrọlarị koodu obodo.",
+    "Tẹ díjíìtì 10, tàbí 11 tó bẹ̀rẹ̀ pẹ̀lú 0. A ti yan kóòdù orílẹ̀ èdè."
+  ],
+  [
+    "This number is not recognized as a Nigerian mobile number. Check its prefix and digits.",
+    "This number no be valid Naija mobile number. Check the first numbers and digits.",
+    "Ba a gane wannan a matsayin lambar wayar Najeriya ba. Duba farkonta da lambobinta.",
+    "A naghị amata nọmba a dị ka nọmba ekwentị Naịjirịa. Lelee mmalite ya na ọnụọgụ ya.",
+    "A kò dá nọ́ńbà yìí mọ̀ gẹ́gẹ́ bí nọ́ńbà alágbèéká Nàìjíríà. Ṣàyẹ̀wò ìbẹ̀rẹ̀ àti àwọn díjíìtì rẹ̀."
+  ],
+  [
+    "Too many code requests. Try again in {seconds} seconds.",
+    "You don request code too many times. Try again in {seconds} seconds.",
+    "An nemi lamba sau da yawa. Sake gwadawa bayan daƙiƙa {seconds}.",
+    "A rịọla koodu ọtụtụ ugboro. Nwaa ọzọ n’ime sekọnd {seconds}.",
+    "O ti béèrè kóòdù lọ́pọ̀ ìgbà. Tún gbìyànjú ní ìṣẹ́jú àáyá {seconds}."
+  ],
+  [
+    "Cannot connect to the server. Check your connection and that the backend is running.",
+    "We no fit connect to server. Check your connection and say backend dey run.",
+    "Ba a iya haɗawa da sabar ba. Duba haɗin intanet da aikin sabar.",
+    "Enweghị ike ijikọ na sava. Lelee njikọ gị ma hụ na sava na-arụ ọrụ.",
+    "Kò lè sopọ̀ mọ́ sáfà. Ṣàyẹ̀wò ìsopọ̀ rẹ àti pé sáfà ń ṣiṣẹ́."
+  ],
+  [
+    "The server took too long to respond. Please try again.",
+    "Server take too long to answer. Try again.",
+    "Sabar ta ɗauki lokaci mai tsawo kafin amsawa. Sake gwadawa.",
+    "Sava ewereela ogologo oge ịza. Nwaa ọzọ.",
+    "Sáfà pẹ́ jù láti dáhùn. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "The server returned an unreadable response. Contact support if this continues.",
+    "Server send response wey we no fit read. Contact support if e continue.",
+    "Sabar ta dawo da amsar da ba a iya karantawa ba. Tuntuɓi tallafi idan hakan ya ci gaba.",
+    "Sava weghachitere nzaghachi a na-apụghị ịgụ. Kpọtụrụ nkwado ma ọ bụrụ na ọ gara n’ihu.",
+    "Sáfà dá èsì tí a kò lè kà padà. Kàn sí ìrànlọ́wọ́ bí ó bá ń bá a lọ."
+  ],
+  [
+    "Cannot access secure storage on this device. Restart the app and try again.",
+    "We no fit open secure storage for this device. Restart app and try again.",
+    "Ba a iya shiga ma’ajiyar tsaro a wannan na’ura ba. Sake kunna manhajar ka gwada.",
+    "Enweghị ike ịbanye na nchekwa echedoro na ngwaọrụ a. Mepee ngwa ọzọ wee nwaa.",
+    "Kò lè wọ ibi ìpamọ́ ààbò lórí ẹ̀rọ yìí. Tún app bẹ̀rẹ̀ kí o sì gbìyànjú."
+  ],
+  [
+    "The account database is unavailable. Please try again when the service is restored.",
+    "Account database no dey available. Try again when service return.",
+    "Ma’ajiyar bayanan asusu ba ta aiki. Sake gwadawa idan an dawo da sabis.",
+    "Nchekwa data akaụntụ adịghị arụ ọrụ. Nwaa ọzọ mgbe ọrụ lọghachiri.",
+    "Ibi ìpamọ́ dátà àkọọ́lẹ̀ kò sí lárọ̀ọ́wọ́tó. Tún gbìyànjú nígbà tí iṣẹ́ bá padà."
+  ],
+  [
+    "The verification service is unavailable. Please try again when the service is restored.",
+    "Verification service no dey available. Try again when e return.",
+    "Sabis na tantancewa ba ya aiki. Sake gwadawa idan an dawo da shi.",
+    "Ọrụ nkwenye adịghị arụ ọrụ. Nwaa ọzọ mgbe ọrụ lọghachiri.",
+    "Iṣẹ́ ìmúdájú kò sí lárọ̀ọ́wọ́tó. Tún gbìyànjú nígbà tí iṣẹ́ bá padà."
+  ],
+  [
+    "A required server service is unavailable. Please try again later.",
+    "One service wey server need no dey available. Try again later.",
+    "Wani sabis da sabar ke buƙata ba ya aiki. Sake gwadawa daga baya.",
+    "Otu ọrụ sava chọrọ adịghị arụ ọrụ. Nwaa ọzọ ma e mesịa.",
+    "Iṣẹ́ kan tí sáfà nílò kò sí lárọ̀ọ́wọ́tó. Tún gbìyànjú lọ́jọ́ iwájú."
+  ],
+  [
+    "The server database needs an update. Please contact support.",
+    "Server database need update. Contact support.",
+    "Ma’ajiyar bayanan sabar tana buƙatar sabuntawa. Tuntuɓi tallafi.",
+    "Nchekwa data sava chọrọ mmelite. Kpọtụrụ nkwado.",
+    "Ibi ìpamọ́ dátà sáfà nílò ìmúdójúìwọ̀n. Kàn sí ìrànlọ́wọ́."
+  ],
+  [
+    "The server could not process this request. Please contact support.",
+    "Server no fit process this request. Contact support.",
+    "Sabar ba ta iya aiwatar da wannan buƙata ba. Tuntuɓi tallafi.",
+    "Sava enweghị ike ịhazi arịrịọ a. Kpọtụrụ nkwado.",
+    "Sáfà kò lè ṣe ìbéèrè yìí. Kàn sí ìrànlọ́wọ́."
+  ],
+  [
+    "That verification code is incorrect. Check the code and try again.",
+    "That verification code no correct. Check am and try again.",
+    "Lambar tantancewar ba daidai ba ce. Duba lambar ka sake gwadawa.",
+    "Koodu nkwenye ahụ ezighi ezi. Lelee koodu wee nwaa ọzọ.",
+    "Kóòdù ìmúdájú yẹn kò tọ́. Ṣàyẹ̀wò rẹ̀ kí o sì tún gbìyànjú."
+  ],
+  [
+    "This verification code has expired. Request a new code.",
+    "This verification code don expire. Request new code.",
+    "Wa’adin wannan lambar tantancewa ya ƙare. Nemi wata sabuwa.",
+    "Koodu nkwenye a agwụla. Rịọ koodu ọhụrụ.",
+    "Kóòdù ìmúdájú yìí ti parí. Béèrè tuntun."
+  ],
+  [
+    "A code was already requested. Wait before resending.",
+    "You don request code already. Wait before you resend.",
+    "An riga an nemi lamba. Jira kafin sake aikawa.",
+    "A rịọlarị koodu. Chere tupu iziga ọzọ.",
+    "A ti béèrè kóòdù tẹ́lẹ̀. Dúró kí o tó tún ránṣẹ́."
+  ],
+  [
+    "Too many incorrect codes. Request a new code.",
+    "Too many wrong codes. Request new code.",
+    "An shigar da lambobin da ba daidai ba da yawa. Nemi sabuwar lamba.",
+    "Koodu ezighi ezi dị ọtụtụ. Rịọ koodu ọhụrụ.",
+    "Àwọn kóòdù tí kò tọ́ pọ̀ jù. Béèrè kóòdù tuntun."
+  ],
+  [
+    "The SMS provider could not send your code. Please try again later.",
+    "SMS provider no fit send your code. Try again later.",
+    "Mai samar da SMS bai iya aika lambarka ba. Sake gwadawa daga baya.",
+    "Onye na-enye SMS enweghị ike iziga koodu gị. Nwaa ọzọ ma e mesịa.",
+    "Olùpèsè SMS kò lè fi kóòdù rẹ ránṣẹ́. Tún gbìyànjú lọ́jọ́ iwájú."
+  ],
+  [
+    "Reference: {requestId}",
+    "Reference: {requestId}",
+    "Lambar bincike: {requestId}",
+    "Ntụaka: {requestId}",
+    "Àmì ìtọ́kasí: {requestId}"
+  ],
+  [
+    "A code was already sent. Wait {seconds} seconds before resending.",
+    "Code don send already. Wait {seconds} seconds before you resend.",
+    "An riga an aika lamba. Jira daƙiƙa {seconds} kafin sake aikawa.",
+    "Ezigalarị koodu. Chere sekọnd {seconds} tupu iziga ọzọ.",
+    "A ti fi kóòdù ránṣẹ́ tẹ́lẹ̀. Dúró fún ìṣẹ́jú àáyá {seconds} kí o tó tún ránṣẹ́."
   ]
 ]

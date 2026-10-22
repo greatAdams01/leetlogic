@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   AppState,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -15,7 +16,13 @@ import { LocalizedText as Text } from "../localization";
 import { useApp } from "../state";
 import { Icon, Notice, colors } from "../components/ui";
 import { api, API_URL, deviceId, saveSession } from "../lib/api";
-import { maskedPhone, otpDigits, resendSeconds } from "../lib/auth-input";
+import {
+  maskedPhone,
+  otpDigits,
+  resendSeconds,
+  phoneDigits,
+  phoneInputError,
+} from "../lib/auth-input";
 import { normalizeNigerianPhone } from "../../../../packages/contracts/src/phone";
 
 function VerificationLayout({
@@ -84,7 +91,7 @@ function ContinueButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={a.ui(title)}
-      accessibilityState={{ disabled: !!disabled || busy }}
+      accessibilityState={{ disabled: !!disabled || busy, busy }}
       disabled={disabled || busy}
       onPress={onPress}
       style={({ pressed }) => [
@@ -93,6 +100,7 @@ function ContinueButton({
         pressed && { opacity: 0.85 },
       ]}
     >
+      {busy && <ActivityIndicator color={colors.green} style={{ marginRight: 10 }} />}
       <Text style={[v.continueText, (disabled || busy) && { color: "#9a968d", fontSize: 17 }]}>
         {title}
       </Text>
@@ -128,6 +136,11 @@ export function Phone() {
   };
   const submit = async () => {
     if (submitting.current) return;
+    const validationError = phoneInputError(phone);
+    if (validationError) {
+      setError(a.ui(validationError));
+      return;
+    }
     submitting.current = true;
     setBusy(true);
     setError("");
@@ -172,9 +185,12 @@ export function Phone() {
               placeholder="080****"
               placeholderTextColor="#96948d"
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(value) => {
+                setPhone(phoneDigits(value));
+                setError("");
+              }}
               editable={!busy}
-              maxLength={20}
+              maxLength={11}
               autoCorrect={false}
               selectionColor={colors.green}
               style={v.phoneInput}
@@ -186,7 +202,7 @@ export function Phone() {
             <Icon name="phoneFormatInfo" nativeSize={{ width: 20, height: 20 }} />
           </View>
           <Text style={v.formatText}>
-            Use any of these formats: 080****, 80****, or +23480****.
+            Enter 10 digits, or 11 digits starting with 0. The country code is already selected.
           </Text>
         </View>
         <View style={v.consent}>
@@ -226,6 +242,7 @@ export function Otp() {
   const [focused, setFocused] = useState(false);
   const [seconds, setSeconds] = useState(60);
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
   const input = useRef<TextInput>(null);
   const deadline = useRef(Date.now() + 60_000);
@@ -266,6 +283,7 @@ export function Otp() {
     if (submitting.current || seconds > 0) return;
     submitting.current = true;
     setBusy(true);
+    setResending(true);
     setError("");
     try {
       await api("/auth/otp/request", {
@@ -280,6 +298,7 @@ export function Otp() {
     } finally {
       submitting.current = false;
       setBusy(false);
+      setResending(false);
     }
   };
   return (
@@ -355,7 +374,7 @@ export function Otp() {
         </View>
         <SafeAreaView edges={["bottom"]} style={v.otpFooter}>
           <ContinueButton
-            verifying
+            verifying={!resending}
             busy={busy}
             disabled={code.length !== 6}
             onPress={() => void verify()}

@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { maskedPhone, otpDigits, resendSeconds } from "./auth-input";
+import { maskedPhone, otpDigits, resendSeconds, phoneDigits, phoneInputError } from "./auth-input";
 import { normalizeNigerianPhone } from "../../../../packages/contracts/src/phone";
 describe("phone verification input", () => {
+  it("caps entry at eleven digits and rejects incomplete numbers before requesting a code", () => {
+    expect(phoneDigits("08012345678999")).toBe("08012345678");
+    expect(phoneDigits("080 123-45678")).toBe("08012345678");
+    expect(phoneDigits("abc****")).toBe("");
+    expect(phoneInputError("")).toBe("Enter your phone number.");
+    expect(phoneInputError("080123")).toBe("Enter all 11 digits of your phone number.");
+    expect(phoneInputError("23480123456")).toBe(
+      "Enter 10 digits without the starting 0, or 11 digits with it.",
+    );
+    expect(phoneInputError("08012345678")).toBeUndefined();
+    expect(phoneInputError("8012345678")).toBeUndefined();
+  });
   it("retains the three supported Nigerian formats with a fixed country badge", () => {
     for (const phone of ["08012345678", "8012345678", "+2348012345678"])
       expect(normalizeNigerianPhone(phone)).toBe("+2348012345678");
