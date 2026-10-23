@@ -1,3 +1,4 @@
+import { identityOpenApiPaths } from "./identity-openapi.js";
 import { marketplaceOpenApiPaths } from "./marketplace-openapi.js";
 import { deliveryOpenApiPaths } from "./delivery-openapi.js";
 const text = (minLength: number, maxLength?: number) => ({ type: "string", minLength, ...(maxLength ? { maxLength } : {}) });
@@ -18,6 +19,7 @@ export const openapi = {
   servers: [{ url: "/v1" }],
   components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } }, schemas: { Error: { type: "object", properties: { error: { type: "object", required: ["code", "message", "requestId"], properties: { code: { type: "string" }, message: { type: "string" }, fieldErrors: { type: "object" }, requestId: { type: "string", format: "uuid" }, retryAfterSeconds: { type: "integer" } } } } } } },
   paths: {
+    ...identityOpenApiPaths,
     ...deliveryOpenApiPaths,
     ...marketplaceOpenApiPaths,
     "/auth/otp/request": { post: { summary: "Request customer OTP", requestBody: body(otp), responses: { "202": { description: "Accepted" }, "422": { description: "Invalid request" } } } },

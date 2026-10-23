@@ -2938,5 +2938,117 @@
     "Rufe sanarwa",
     "Mechie ọkwa",
     "Pa ìfitónilétí dé"
+  ],
+  [
+    "Verify your identity",
+    "Verify who you be",
+    "Tabbatar da shaidarka",
+    "Kwenye njirimara gị",
+    "Jẹ́rìí ẹni tí o jẹ́"
+  ],
+  [
+    "Dojah will check your ID and selfie. Return to LeetLogic when you finish.",
+    "Dojah go check your ID and selfie. Come back LeetLogic when you finish.",
+    "Dojah zai duba shaidarka da hoton fuskarka. Koma LeetLogic idan ka gama.",
+    "Dojah ga-enyocha ID gị na foto ihu gị. Laghachi na LeetLogic mgbe ị mechara.",
+    "Dojah yóò ṣàyẹ̀wò ID àti àwòrán ojú rẹ. Padà sí LeetLogic nígbà tí o bá parí."
+  ],
+  [
+    "Test verification only. This does not verify a real identity.",
+    "Na test verification only. E no verify real person.",
+    "Gwajin tabbatarwa kawai. Wannan ba ya tabbatar da ainihin shaida.",
+    "Nke a bụ naanị nnwale. Ọ naghị ekwenye ezigbo njirimara.",
+    "Ìdánwò ìjẹ́rìísí nìkan. Èyí kò jẹ́rìí ẹni gidi."
+  ],
+  [
+    "Identity verified. You can continue to farm evidence.",
+    "Your identity don verify. You fit continue to farm evidence.",
+    "An tabbatar da shaidarka. Za ka iya ci gaba zuwa hujjar gona.",
+    "Ekwenyela njirimara gị. Ị nwere ike ịga n’ihu na ihe akaebe ugbo.",
+    "A ti jẹ́rìí ẹni tí o jẹ́. O lè tẹ̀síwájú sí ẹ̀rí oko."
+  ],
+  [
+    "Identity verification is not available yet. Please try again later.",
+    "Identity verification never ready. Abeg try again later.",
+    "Tabbatar da shaida bai samu ba tukuna. A sake gwadawa daga baya.",
+    "Nyocha njirimara adịbeghị ugbu a. Biko nwaa ọzọ ma emechaa.",
+    "Ìjẹ́rìísí ẹni kò tíì wà. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan sí i láìpẹ́."
+  ],
+  [
+    "Your identity check is in progress. Finish with Dojah, then check your result.",
+    "Your identity check dey go on. Finish for Dojah, then check your result.",
+    "Ana duba shaidarka. Kammala a Dojah, sannan duba sakamakonka.",
+    "A na-enyocha njirimara gị. Mechaa na Dojah, wee lelee nsonaazụ gị.",
+    "Àyẹ̀wò rẹ ń lọ lọ́wọ́. Parí pẹ̀lú Dojah, lẹ́yìn náà wo àbájáde rẹ."
+  ],
+  [
+    "Your identity check needs another attempt. Check your details and try again.",
+    "You need try identity check again. Check your details and try again.",
+    "Kana bukatar sake gwada tabbatar da shaida. Duba bayananka ka sake gwadawa.",
+    "Ị kwesịrị ịnwale nyocha njirimara ọzọ. Lelee nkọwa gị ma nwaa ọzọ.",
+    "O ní láti tún àyẹ̀wò náà ṣe. Ṣàyẹ̀wò àlàyé rẹ kí o sì tún gbìyànjú."
+  ],
+  [
+    "I consent to Dojah checking my identity and selfie for seller verification.",
+    "I agree make Dojah check my identity and selfie to verify me as seller.",
+    "Na amince Dojah ya duba shaidata da hoton fuskata don tabbatar da ni a matsayin mai sayarwa.",
+    "Ekwenyere m ka Dojah nyochaa njirimara m na foto ihu m iji kwado m dị ka onye na-ere ahịa.",
+    "Mo gbà kí Dojah ṣàyẹ̀wò ẹni tí mo jẹ́ àti àwòrán ojú mi fún ìjẹ́rìísí olùtajà."
+  ],
+  [
+    "Verify with Dojah",
+    "Verify with Dojah",
+    "Tabbatar da shaida da Dojah",
+    "Kwenye site na Dojah",
+    "Ṣe ìjẹ́rìísí pẹ̀lú Dojah"
+  ],
+  [
+    "Check verification result",
+    "Check verification result",
+    "Duba sakamakon tabbatarwa",
+    "Lelee nsonaazụ nkwenye",
+    "Wo àbájáde ìjẹ́rìísí"
+  ],
+  [
+    "Complete identity verification with Dojah before submitting.",
+    "Finish identity verification with Dojah before you submit.",
+    "Kammala tabbatar da shaida da Dojah kafin aikawa.",
+    "Mechaa nkwenye njirimara na Dojah tupu ị nyefee.",
+    "Parí ìjẹ́rìísí rẹ pẹ̀lú Dojah kí o tó fi ránṣẹ́."
+  ],
+  [
+    "The identity provider could not be reached. Please try again later.",
+    "We no fit reach identity provider. Abeg try again later.",
+    "Ba a iya samun mai tabbatar da shaida ba. A sake gwadawa daga baya.",
+    "Enweghị ike iru onye na-enyocha njirimara. Biko nwaa ọzọ ma emechaa.",
+    "A kò lè dé ọ̀dọ̀ olùpèsè ìjẹ́rìísí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "The identity provider could not complete this check. Please try again later.",
+    "Identity provider no fit finish this check. Abeg try again later.",
+    "Mai tabbatar da shaida bai iya kammala wannan dubawa ba. A sake gwadawa daga baya.",
+    "Onye na-enyocha njirimara enweghị ike imecha nyocha a. Biko nwaa ọzọ ma emechaa.",
+    "Olùpèsè ìjẹ́rìísí kò lè parí àyẹ̀wò yìí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "The identity provider returned an unexpected result. Please contact support.",
+    "Identity provider return result we no expect. Abeg contact support.",
+    "Mai tabbatar da shaida ya dawo da sakamakon da ba a zata ba. Tuntuɓi tallafi.",
+    "Onye na-enyocha njirimara weghachiri nsonaazụ a na-atụghị anya ya. Biko kpọtụrụ nkwado.",
+    "Olùpèsè ìjẹ́rìísí dá àbájáde àìròtẹ́lẹ̀ padà. Jọ̀wọ́ kan ìrànlọ́wọ́."
+  ],
+  [
+    "Start identity verification first.",
+    "Start identity verification first.",
+    "Fara tabbatar da shaida tukuna.",
+    "Buru ụzọ malite nkwenye njirimara.",
+    "Bẹ̀rẹ̀ ìjẹ́rìísí ẹni kọ́kọ́."
+  ],
+  [
+    "Identity session belongs to another environment.",
+    "This identity session belong to another test or live setup.",
+    "Zaman tabbatar da shaida na wani yanayi ne.",
+    "Oge nkwenye njirimara a bụ nke gburugburu ọzọ.",
+    "Àkókò ìjẹ́rìísí yìí jẹ́ ti àyíká mìíràn."
   ]
 ]

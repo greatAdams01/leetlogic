@@ -1,3 +1,4 @@
+import { identityRouter, dojahWebhookRouter } from "./routes/identity.js";
 import { marketplaceRouter } from "./routes/marketplace.js";
 import { producePhotosRouter, staffProducePhotosRouter } from "./routes/produce-photos.js";
 import {
@@ -33,6 +34,7 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(cors({ origin: false }));
+  app.use("/v1/webhooks/dojah", express.raw({ type: "application/json", limit: "1mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(requestContext);
   app.use(
@@ -92,6 +94,8 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.use("/v1/marketplace", marketplaceRouter);
   app.use("/v1/auth", authRouter);
   app.use("/v1/me", meRouter);
+  app.use("/v1/webhooks/dojah", dojahWebhookRouter);
+  app.use("/v1/seller/verification/identity", identityRouter);
   app.use("/v1/seller/verification", verificationRouter);
   app.use("/v1/admin/auth", adminAuthRouter);
   app.use("/v1/admin", adminRouter);

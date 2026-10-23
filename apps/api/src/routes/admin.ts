@@ -1,3 +1,4 @@
+import { identityPassed, latestIdentity, publicIdentity } from "../services/identity.js";
 import { z } from "zod";
 import { issueAdminLink } from "../services/admin-email.js";
 import { Router } from "express";
@@ -33,11 +34,9 @@ adminRouter.post(
       after: { email: body.email, roleCode: body.roleCode },
     });
     await issueAdminLink(admin.id, body.email, "SETUP");
-    res
-      .status(201)
-      .json({
-        admin: { id: admin.id, email: admin.email, fullName: admin.fullName, status: admin.status },
-      });
+    res.status(201).json({
+      admin: { id: admin.id, email: admin.email, fullName: admin.fullName, status: admin.status },
+    });
   },
 );
 adminRouter.get("/verifications", requirePermission("verification.read"), async (req, res) => {
@@ -103,6 +102,7 @@ adminRouter.get("/verifications/:id", requirePermission("verification.read"), as
     },
   });
   if (!item) throw new AppError(404, "VERIFICATION_NOT_FOUND", "Verification case was not found");
+  const identity = await latestIdentity(item.id);
   const storage = new LocalPrivateObjectStorage();
   const documents = await Promise.all(
     item.documents.map(async (document) => ({
@@ -119,14 +119,20 @@ adminRouter.get("/verifications/:id", requirePermission("verification.read"), as
   res.json({
     verification: {
       ...item,
+      identity: publicIdentity(identity),
+      identityPassed: identityPassed(identity),
       documents,
-      evidence: await Promise.all(item.evidence.map(async (evidence) => ({
-        id: evidence.id,
-        verificationCaseId: evidence.verificationCaseId,
-        note: evidence.note,
-        createdAt: evidence.createdAt,
-        readUrl: evidence.encryptedObjectKey ? await storage.createReadUrl(evidence.id, 300) : null,
-      }))),
+      evidence: await Promise.all(
+        item.evidence.map(async (evidence) => ({
+          id: evidence.id,
+          verificationCaseId: evidence.verificationCaseId,
+          note: evidence.note,
+          createdAt: evidence.createdAt,
+          readUrl: evidence.encryptedObjectKey
+            ? await storage.createReadUrl(evidence.id, 300)
+            : null,
+        })),
+      ),
     },
   });
 });
@@ -137,6 +143,16 @@ async function decide(req: any, res: any, decision: "APPROVED" | "REJECTED") {
     const item = await tx.verificationCase.findUnique({ where: { id: caseId } });
     if (!item || !["SUBMITTED", "UNDER_REVIEW"].includes(item.status))
       throw new AppError(409, "VERIFICATION_NOT_REVIEWABLE", "Verification cannot be decided");
+    if (
+      decision === "APPROVED" &&
+      item.identityRequired &&
+      !identityPassed(await latestIdentity(item.id, tx))
+    )
+      throw new AppError(
+        422,
+        "IDENTITY_REQUIRED",
+        "Complete identity verification with Dojah before approving this farm.",
+      );
     const changed = await tx.verificationCase.updateMany({
       where: { id: caseId, status: item.status },
       data: { status: decision, decidedAt: new Date() },

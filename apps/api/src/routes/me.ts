@@ -1,3 +1,4 @@
+import { getConfig } from "../config.js";
 import { z } from "zod";
 import { Router } from "express";
 import { sellerProfileSchema, updateLocaleSchema, updateMeSchema } from "@leetlogic/contracts";
@@ -105,7 +106,13 @@ meRouter.post("/seller-profile", async (req, res) => {
       (await tx.verificationCase.findFirst({
         where: { farmerProfileId: farmer.id, status: { in: ["DRAFT", "RESUBMISSION_REQUIRED"] } },
         orderBy: { createdAt: "desc" },
-      })) ?? (await tx.verificationCase.create({ data: { farmerProfileId: farmer.id } }));
+      })) ??
+      (await tx.verificationCase.create({
+        data: {
+          farmerProfileId: farmer.id,
+          identityRequired: getConfig().IDENTITY_PROVIDER === "dojah",
+        },
+      }));
     return { farmer, verification };
   });
   res.status(201).json(result);

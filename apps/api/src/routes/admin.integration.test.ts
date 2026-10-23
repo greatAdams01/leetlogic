@@ -249,6 +249,17 @@ integration("admin PostgreSQL and Redis workflows", () => {
     const verification = await prisma.verificationCase.create({
       data: { farmerProfileId: farmerId, status: "DRAFT" },
     });
+    // Registry checks are now a separate prerequisite, even when testing legacy private uploads.
+    await prisma.identityCheck.create({
+      data: {
+        verificationCaseId: verification.id,
+        mode: "sandbox",
+        widgetId: "admin-integration-fixture",
+        status: "VERIFIED",
+        consentVersion: "dojah-identity-v1",
+        expiresAt: new Date(Date.now() + 86400000),
+      },
+    });
     const farmAddress = await prisma.address.findFirstOrThrow({ where: { userId: sellerId } });
     await prisma.farmerProfile.update({
       where: { id: farmerId },
@@ -329,17 +340,14 @@ integration("admin PostgreSQL and Redis workflows", () => {
     ).toBe(409);
     expect(
       (
-        await request(app)
-          .post("/v1/me/seller-profile")
-          .set(customerAuth)
-          .send({
-            farmName: "Changed farm",
-            farmType: "Crop farming",
-            state: "Lagos",
-            lga: "Ikeja",
-            city: "Lagos",
-            line1: "Changed farm street",
-          })
+        await request(app).post("/v1/me/seller-profile").set(customerAuth).send({
+          farmName: "Changed farm",
+          farmType: "Crop farming",
+          state: "Lagos",
+          lga: "Ikeja",
+          city: "Lagos",
+          line1: "Changed farm street",
+        })
       ).status,
     ).toBe(409);
 

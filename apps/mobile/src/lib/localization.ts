@@ -44,6 +44,16 @@ export function localizedError(locale: Locale, value: unknown): string {
       },
     );
   const codes: Record<string, string> = {
+    IDENTITY_UNAVAILABLE: "Identity verification is not available yet. Please try again later.",
+    IDENTITY_PROVIDER_UNAVAILABLE:
+      "The identity provider could not complete this check. Please try again later.",
+    IDENTITY_INVALID_RESPONSE:
+      "The identity provider returned an unexpected result. Please contact support.",
+    IDENTITY_REFERENCE_MISMATCH:
+      "The identity provider returned an unexpected result. Please contact support.",
+    IDENTITY_REQUIRED: "Complete identity verification with Dojah before submitting.",
+    IDENTITY_NOT_STARTED: "Start identity verification first.",
+    IDENTITY_ENVIRONMENT_MISMATCH: "Identity session belongs to another environment.",
     INVALID_NIGERIAN_PHONE:
       "This number is not recognized as a Nigerian mobile number. Check its prefix and digits.",
     NETWORK_ERROR:

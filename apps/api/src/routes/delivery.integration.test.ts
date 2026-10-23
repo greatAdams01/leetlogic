@@ -281,40 +281,56 @@ suite("delivery and language database workflows", () => {
     ).toBe(409);
   });
   it("does not repeat an uncertain booking, including after a worker restart", async () => {
-    await prisma.tradeOrder.update({
-      where: { id: orderId },
-      data: { status: "FUNDED", heldMinor: 10000n },
-    });
-    const book = vi
-      .spyOn(shippingProvider, "book")
-      .mockRejectedValue(new Error("provider timeout"));
-    expect(
-      (await request(app).post(`/v1/orders/${orderId}/delivery/book`).set(customer()).send({}))
-        .status,
-    ).toBe(202);
-    await runDeliveryJobs();
-    await runDeliveryJobs();
-    expect(book).toHaveBeenCalledTimes(1);
-    const refund = await request(app).post(`/v1/admin/orders/${orderId}/escrow`).set(admin()).send({
-      kind: "REFUND",
-      amountMinor: "10000",
-      reason: "Attempt while delivery remains uncertain",
-      mutationKey: randomUUID(),
-    });
-    expect(refund.status).toBe(409);
-    expect(refund.body.error.code).toBe("DELIVERY_ACTIVE");
-    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } })).status).toBe(
-      "BOOKING_UNCERTAIN",
-    );
-    await request(app).post(`/v1/orders/${orderId}/delivery/book`).set(customer()).send({});
-    await runDeliveryJobs();
-    expect(book).toHaveBeenCalledTimes(1);
-    await prisma.delivery.update({
-      where: { id: deliveryId },
-      data: { status: "BOOKING", leaseUntil: new Date(0) },
-    });
-    await runDeliveryJobs();
-    expect(book).toHaveBeenCalledTimes(1);
+    // The schema can contain earlier runs' shipments. Worker-wide reconciliation
+    // must never contact the real carrier while this booking fixture runs.
+    const backgroundTrack = vi
+      .spyOn(shippingProvider, "track")
+      .mockRejectedValue(new Error("Fixture tracking unavailable"));
+    const backgroundCancel = vi
+      .spyOn(shippingProvider, "cancel")
+      .mockRejectedValue(new Error("Fixture cancellation unavailable"));
+    try {
+      await prisma.tradeOrder.update({
+        where: { id: orderId },
+        data: { status: "FUNDED", heldMinor: 10000n },
+      });
+      const book = vi
+        .spyOn(shippingProvider, "book")
+        .mockRejectedValue(new Error("provider timeout"));
+      expect(
+        (await request(app).post(`/v1/orders/${orderId}/delivery/book`).set(customer()).send({}))
+          .status,
+      ).toBe(202);
+      await runDeliveryJobs();
+      await runDeliveryJobs();
+      expect(book).toHaveBeenCalledTimes(1);
+      const refund = await request(app)
+        .post(`/v1/admin/orders/${orderId}/escrow`)
+        .set(admin())
+        .send({
+          kind: "REFUND",
+          amountMinor: "10000",
+          reason: "Attempt while delivery remains uncertain",
+          mutationKey: randomUUID(),
+        });
+      expect(refund.status).toBe(409);
+      expect(refund.body.error.code).toBe("DELIVERY_ACTIVE");
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } })).status).toBe(
+        "BOOKING_UNCERTAIN",
+      );
+      await request(app).post(`/v1/orders/${orderId}/delivery/book`).set(customer()).send({});
+      await runDeliveryJobs();
+      expect(book).toHaveBeenCalledTimes(1);
+      await prisma.delivery.update({
+        where: { id: deliveryId },
+        data: { status: "BOOKING", leaseUntil: new Date(0) },
+      });
+      await runDeliveryJobs();
+      expect(book).toHaveBeenCalledTimes(1);
+    } finally {
+      backgroundTrack.mockRestore();
+      backgroundCancel.mockRestore();
+    }
   });
   it("uses authenticated tracking after webhooks; carrier delivery does not confirm recipient or release escrow", async () => {
     const track = vi.spyOn(shippingProvider, "track").mockResolvedValue({

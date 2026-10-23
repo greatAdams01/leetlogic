@@ -31,6 +31,13 @@ export default function PrivacyPage() {
         provider may collect information directly under its own notice when live payments are
         enabled.
       </p>
+      <p>
+        When Dojah verification is enabled, Dojah collects the identity details, ID images and
+        selfie needed for the selected verification flow, with your consent. LeetLogic receives the
+        result to assess your seller application. The integration stores the provider reference,
+        result, consent version and timestamps, rather than copying the full identity record or
+        biometric images into LeetLogic. Farm evidence remains a separate part of your application.
+      </p>
       <h2>3. Why information is used</h2>
       <p>
         Information is used to verify accounts, review seller applications, publish listings, manage
@@ -53,10 +60,10 @@ export default function PrivacyPage() {
         Hosting, storage, messaging, delivery, translation and payment providers may process the
         limited information needed for the features they support, only when those integrations are
         enabled. Intended services include Africa’s Talking for SMS, Bachs for payments, Shipbubble
-        for eligible deliveries, Azure Translator for text translation and Cloudinary for product
-        images. Creating an account with a provider does not mean data is already being sent to it.
-        The final provider list, processing locations and any international-transfer safeguards must
-        be confirmed before production.
+        for eligible deliveries, Dojah for identity checks, Azure Translator for text translation
+        and Cloudinary for product images. Creating an account with a provider does not mean data is
+        already being sent to it. The final provider list, processing locations and any
+        international-transfer safeguards must be confirmed before production.
       </p>
       <p>
         Text submitted for an enabled translation can be processed by the translation provider and

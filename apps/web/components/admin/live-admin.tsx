@@ -957,6 +957,20 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   )}
                 </pre>
               )}
+              {resource === "verification" && selected.identityRequired && (
+                <section aria-label="Identity verification">
+                  <h3>Dojah identity verification</h3>
+                  <p>
+                    {selected.identity
+                      ? `${selected.identity.status} · ${selected.identity.mode}`
+                      : "Not started"}
+                  </p>
+                  <p>Identity checks are separate from approval of the farm and its evidence.</p>
+                  {selected.identity?.mode === "sandbox" && (
+                    <p>Sandbox result: this is not a real identity check.</p>
+                  )}
+                </section>
+              )}
               {selected.documents?.map((document: Row) => (
                 <p key={document.id}>
                   <a href={document.readUrl} target="_blank" rel="noreferrer">
@@ -991,6 +1005,11 @@ function Workspace({ route, title }: { route: string; title: string }) {
                       {["approve", "reject"].map((decision) => (
                         <button
                           key={decision}
+                          disabled={
+                            decision === "approve" &&
+                            selected.identityRequired &&
+                            !selected.identityPassed
+                          }
                           onClick={() =>
                             open(
                               `${decision === "approve" ? "Approve" : "Reject"} verification`,

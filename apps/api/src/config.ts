@@ -40,6 +40,24 @@ const schema = z.object({
   AZURE_TRANSLATOR_KEY: z.string().optional(),
   AZURE_TRANSLATOR_REGION: z.string().optional(),
   TRANSLATION_MONTHLY_CAP: z.coerce.number().int().positive().max(2000000).default(1900000),
+  IDENTITY_PROVIDER: z.enum(["dojah", "manual"]).default("dojah"),
+  DOJAH_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  DOJAH_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
+  DOJAH_LIVE_CHECKS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  DOJAH_FLOW_POLICY_CONFIRMED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  DOJAH_APP_ID: z.string().optional(),
+  DOJAH_SECRET_KEY: z.string().optional(),
+  DOJAH_WIDGET_ID: z.string().optional(),
+  DOJAH_WEBHOOK_SECRET: z.string().optional(),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().url(),

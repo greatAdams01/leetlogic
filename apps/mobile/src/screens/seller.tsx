@@ -1,3 +1,4 @@
+import { DojahIdentity } from "../components/dojah-identity";
 import { Confirmation } from "../components/feedback";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { accountRoleKey } from "../lib/onboarding";
@@ -24,6 +25,9 @@ import { choosePhoto, photoBlob } from "./sell";
 type Verification = {
   id: string;
   status: string;
+  identityRequired?: boolean;
+  identityPassed?: boolean;
+  identity?: { status: string; mode: string } | null;
   documents: { id: string; documentType: string }[];
   evidence: { id: string; note: string | null; hasPhoto?: boolean }[];
   reviews: { reason: string }[];
@@ -39,6 +43,7 @@ const titles: Record<VerificationStep, string> = {
 };
 export function Seller() {
   const a = useApp();
+  const [identityPassed, setIdentityPassed] = useState(false);
   const [step, setStep] = useState<VerificationStep>("details");
   const [form, setForm] = useState<FarmForm>({
     farmName: "",
@@ -72,6 +77,7 @@ export function Seller() {
       "/seller/verification",
     );
     setVerification(result.verification);
+    setIdentityPassed(!!result.verification.identityPassed);
     setStatus(result.verification.status);
     return result;
   };
@@ -80,6 +86,7 @@ export function Seller() {
     try {
       await AsyncStorage.setItem(accountRoleKey(a.user!.id), "SELLER");
       let currentStatus = status;
+      let currentDojahRequired = true;
       if (status === "APPROVED") {
         setReady(true);
         return;
@@ -102,8 +109,10 @@ export function Seller() {
         setForm(restoredForm);
         savedFarm.current = restoredForm;
         setVerification(result.verification);
+        setIdentityPassed(!!result.verification.identityPassed);
         setStatus(result.verification.status);
         currentStatus = result.verification.status;
+        currentDojahRequired = !!result.verification.identityRequired;
         const latestNote = result.verification.evidence.filter((e) => e.note).at(-1)?.note || "";
         setNote(latestNote);
         setSavedNote(latestNote);
@@ -111,10 +120,16 @@ export function Seller() {
         setStep(
           result.verification.status === "RESUBMISSION_REQUIRED"
             ? "details"
-            : resumeVerification(
-                result.verification.documents.length,
-                latestNote.trim().length >= 3 ? result.verification.evidence.length : 0,
-              ),
+            : result.verification.identityRequired
+              ? result.verification.identityPassed
+                ? latestNote.trim().length >= 3
+                  ? "review"
+                  : "evidence"
+                : "identity"
+              : resumeVerification(
+                  result.verification.documents.length,
+                  latestNote.trim().length >= 3 ? result.verification.evidence.length : 0,
+                ),
         );
       }
       // Private form drafts are scoped to the authenticated account, never shared across users.
@@ -133,7 +148,7 @@ export function Seller() {
             setStep(
               draft.step === "location" && !farmDetailsValid(draft.form) ? "details" : draft.step,
             );
-          } else if (a.user?.farmerProfile && draft.step === "document") {
+          } else if (a.user?.farmerProfile && draft.step === "document" && !currentDojahRequired) {
             setStep("document");
           }
         }
@@ -168,6 +183,10 @@ export function Seller() {
     setDeclaration(false);
     setStep(next);
   };
+  const dojahRequired = verification?.identityRequired !== false;
+  const activeSteps = dojahRequired
+    ? verificationSteps.filter((value) => value !== "document")
+    : verificationSteps;
   const back = () => {
     if (requestActive.current) return;
     if (!editableVerification(status)) a.back();
@@ -179,7 +198,7 @@ export function Seller() {
       setEditing(false);
       move("review");
     } else if (step === "details") a.back();
-    else move(verificationSteps[verificationSteps.indexOf(step) - 1]!);
+    else move(activeSteps[activeSteps.indexOf(step) - 1]!);
   };
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -248,7 +267,13 @@ export function Seller() {
         />
       );
     if (step === "identity")
-      action = <Button title="Continue" disabled={busy} onPress={() => move("document")} />;
+      action = (
+        <Button
+          title="Continue"
+          disabled={busy || (dojahRequired && !identityPassed)}
+          onPress={() => continueTo(dojahRequired ? "evidence" : "document")}
+        />
+      );
     if (step === "document")
       action = (
         <Button
@@ -390,8 +415,8 @@ export function Seller() {
         <>
           <Label muted>
             {a.ui("Step {step} of {total}", {
-              step: verificationSteps.indexOf(step) + 1,
-              total: verificationSteps.length,
+              step: activeSteps.indexOf(step) + 1,
+              total: activeSteps.length,
             })}
           </Label>
           {status === "RESUBMISSION_REQUIRED" && (
@@ -460,28 +485,31 @@ export function Seller() {
               </View>
             </>
           )}
-          {step === "identity" && (
-            <>
-              <Heading>Choose your document.</Heading>
-              <Label>Use one valid identity document that belongs to you.</Label>
-              {["NIN_SLIP", "VOTER_CARD", "DRIVERS_LICENSE", "PASSPORT"].map((value) => (
-                <Pressable
-                  key={value}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: documentType === value }}
-                  style={[s.choice, documentType === value && s.selected]}
-                  onPress={() => {
-                    setDocumentType(value);
-                    setPhoto(null);
-                    setReadable(false);
-                  }}
-                >
-                  <Label>{a.status(value)}</Label>
-                </Pressable>
-              ))}
-              <Notice text="Your identity document stays private and is used only for verification." />
-            </>
-          )}
+          {step === "identity" &&
+            (dojahRequired ? (
+              <DojahIdentity onStatus={setIdentityPassed} />
+            ) : (
+              <>
+                <Heading>Choose your document.</Heading>
+                <Label>Use one valid identity document that belongs to you.</Label>
+                {["NIN_SLIP", "VOTER_CARD", "DRIVERS_LICENSE", "PASSPORT"].map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: documentType === value }}
+                    style={[s.choice, documentType === value && s.selected]}
+                    onPress={() => {
+                      setDocumentType(value);
+                      setPhoto(null);
+                      setReadable(false);
+                    }}
+                  >
+                    <Label>{a.status(value)}</Label>
+                  </Pressable>
+                ))}
+                <Notice text="Your identity document stays private and is used only for verification." />
+              </>
+            ))}
           {step === "document" && (
             <>
               <Heading>Is your document clear?</Heading>
@@ -612,11 +640,28 @@ export function Seller() {
                 <Button title="Edit farm details" secondary onPress={() => edit("details")} />
               </Card>
               <Card>
-                <Text style={s.sectionTitle}>Identity document</Text>
+                <Text style={s.sectionTitle}>
+                  {dojahRequired ? "Verify your identity" : "Identity document"}
+                </Text>
+                {dojahRequired && (
+                  <Notice
+                    text={
+                      identityPassed
+                        ? "Identity verified. You can continue to farm evidence."
+                        : "Complete identity verification with Dojah before submitting."
+                    }
+                    success={identityPassed}
+                    error={!identityPassed}
+                  />
+                )}
                 {verification?.documents.map((d) => (
                   <Label key={d.id}>{a.status(d.documentType)}</Label>
                 ))}
-                <Button title="Edit identity document" secondary onPress={() => edit("identity")} />
+                <Button
+                  title={dojahRequired ? "Check verification result" : "Edit identity document"}
+                  secondary
+                  onPress={() => edit("identity")}
+                />
               </Card>
               <Card>
                 <Text style={s.sectionTitle}>Farm / business evidence note</Text>

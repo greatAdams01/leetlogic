@@ -139,3 +139,5 @@ Delivery, customer language selection, cached Azure translation, and typed produ
 ## Native mobile app
 
 The Expo/React Native customer app is in `apps/mobile` and connects to the same API as the website. Run `pnpm --filter @leetlogic/mobile ios` or `pnpm --filter @leetlogic/mobile android` after starting the API. See [mobile scope, simulator setup and test checklist](docs/mobile.md). No mobile admin, wallet provider, or unvalidated voice feature is introduced.
+
+Dojah seller identity verification setup and sandbox testing: [integration guide](docs/dojah-identity.md).

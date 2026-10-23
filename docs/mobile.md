@@ -21,6 +21,10 @@ The bundled LeetLogic logo appears at every launch before fonts or session prefe
 
 Out of scope: admin UI on mobile, payment collection, wallet/withdrawals, invented bank/USSD details, unsupported courier promises, driver calls, GPS maps, speeds/temperatures, recommendations, social chat, general AI assistance, audio playback, image recognition and language-pack downloads. Voice is explicitly unavailable until the accepted free Igbo speech provider milestone passes. The native config does not request microphone permission.
 
+## Dojah identity checks
+
+Seller identity verification now uses Dojah’s hosted flow, opened in the phone browser so Expo Go remains supported. Configure the sandbox widget, mandatory matching/liveness steps, server credentials and signed webhook before testing. See [Dojah setup and test instructions](./dojah-identity.md). Identity verification remains separate from farm approval.
+
 ## Run
 
 From the repository root:

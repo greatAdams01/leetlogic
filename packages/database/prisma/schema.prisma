@@ -256,12 +256,53 @@ model VerificationCase {
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   farmerProfile   FarmerProfile          @relation(fields: [farmerProfileId], references: [id], onDelete: Cascade)
+  identityRequired Boolean @default(false) @map("identity_required")
+  identityChecks IdentityCheck[]
   documents       VerificationDocument[]
   evidence        FarmEvidence[]
   reviews         VerificationReview[]
 
   @@index([status, submittedAt])
   @@map("verification_cases")
+}
+
+enum IdentityCheckStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  REVIEW
+  ABANDONED
+  EXPIRED
+}
+
+model IdentityCheck {
+  id String @id @default(uuid()) @db.Uuid
+  verificationCaseId String @map("verification_case_id") @db.Uuid
+  provider String @default("dojah") @db.VarChar(30)
+  mode String @db.VarChar(10)
+  widgetId String @map("widget_id") @db.VarChar(120)
+  status IdentityCheckStatus @default(PENDING)
+  consentVersion String @map("consent_version") @db.VarChar(50)
+  consentAt DateTime @default(now()) @map("consent_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  lastCheckedAt DateTime? @map("last_checked_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  verificationCase VerificationCase @relation(fields: [verificationCaseId], references: [id], onDelete: Cascade)
+  events IdentityCheckEvent[]
+  @@index([verificationCaseId, createdAt])
+  @@map("identity_checks")
+}
+
+model IdentityCheckEvent {
+  id String @id @default(uuid()) @db.Uuid
+  identityCheckId String @map("identity_check_id") @db.Uuid
+  digest String @unique @db.Char(64)
+  status IdentityCheckStatus
+  source String @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  identityCheck IdentityCheck @relation(fields: [identityCheckId], references: [id], onDelete: Cascade)
+  @@map("identity_check_events")
 }
 
 model VerificationDocument {

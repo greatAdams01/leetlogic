@@ -1,3 +1,5 @@
+import { getConfig } from "../config.js";
+import { identityPassed, latestIdentity, publicIdentity } from "../services/identity.js";
 import { Router } from "express";
 import {
   farmEvidenceSchema,
@@ -28,11 +30,15 @@ async function currentCase(userId: string) {
 }
 verificationRouter.get("/", async (req, res) => {
   const { farmer, item } = await currentCase(req.auth!.sub);
+  const check = await latestIdentity(item.id);
   res.json({
     farmer,
     verification: {
       id: item.id,
       status: item.status,
+      identityRequired: item.identityRequired || getConfig().IDENTITY_PROVIDER === "dojah",
+      identity: publicIdentity(check),
+      identityPassed: identityPassed(check),
       submittedAt: item.submittedAt,
       documents: item.documents.map((d) => ({
         id: d.id,
@@ -105,7 +111,8 @@ verificationRouter.post("/submit", async (req, res) => {
       "FARM_LOCATION_REQUIRED",
       "Complete your farm location before submitting",
     );
-  if (!item.documents.length)
+  const needsIdentity = item.identityRequired || getConfig().IDENTITY_PROVIDER === "dojah";
+  if (!needsIdentity && !item.documents.length)
     throw new AppError(
       422,
       "IDENTITY_DOCUMENT_REQUIRED",
@@ -114,9 +121,18 @@ verificationRouter.post("/submit", async (req, res) => {
   if (!item.evidence.length)
     throw new AppError(422, "FARM_EVIDENCE_REQUIRED", "Add farm evidence before submitting");
   const verification = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM verification_cases WHERE id = ${item.id}::uuid FOR UPDATE`;
+    const locked = await tx.verificationCase.findUniqueOrThrow({ where: { id: item.id } });
+    const requiredIdentity = needsIdentity || locked.identityRequired;
+    if (requiredIdentity && !identityPassed(await latestIdentity(item.id, tx)))
+      throw new AppError(
+        422,
+        "IDENTITY_REQUIRED",
+        "Complete identity verification with Dojah before submitting.",
+      );
     const changed = await tx.verificationCase.updateMany({
       where: { id: item.id, status: { in: ["DRAFT", "RESUBMISSION_REQUIRED"] } },
-      data: { status: "SUBMITTED", submittedAt: new Date() },
+      data: { status: "SUBMITTED", submittedAt: new Date(), identityRequired: requiredIdentity },
     });
     if (!changed.count)
       throw new AppError(409, "VERIFICATION_LOCKED", "Verification is already under review");
