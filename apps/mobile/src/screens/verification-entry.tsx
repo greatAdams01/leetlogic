@@ -356,6 +356,8 @@ export function Otp() {
               onBlur={() => setFocused(false)}
               caretHidden
               selectionColor="transparent"
+              cursorColor="transparent"
+              underlineColorAndroid="transparent"
               style={v.codeInput}
             />
           </Pressable>
@@ -527,6 +529,9 @@ const v = StyleSheet.create({
   codeCaret: { position: "absolute", width: 2, height: 28, backgroundColor: colors.green },
   codeInput: {
     ...StyleSheet.absoluteFill,
+    // Android autofill can override text colors. Hide the native drawing layer,
+    // while retaining its touch target, keyboard, paste and accessibility support.
+    opacity: 0,
     fontSize: 24,
     color: "transparent",
     backgroundColor: "transparent",
