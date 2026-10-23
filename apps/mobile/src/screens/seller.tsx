@@ -17,6 +17,7 @@ import {
   farmDetailsValid,
   farmLocationValid,
   resumeVerification,
+  hasFarmMedia,
   verificationSteps,
   type FarmForm,
   type VerificationStep,
@@ -30,7 +31,7 @@ type Verification = {
   identityPassed?: boolean;
   identity?: { status: string; mode: string } | null;
   documents: { id: string; documentType: string }[];
-  evidence: { id: string; note: string | null; hasPhoto?: boolean }[];
+  evidence: { id: string; note: string | null; hasPhoto?: boolean; mimeType?: string | null }[];
   reviews: { reason: string }[];
 };
 type Farmer = FarmForm & { primaryAddressId: string | null; verificationStatus: string };
@@ -124,13 +125,15 @@ export function Seller() {
             ? "details"
             : result.verification.identityRequired
               ? result.verification.identityPassed
-                ? latestNote.trim().length >= 3
+                ? latestNote.trim().length >= 3 && hasFarmMedia(result.verification.evidence)
                   ? "review"
                   : "evidence"
                 : "identity"
               : resumeVerification(
                   result.verification.documents.length,
-                  latestNote.trim().length >= 3 ? result.verification.evidence.length : 0,
+                  latestNote.trim().length >= 3 && hasFarmMedia(result.verification.evidence)
+                    ? 1
+                    : 0,
                 ),
         );
       }
@@ -238,7 +241,9 @@ export function Seller() {
     move(target);
   };
   const blocked = !editableVerification(status);
+  const submitted = ["SUBMITTED", "UNDER_REVIEW"].includes(status);
   let action: React.ReactNode;
+  if (ready && submitted) action = <Button title="Go to home" onPress={() => a.reset("home")} />;
   if (ready && !blocked) {
     if (step === "details")
       action = (
@@ -302,9 +307,14 @@ export function Seller() {
       action = (
         <Button
           title={busy ? "Saving…" : "Save and continue"}
-          disabled={busy || note.trim().length < 3}
+          disabled={busy || note.trim().length < 3 || !hasFarmMedia(verification?.evidence || [])}
           onPress={() =>
             void run(async () => {
+              if (!hasFarmMedia(verification?.evidence || []))
+                throw Object.assign(
+                  new Error("Upload at least one farm photo or video before continuing."),
+                  { code: "FARM_EVIDENCE_REQUIRED" },
+                );
               if (note.trim() !== savedNote) {
                 await api("/seller/verification/evidence", {
                   method: "POST",
@@ -325,8 +335,8 @@ export function Seller() {
           disabled={
             busy ||
             !declaration ||
-            !verification?.documents.length ||
-            !verification?.evidence.length
+            (dojahRequired ? !identityPassed : !verification?.documents.length) ||
+            !hasFarmMedia(verification?.evidence || [])
           }
           onPress={() =>
             void run(async () => {
@@ -352,7 +362,7 @@ export function Seller() {
       footer={
         action && (
           <>
-            {step === "document" && photo && (
+            {step === "document" && photo && !blocked && (
               <Confirmation
                 checked={readable}
                 disabled={busy}
@@ -383,7 +393,7 @@ export function Seller() {
         )
       ) : blocked ? (
         <>
-          <Text style={s.badge}>{a.status(status)}</Text>
+          {!submitted && <Text style={s.badge}>{a.status(status)}</Text>}
           {status === "APPROVED" ? (
             <>
               <Heading>Your farmer profile is approved.</Heading>
@@ -581,6 +591,10 @@ export function Seller() {
           )}
           {step === "evidence" && (
             <>
+              {!hasFarmMedia(verification?.evidence || []) && (
+                <Notice text="Upload at least one farm photo or video before continuing." />
+              )}
+
               <Heading>Show your farm or business.</Heading>
               <Label>
                 Explain what you grow and how the evidence belongs to your farm or business.

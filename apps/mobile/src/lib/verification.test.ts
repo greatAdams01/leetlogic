@@ -4,6 +4,7 @@ import {
   farmDetailsValid,
   farmLocationValid,
   resumeVerification,
+  hasFarmMedia,
   verificationSteps,
   type FarmForm,
 } from "./verification";
@@ -37,6 +38,18 @@ describe("farmer verification stages", () => {
     expect(resumeVerification(1, 0)).toBe("evidence");
     expect(resumeVerification(1, 2)).toBe("review");
     expect(resumeVerification(0, 2)).toBe("identity");
+  });
+  it("requires a saved farm photo or video rather than a note, PDF or failed upload", () => {
+    expect(hasFarmMedia([])).toBe(false);
+    expect(hasFarmMedia([{ hasPhoto: false, mimeType: "image/jpeg" }])).toBe(false);
+    expect(hasFarmMedia([{ hasPhoto: true, mimeType: "application/pdf" }])).toBe(false);
+    expect(hasFarmMedia([{ hasPhoto: true, mimeType: null }])).toBe(false);
+    for (const mimeType of ["image/jpeg", "image/png", "video/mp4", "video/quicktime"]) {
+      expect(hasFarmMedia([{ hasPhoto: true, mimeType }])).toBe(true);
+      expect(resumeVerification(1, hasFarmMedia([{ hasPhoto: true, mimeType }]) ? 1 : 0)).toBe(
+        "review",
+      );
+    }
   });
   it("allows draft/correction work and locks all submitted or decided applications", () => {
     for (const status of ["NOT_STARTED", "DRAFT", "RESUBMISSION_REQUIRED"])

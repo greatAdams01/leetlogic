@@ -44,6 +44,13 @@ export function localizedError(locale: Locale, value: unknown): string {
       },
     );
   const codes: Record<string, string> = {
+    MEDIA_CONFIGURATION_ERROR:
+      "File uploads are temporarily unavailable. Please contact support if this continues.",
+    MEDIA_RATE_LIMITED: "File uploads are busy. Please wait a moment and try again.",
+    MEDIA_TIMEOUT: "The file upload took too long. Check your connection and try again.",
+    MEDIA_FORMAT_UNSUPPORTED:
+      "This file could not be processed. Choose another JPEG, PNG, PDF or MP4 file.",
+    FARM_EVIDENCE_REQUIRED: "Upload at least one farm photo or video before continuing.",
     MEDIA_UNAVAILABLE: "We couldn’t upload your file. Please try again.",
     IDENTITY_NOT_CONFIGURED:
       "We can’t start your identity check right now. Please try again later.",

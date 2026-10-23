@@ -19,7 +19,17 @@ Apply the additive migration with `pnpm --filter @leetlogic/database exec prisma
 
 All assets are uploaded with Cloudinary `authenticated` delivery. The server signs short-lived download requests only after the existing owner/public-listing or staff authorization checks. No reusable Cloudinary signed URL or API secret is returned to the app. Existing local references remain readable even after switching providers. A Cloudinary upload is deleted if saving its database reference fails. Listing photos retain checksums; private identity documents retain checksums and audit logging. Farm evidence remains private to the verification review.
 
-Images/PDFs are limited to 10 MB; farm videos to 25 MB, MP4/MOV. Videos are accepted only as farm evidence, not identity documents or produce listing photos. File headers are checked server-side. Video capture is not requested; farmers can choose an existing video. Test actual uploads/downloads with the configured Cloudinary account before rollout, including the account's private/raw PDF settings. No live credential test has been possible while credentials are absent.
+Farm evidence requires at least one successfully uploaded JPEG/PNG photo or MP4/MOV video before continuing or submitting. Supporting notes and PDFs do not satisfy this requirement. The mobile app restores progress from saved media, and the server rejects note-only and caller-supplied object-key bypasses. Identity documents may still use PDF.
+
+Images/PDFs are limited to 10 MB; farm videos to 25 MB, MP4/MOV. Videos are accepted only as farm evidence, not identity documents or produce listing photos. File headers are checked server-side. Video capture is not requested; farmers can choose an existing video. Test actual uploads/downloads with the configured Cloudinary account before rollout, including the account's private/raw PDF settings. A read-only credential check is available: `pnpm --filter @leetlogic/api media:check`. It reports only a safe status/category and never prints credential values or uploads files. On 2026-10-23, the configured account returned HTTP 401 with an invalid API key; the credentials must be corrected before a successful real upload/download can be verified.
+
+## Troubleshooting Cloudinary
+
+Run `pnpm --filter @leetlogic/api media:check` from the repository root. `INVALID_API_KEY` means Cloudinary rejected the key for that cloud; `INVALID_SIGNATURE` indicates a signing/secret mismatch; `ACCESS_DENIED` indicates disabled or unauthorized credentials. Open the intended product environment in Cloudinary Console → Settings → API Keys, and use its exact cloud name and matching **API key + API secret**. The API key is not the API secret or the `CLOUDINARY_URL` value. Do not paste credentials in chat or client-side configuration.
+
+Update the root `.env` yourself, then fully restart the API (`Ctrl+C`, followed by `pnpm --filter @leetlogic/api dev`). Editing `.env` alone does not guarantee that Node's watch process reloads its inherited environment. Run the check again; expect `status:ok` before retrying the farm photo. No unsigned preset is required and authenticated/private storage remains enabled.
+
+Request logs now carry a sanitized provider reason, HTTP status and configuration hint. Raw Cloudinary errors, signatures and credentials are never returned to the app or written to logs. Customers see localized upload/configuration, timeout, busy or unsupported-file messages.
 
 ## Step 4: English description review
 

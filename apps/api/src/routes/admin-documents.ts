@@ -86,6 +86,12 @@ documentUploadsRouter.post(
     const mimeType = z
       .enum(["image/jpeg", "image/png", "application/pdf", "video/mp4", "video/quicktime"])
       .parse(req.get("Content-Type"));
+    if (kind === "evidence" && mimeType === "application/pdf")
+      throw new AppError(
+        422,
+        "FARM_EVIDENCE_REQUIRED",
+        "Upload at least one farm photo or video before continuing.",
+      );
     const bytes = req.body;
     if (!Buffer.isBuffer(bytes) || bytes.length === 0)
       throw new AppError(422, "FILE_REQUIRED", "Upload a PDF, PNG, or JPEG document");

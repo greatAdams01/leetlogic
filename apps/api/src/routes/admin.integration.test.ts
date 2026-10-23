@@ -285,6 +285,33 @@ integration("admin PostgreSQL and Redis workflows", () => {
           .send({ declarationAccepted: true })
       ).status,
     ).toBe(422);
+    const noteOnly = await request(app)
+      .post("/v1/seller/verification/evidence")
+      .set(customerAuth)
+      .send({ note: "This is only a note, not proof" });
+    expect(noteOnly.status).toBe(422);
+    expect(noteOnly.body.error.code).toBe("FARM_EVIDENCE_REQUIRED");
+    const forged = await request(app)
+      .post("/v1/seller/verification/evidence")
+      .set(customerAuth)
+      .send({ objectKey: "other-farm/not-uploaded", note: "Pretend upload" });
+    expect(forged.status).toBe(422);
+    // Old note-only records must not bypass submission validation.
+    await prisma.farmEvidence.create({
+      data: { verificationCaseId: verification.id, note: "Legacy note without an image" },
+    });
+    const noteSubmit = await request(app)
+      .post("/v1/seller/verification/submit")
+      .set(customerAuth)
+      .send({ declarationAccepted: true });
+    expect(noteSubmit.status).toBe(422);
+    expect(noteSubmit.body.error.code).toBe("FARM_EVIDENCE_REQUIRED");
+    const pdfProof = await request(app)
+      .post("/v1/seller/verification/uploads?kind=evidence")
+      .set({ ...customerAuth, "Content-Type": "application/pdf" })
+      .send(Buffer.from("%PDF-1.4\nNot a farm photo\n%%EOF"));
+    expect(pdfProof.status).toBe(422);
+    expect(pdfProof.body.error.code).toBe("FARM_EVIDENCE_REQUIRED");
     const evidencePhoto = await request(app)
       .post("/v1/seller/verification/uploads?kind=evidence")
       .set({ ...customerAuth, "Content-Type": "image/png" })

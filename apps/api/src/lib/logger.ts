@@ -42,6 +42,8 @@ export function formatLogLine(record: Record<string, unknown>): string {
   let output = `${timestamp} ${String(levels[Number(level)] ?? level).padEnd(5)} ${summary}${request.requestId ? `  request=${clean(request.requestId)}` : ""}\n`;
   if (error.message)
     output += `  Cause: ${error.code ? `${clean(error.code)} — ` : ""}${clean(error.message)}\n`;
+  if (error.provider)
+    output += `  Provider: ${clean(error.provider)}${error.operation ? ` · ${clean(error.operation)}` : ""}${error.providerStatus ? ` · HTTP ${clean(error.providerStatus)}` : ""}${error.reason ? ` · ${clean(error.reason)}` : ""}\n`;
   if (error.type) output += `  Type: ${clean(error.type)}\n`;
   if (error.hint) output += `  Fix: ${clean(error.hint)}\n`;
   // Stack frames remain available in debug mode, on separate readable lines.

@@ -33,3 +33,12 @@ export function farmLocationValid(form: FarmForm, lgas: readonly string[]) {
 export function resumeVerification(documents: number, evidence: number): VerificationStep {
   return documents ? (evidence ? "review" : "evidence") : "identity";
 }
+
+export type FarmMedia = { hasPhoto?: boolean; mimeType?: string | null };
+export function hasFarmMedia(evidence: readonly FarmMedia[]) {
+  return evidence.some(
+    (item) =>
+      item.hasPhoto === true &&
+      ["image/jpeg", "image/png", "video/mp4", "video/quicktime"].includes(item.mimeType || ""),
+  );
+}

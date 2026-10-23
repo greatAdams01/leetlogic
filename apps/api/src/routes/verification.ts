@@ -112,12 +112,20 @@ verificationRouter.post("/evidence", async (req, res) => {
   const { item } = await currentCase(req.auth!.sub);
   if (!["DRAFT", "RESUBMISSION_REQUIRED"].includes(item.status))
     throw new AppError(409, "VERIFICATION_LOCKED", "Evidence cannot be changed now");
+  if (
+    !item.evidence.some(
+      (e) =>
+        e.encryptedObjectKey &&
+        ["image/jpeg", "image/png", "video/mp4", "video/quicktime"].includes(e.mimeType || ""),
+    )
+  )
+    throw new AppError(
+      422,
+      "FARM_EVIDENCE_REQUIRED",
+      "Upload at least one farm photo or video before continuing.",
+    );
   const evidence = await prisma.farmEvidence.create({
-    data: {
-      verificationCaseId: item.id,
-      encryptedObjectKey: body.objectKey ? encryptSecret(body.objectKey) : undefined,
-      note: body.note,
-    },
+    data: { verificationCaseId: item.id, note: body.note },
   });
   res.status(201).json({ evidence: { ...evidence, encryptedObjectKey: undefined } });
 });
@@ -148,11 +156,22 @@ verificationRouter.post("/submit", async (req, res) => {
       "IDENTITY_DOCUMENT_REQUIRED",
       "At least one identity document is required",
     );
-  if (!item.evidence.length)
-    throw new AppError(422, "FARM_EVIDENCE_REQUIRED", "Add farm evidence before submitting");
   const verification = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM verification_cases WHERE id = ${item.id}::uuid FOR UPDATE`;
     const locked = await tx.verificationCase.findUniqueOrThrow({ where: { id: item.id } });
+    const mediaCount = await tx.farmEvidence.count({
+      where: {
+        verificationCaseId: item.id,
+        encryptedObjectKey: { not: null },
+        mimeType: { in: ["image/jpeg", "image/png", "video/mp4", "video/quicktime"] },
+      },
+    });
+    if (!mediaCount)
+      throw new AppError(
+        422,
+        "FARM_EVIDENCE_REQUIRED",
+        "Upload at least one farm photo or video before continuing.",
+      );
     const requiredIdentity = needsIdentity || locked.identityRequired;
     if (requiredIdentity && !identityPassed(await effectiveIdentity(item.id, tx)))
       throw new AppError(

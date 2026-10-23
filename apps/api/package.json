@@ -14,7 +14,8 @@
     "test:delivery": "node --env-file=../../.env scripts/test-delivery.mjs",
     "test:admin": "node --env-file=../../.env scripts/test-admin.mjs",
     "worker:payments": "node --env-file=../../.env --import tsx src/payment-jobs.ts",
-    "test:payments": "node --env-file=../../.env scripts/test-payments.mjs"
+    "test:payments": "node --env-file=../../.env scripts/test-payments.mjs",
+    "media:check": "node --env-file=../../.env --import tsx src/media-check.ts"
   },
   "dependencies": {
     "@leetlogic/contracts": "workspace:*",

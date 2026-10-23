@@ -38,6 +38,23 @@ describe("development log formatting", () => {
     expect(output).not.toContain("\\n");
     expect(output).not.toContain("at handler");
   });
+  it("shows safe media provider diagnostics without raw provider payloads", () => {
+    const output = formatLogLine({
+      time: 0,
+      level: 50,
+      err: {
+        code: "MEDIA_CONFIGURATION_ERROR",
+        message: "Uploads temporarily unavailable",
+        provider: "cloudinary",
+        operation: "upload",
+        providerStatus: 401,
+        reason: "INVALID_API_KEY",
+        hint: "Check root .env and restart API",
+      },
+    });
+    expect(output).toContain("Provider: cloudinary · upload · HTTP 401 · INVALID_API_KEY");
+    expect(output).toContain("Fix: Check root .env and restart API");
+  });
   it("preserves console OTP fields while preventing multiline log injection", () => {
     const output = formatLogLine({
       time: 0,

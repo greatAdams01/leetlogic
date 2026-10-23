@@ -10,14 +10,10 @@ const assetSchema = z.object({
   format: z.string().regex(/^[a-zA-Z0-9]+$/),
 });
 const prefix = "cloudinary:";
-function credentials() {
+function credentials(operation: MediaOperation = "upload") {
   const c = getConfig();
   if (!c.CLOUDINARY_CLOUD_NAME || !c.CLOUDINARY_API_KEY || !c.CLOUDINARY_API_SECRET)
-    throw new AppError(
-      503,
-      "MEDIA_UNAVAILABLE",
-      "We can’t upload your file right now. Please try again later.",
-    );
+    throw failure(operation, "NOT_CONFIGURED");
   return {
     cloud: c.CLOUDINARY_CLOUD_NAME,
     key: c.CLOUDINARY_API_KEY,
@@ -34,29 +30,127 @@ function sign(params: Record<string, string>, secret: string) {
     )
     .digest("hex");
 }
+type MediaOperation = "upload" | "download" | "destroy" | "ping";
+function failure(operation: MediaOperation, reason: string, providerStatus?: number) {
+  const configuration = [
+    "INVALID_API_KEY",
+    "INVALID_SIGNATURE",
+    "INVALID_CLOUD",
+    "ACCESS_DENIED",
+    "NOT_CONFIGURED",
+  ].includes(reason);
+  const code = configuration
+    ? "MEDIA_CONFIGURATION_ERROR"
+    : reason === "RATE_LIMITED"
+      ? "MEDIA_RATE_LIMITED"
+      : reason === "TIMEOUT"
+        ? "MEDIA_TIMEOUT"
+        : reason === "INVALID_FILE"
+          ? "MEDIA_FORMAT_UNSUPPORTED"
+          : "MEDIA_UNAVAILABLE";
+  const message = configuration
+    ? "File uploads are temporarily unavailable. Please contact support if this continues."
+    : reason === "RATE_LIMITED"
+      ? "File uploads are busy. Please wait a moment and try again."
+      : reason === "TIMEOUT"
+        ? "The file upload took too long. Check your connection and try again."
+        : reason === "INVALID_FILE"
+          ? "This file could not be processed. Choose another JPEG, PNG, PDF or MP4 file."
+          : operation === "download"
+            ? "We couldn’t open this file. Please try again."
+            : "We couldn’t upload your file. Please try again.";
+  const error = new AppError(reason === "INVALID_FILE" ? 422 : 503, code, message);
+  error.diagnostics = {
+    provider: "cloudinary",
+    operation,
+    providerStatus,
+    reason,
+    hint: configuration
+      ? "Check the cloud name and API key/secret from the same Cloudinary product environment in root .env, then restart the API. Check that the key is enabled."
+      : reason === "NETWORK_ERROR"
+        ? "Check API server DNS, internet connectivity and outbound HTTPS to api.cloudinary.com."
+        : reason === "TIMEOUT"
+          ? "Cloudinary did not respond before the upload deadline. Check connectivity and retry."
+          : reason === "RATE_LIMITED"
+            ? "Check Cloudinary account limits and retry after the cooldown."
+            : reason === "INVALID_FILE"
+              ? "The provider rejected the media format or file contents."
+              : "Check Cloudinary service status and account upload limits.",
+  };
+  return error;
+}
+function providerFailure(operation: MediaOperation, status: number, payload: unknown) {
+  const message =
+    typeof (payload as any)?.error?.message === "string" ? (payload as any).error.message : "";
+  // Classify, never log raw provider messages: they may contain API keys or signed parameters.
+  const reason = /invalid api.?key|unknown api.?key/i.test(message)
+    ? "INVALID_API_KEY"
+    : /invalid signature|signature.*invalid/i.test(message)
+      ? "INVALID_SIGNATURE"
+      : /unknown cloud|invalid cloud|cloud.?name.*(?:invalid|not found)/i.test(message)
+        ? "INVALID_CLOUD"
+        : status === 401 || status === 403
+          ? "ACCESS_DENIED"
+          : status === 429
+            ? "RATE_LIMITED"
+            : status === 400 &&
+                /invalid (?:image|video|file)|unsupported|file format|image file/i.test(message)
+              ? "INVALID_FILE"
+              : "PROVIDER_REJECTED";
+  return failure(operation, reason, status);
+}
+async function sendCloud(url: string, operation: MediaOperation, options: RequestInit) {
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, signal: AbortSignal.timeout(20000) });
+  } catch (error) {
+    throw failure(
+      operation,
+      error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)
+        ? "TIMEOUT"
+        : "NETWORK_ERROR",
+    );
+  }
+  return response;
+}
 async function cloudRequest(
   resource: string,
-  operation: string,
+  operation: "upload" | "destroy",
   params: Record<string, string>,
   file?: Buffer,
 ) {
-  const c = credentials();
+  const c = credentials(operation);
   const fields = { ...params, timestamp: String(Math.floor(Date.now() / 1000)) };
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.set(key, value);
   form.set("api_key", c.key);
   form.set("signature", sign(fields, c.secret));
   if (file) form.set("file", new Blob([new Uint8Array(file)]), "media");
-  try {
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloud)}/${resource}/${operation}`,
-      { method: "POST", body: form, signal: AbortSignal.timeout(20000) },
-    );
-    if (!response.ok) throw new Error("Upload failed");
-    return await response.json();
-  } catch {
-    throw new AppError(503, "MEDIA_UNAVAILABLE", "We couldn’t upload your file. Please try again.");
-  }
+  const response = await sendCloud(
+    `https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloud)}/${resource}/${operation}`,
+    operation,
+    { method: "POST", body: form },
+  );
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw providerFailure(operation, response.status, result);
+  if (!result || typeof result !== "object" || result.error)
+    throw failure(operation, "INVALID_RESPONSE", response.status);
+  return result;
+}
+/** Read-only credential check. No assets are uploaded and no provider text is returned. */
+export async function checkMediaConfiguration() {
+  const c = credentials("ping");
+  const response = await sendCloud(
+    `https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloud)}/ping`,
+    "ping",
+    {
+      headers: { Authorization: `Basic ${Buffer.from(`${c.key}:${c.secret}`).toString("base64")}` },
+    },
+  );
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw providerFailure("ping", response.status, result);
+  if (result?.status !== "ok") throw failure("ping", "INVALID_RESPONSE", response.status);
+  return { provider: "cloudinary", status: "ok", storage: getConfig().MEDIA_STORAGE };
 }
 export async function storeMedia(bytes: Buffer, mime: string, localKey: string) {
   if (getConfig().MEDIA_STORAGE !== "cloudinary") {
@@ -101,7 +195,7 @@ export async function readMedia(key: string): Promise<Buffer> {
     const asset = assetSchema.parse(
       JSON.parse(Buffer.from(key.slice(prefix.length), "base64url").toString()),
     );
-    const c = credentials();
+    const c = credentials("download");
     const params = {
       public_id: asset.id,
       format: asset.format,
@@ -114,15 +208,17 @@ export async function readMedia(key: string): Promise<Buffer> {
       api_key: c.key,
       signature: sign(params, c.secret),
     });
+    const response = await sendCloud(
+      `https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloud)}/${asset.resource}/download?${query}`,
+      "download",
+      {},
+    );
+    if (!response.ok)
+      throw providerFailure("download", response.status, await response.json().catch(() => null));
     try {
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloud)}/${asset.resource}/download?${query}`,
-        { signal: AbortSignal.timeout(20000) },
-      );
-      if (!response.ok) throw new Error("Unavailable");
       return Buffer.from(await response.arrayBuffer());
     } catch {
-      throw new AppError(503, "MEDIA_UNAVAILABLE", "We couldn’t open this file. Please try again.");
+      throw failure("download", "NETWORK_ERROR");
     }
   }
   if (

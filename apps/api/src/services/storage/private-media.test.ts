@@ -10,7 +10,7 @@ const config = {
   CLOUDINARY_API_KEY: "test-key",
   CLOUDINARY_API_SECRET: "test-secret",
 };
-import { storeMedia, readMedia, deleteMedia } from "./private-media.js";
+import { storeMedia, readMedia, deleteMedia, checkMediaConfiguration } from "./private-media.js";
 beforeAll(async () => {
   config.PRIVATE_STORAGE_ROOT = await mkdtemp(join(tmpdir(), "leetlogic-media-"));
 });
@@ -62,6 +62,65 @@ describe("private Cloudinary media", () => {
     ).toBe(60);
     await deleteMedia(key);
     expect(fetcher.mock.calls[2]![0]).toContain("/image/destroy");
+  });
+  it("identifies rejected API keys without exposing the provider response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json(
+            { error: { message: "Invalid api_key private-key-value" } },
+            { status: 401 },
+          ),
+        ),
+    );
+    const error = await storeMedia(Buffer.from("test"), "image/png", "unused").catch((e) => e);
+    expect(error.code).toBe("MEDIA_CONFIGURATION_ERROR");
+    expect(error.diagnostics).toMatchObject({
+      provider: "cloudinary",
+      operation: "upload",
+      providerStatus: 401,
+      reason: "INVALID_API_KEY",
+    });
+    expect(error.diagnostics.hint).toContain("root .env");
+    expect(JSON.stringify(error)).not.toContain("private-key-value");
+    expect(error.message).not.toContain("api_key");
+  });
+  it("distinguishes signature, rate-limit, format and timeout failures", async () => {
+    for (const [status, message, code, reason] of [
+      [401, "Invalid Signature secret-material", "MEDIA_CONFIGURATION_ERROR", "INVALID_SIGNATURE"],
+      [429, "too many requests", "MEDIA_RATE_LIMITED", "RATE_LIMITED"],
+      [400, "Invalid image file", "MEDIA_FORMAT_UNSUPPORTED", "INVALID_FILE"],
+    ] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(Response.json({ error: { message } }, { status })),
+      );
+      await expect(storeMedia(Buffer.from("test"), "image/png", "unused")).rejects.toMatchObject({
+        code,
+        diagnostics: { reason, providerStatus: status },
+      });
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("Private timeout message", "TimeoutError")),
+    );
+    await expect(storeMedia(Buffer.from("test"), "image/png", "unused")).rejects.toMatchObject({
+      code: "MEDIA_TIMEOUT",
+      diagnostics: { reason: "TIMEOUT" },
+    });
+  });
+  it("checks credentials without uploading a file", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "ok" }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(checkMediaConfiguration()).resolves.toMatchObject({
+      provider: "cloudinary",
+      status: "ok",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]![0]).toBe("https://api.cloudinary.com/v1_1/test-cloud/ping");
+    expect(fetcher.mock.calls[0]![1].body).toBeUndefined();
   });
   it("preserves existing local files after switching storage, and rejects path traversal", async () => {
     config.MEDIA_STORAGE = "local";

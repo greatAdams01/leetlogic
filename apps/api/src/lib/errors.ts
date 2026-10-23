@@ -4,6 +4,14 @@ import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 
 export class AppError extends Error {
+  // Server-only diagnostics. Never included in the customer response.
+  diagnostics?: {
+    provider: string;
+    operation: string;
+    providerStatus?: number;
+    reason: string;
+    hint: string;
+  };
   constructor(
     public status: number,
     public code: string,
@@ -65,6 +73,7 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
     code: dependency?.code || appError.code,
     message: dependency?.message || appError.message,
     ...(dependency ? { hint: dependency.hint } : {}),
+    ...(appError.diagnostics ? appError.diagnostics : {}),
     // Keep source frames without Prisma query text, credentials, or submitted values.
     ...(appError.status >= 500 && original?.stack
       ? {

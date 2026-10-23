@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { prisma } from "@leetlogic/database";
+import { encryptSecret } from "../lib/crypto.js";
 import { getConfig } from "../config.js";
 import { createApp } from "../app.js";
 import { createSession } from "../services/sessions.js";
@@ -82,7 +83,12 @@ suite("Dojah identity, account access and farm approval", () => {
       data: { primaryAddressId: address.id },
     });
     await prisma.farmEvidence.create({
-      data: { verificationCaseId: caseId, note: "Test farm evidence" },
+      data: {
+        verificationCaseId: caseId,
+        note: "Test farm evidence",
+        mimeType: "image/jpeg",
+        encryptedObjectKey: encryptSecret("identity-fixture/farm.jpg"),
+      },
     });
     const outsider = await prisma.user.create({
       data: {
