@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../../config.js";
 import {
+  dojahConfigurationError,
   dojahLaunchUrl,
   dojahOutcome,
   dojahReady,
@@ -34,10 +35,27 @@ describe("Dojah identity protocol", () => {
   it("requires explicit setup and a separate switch for live checks", () => {
     expect(dojahReady(config)).toBe(true);
     expect(dojahReady({ ...config, DOJAH_ENABLED: false })).toBe(false);
-    expect(dojahReady({ ...config, DOJAH_FLOW_POLICY_CONFIRMED: false })).toBe(false);
+    expect(dojahReady({ ...config, DOJAH_FLOW_POLICY_CONFIRMED: false })).toBe(true);
+    expect(
+      dojahReady({
+        ...config,
+        DOJAH_MODE: "live",
+        DOJAH_LIVE_CHECKS: true,
+        DOJAH_FLOW_POLICY_CONFIRMED: false,
+      }),
+    ).toBe(false);
     expect(dojahReady({ ...config, DOJAH_WEBHOOK_SECRET: "" })).toBe(false);
     expect(dojahReady({ ...config, DOJAH_MODE: "live" })).toBe(false);
     expect(dojahReady({ ...config, DOJAH_MODE: "live", DOJAH_LIVE_CHECKS: true })).toBe(true);
+  });
+  it("reports missing or blank server credentials without exposing values", () => {
+    const error = dojahConfigurationError({ ...config, DOJAH_SECRET_KEY: "   " });
+    expect(error).toMatchObject({ status: 503, code: "IDENTITY_NOT_CONFIGURED" });
+    expect(error?.message).toBe(
+      "Identity verification setup is incomplete. Please contact support.",
+    );
+    expect(error?.message).not.toContain(config.DOJAH_APP_ID!);
+    expect(dojahReady({ ...config, DOJAH_WIDGET_ID: " " })).toBe(false);
   });
   it("requires a raw-body HMAC and rejects changed bodies and v2-style shared hashes", () => {
     const raw = Buffer.from('{ "reference_id": "test" }');

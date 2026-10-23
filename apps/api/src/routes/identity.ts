@@ -12,6 +12,7 @@ import {
   publicIdentity,
 } from "../services/identity.js";
 import {
+  dojahConfigurationError,
   dojahLaunchUrl,
   dojahReady,
   dojahResultSchema,
@@ -40,6 +41,7 @@ identityRouter.get("/", async (req, res) => {
     provider: "dojah",
     required: item.identityRequired || getConfig().IDENTITY_PROVIDER === "dojah",
     available: dojahReady(),
+    unavailableCode: dojahConfigurationError()?.code || null,
     consentVersion: identityConsentVersion,
     check: publicIdentity(check),
     passed: identityPassed(check),

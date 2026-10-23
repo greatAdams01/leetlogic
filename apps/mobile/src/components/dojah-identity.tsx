@@ -6,6 +6,7 @@ import { Button, Heading, Label, Notice } from "./ui";
 import { Confirmation } from "./feedback";
 type IdentityData = {
   available: boolean;
+  unavailableCode?: string | null;
   consentVersion: string;
   passed: boolean;
   check: null | { status: string; mode: string };
@@ -111,7 +112,7 @@ export function DojahIdentity({ onStatus }: { onStatus: (passed: boolean) => voi
       ) : (
         <>
           {data && !data.available && (
-            <Notice text="Identity verification is not available yet. Please try again later." />
+            <Notice text={a.error({ code: data.unavailableCode || "IDENTITY_UNAVAILABLE" })} />
           )}
           {data?.check?.status === "PENDING" && (
             <Notice text="Your identity check is in progress. Finish with Dojah, then check your result." />
@@ -127,7 +128,7 @@ export function DojahIdentity({ onStatus }: { onStatus: (passed: boolean) => voi
           />
           <Button
             title={busy ? "Loading…" : "Verify with Dojah"}
-            disabled={busy || !data?.available || !consent}
+            disabled={busy || !data || !consent}
             onPress={() => void launch()}
           />
         </>

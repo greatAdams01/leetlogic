@@ -4,24 +4,34 @@ import { getConfig, type Config } from "../../config.js";
 import { AppError } from "../../lib/errors.js";
 
 export const identityConsentVersion = "dojah-identity-v1";
-export function dojahReady(c = getConfig()) {
-  return !!(
-    c.DOJAH_ENABLED &&
-    c.DOJAH_APP_ID &&
-    c.DOJAH_SECRET_KEY &&
-    c.DOJAH_WIDGET_ID &&
-    c.DOJAH_WEBHOOK_SECRET &&
-    c.DOJAH_FLOW_POLICY_CONFIRMED &&
-    (c.DOJAH_MODE === "sandbox" || c.DOJAH_LIVE_CHECKS)
-  );
-}
-export function requireDojah(c = getConfig()) {
-  if (!dojahReady(c))
-    throw new AppError(
+export function dojahConfigurationError(c = getConfig()) {
+  if (
+    ![c.DOJAH_APP_ID, c.DOJAH_SECRET_KEY, c.DOJAH_WIDGET_ID, c.DOJAH_WEBHOOK_SECRET].every(
+      (value) => value?.trim(),
+    )
+  )
+    return new AppError(
+      503,
+      "IDENTITY_NOT_CONFIGURED",
+      "Identity verification setup is incomplete. Please contact support.",
+    );
+  // Allow sandbox validation before policy confirmation; live checks keep both gates.
+  if (
+    !c.DOJAH_ENABLED ||
+    (c.DOJAH_MODE === "live" && (!c.DOJAH_LIVE_CHECKS || !c.DOJAH_FLOW_POLICY_CONFIRMED))
+  )
+    return new AppError(
       503,
       "IDENTITY_UNAVAILABLE",
       "Identity verification is not available yet. Please try again later.",
     );
+}
+export function dojahReady(c = getConfig()) {
+  return !dojahConfigurationError(c);
+}
+export function requireDojah(c = getConfig()) {
+  const error = dojahConfigurationError(c);
+  if (error) throw error;
   return c;
 }
 export function dojahLaunchUrl(reference: string, widgetId: string) {

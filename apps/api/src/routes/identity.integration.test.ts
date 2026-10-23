@@ -165,6 +165,26 @@ suite("Dojah identity, account access and farm approval", () => {
     ).toBe(503);
     getConfig().DOJAH_ENABLED = true;
   });
+  it("reports incomplete server setup while allowing sandbox validation before live policy confirmation", async () => {
+    const c = getConfig();
+    const saved = c.DOJAH_SECRET_KEY;
+    c.DOJAH_SECRET_KEY = "";
+    const state = await request(app).get("/v1/seller/verification/identity").set(auth());
+    expect(state.body.available).toBe(false);
+    expect(state.body.unavailableCode).toBe("IDENTITY_NOT_CONFIGURED");
+    const launch = await request(app)
+      .post("/v1/seller/verification/identity/start")
+      .set(auth())
+      .send(consent);
+    expect(launch.status).toBe(503);
+    expect(launch.body.error.code).toBe("IDENTITY_NOT_CONFIGURED");
+    expect(JSON.stringify(launch.body)).not.toContain("test-api-secret");
+    c.DOJAH_SECRET_KEY = saved;
+    c.DOJAH_FLOW_POLICY_CONFIRMED = false;
+    expect(
+      (await request(app).get("/v1/seller/verification/identity").set(auth())).body.available,
+    ).toBe(true);
+  });
   it("deduplicates concurrent starts and binds the random reference to this account", async () => {
     const [a, b] = await Promise.all([
       request(app).post("/v1/seller/verification/identity/start").set(auth()).send(consent),

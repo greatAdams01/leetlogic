@@ -4,7 +4,7 @@ LeetLogic uses Dojah EasyOnboard for identity checks in the existing Express API
 
 ## Configure the sandbox
 
-Add these values to the repository's **server `.env`**, following `.env.example`:
+Add these values to the repository's **repository-root `.env`** (not `apps/.env`), following `.env.example`:
 
 ```dotenv
 IDENTITY_PROVIDER=dojah
@@ -25,9 +25,9 @@ In Dojah EasyOnboard:
 1. Publish a **sandbox** flow restricted to Nigeria and the ID services actually enabled for the account. Dojah owns ID-type selection and capture; LeetLogic does not pretend that an uploaded photograph is a registry check.
 2. Include `user_data`, `government_data`, and `selfie` steps. Enable name matching against government data, face matching to the government identity, and liveness. Require those checks for success. A selfie capture by itself is insufficient.
 3. Configure suitable matching/liveness thresholds in Dojah and confirm them with the provider. The integration uses Dojah's step decisions, not invented client-side thresholds. Do not add credit checks, BVN checks, location collection or other unrelated steps to this seller flow.
-4. Validate the mandatory checks using provider-approved sandbox fixtures, including a mismatch and a failed liveness check. Set `DOJAH_FLOW_POLICY_CONFIRMED=true` **only after verifying this configuration**. A wrongly configured widget is not made safe by a successful HTTP response.
+4. Validate the mandatory checks using provider-approved sandbox fixtures, including a mismatch and a failed liveness check. Set `DOJAH_FLOW_POLICY_CONFIRMED=true` **only after verifying this configuration**. Sandbox launches are allowed before this flag is set so the flow can be tested. Live launches require the flag. A wrongly configured widget is not made safe by a successful HTTP response.
 5. Subscribe the `kyc_widget` service to `https://<backend-host>/v1/webhooks/dojah`. Copy that subscription's **webhook secret** into `DOJAH_WEBHOOK_SECRET`. The handler checks the `x-dojah-signature` HMAC against the exact request bytes. It does not accept the static v2 signature in its place.
-6. Restart the API after changing environment variables. Restart/reload Expo Go to pick up the application changes.
+6. Start the backend from the repository root with `pnpm dev`. Its command loads the root `.env` via `--env-file=../../.env` from `apps/api`. Restart the API after changing environment variables. Restart/reload Expo Go to pick up the application changes.
 
 Dojah requires a reachable HTTPS callback for webhook delivery. `localhost` and a private Wi-Fi IP cannot receive external callbacks. Use a deployed sandbox backend or a tightly scoped HTTPS ingress that forwards only the Dojah webhook path. Do not publicly expose the local console-OTP authentication service. The authenticated result-check endpoint can reconcile results as well; when a REST response omits `widget_id`, it cannot establish the configured flow and a passing result waits for a correctly bound signed webhook.
 
@@ -89,3 +89,5 @@ pnpm --filter @leetlogic/mobile test
 - [Webhooks and raw-body signatures](https://docs.dojah.io/api-reference/core-concepts/webhooks-signatures)
 - [Server reconciliation](https://docs.dojah.io/api-reference/verifications/get-verification)
 - [Sandbox and production](https://docs.dojah.io/api-reference/get-started/environments)
+
+If consent is selected but verification cannot open, check the root `.env` path and `DOJAH_ENABLED=true`. The app keeps the consented launch action available so the server can report configuration errors and a previously loaded unavailable state cannot permanently disable it. Missing server credentials are reported as `IDENTITY_NOT_CONFIGURED`, without exposing their values.

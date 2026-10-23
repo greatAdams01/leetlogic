@@ -44,6 +44,7 @@ export function localizedError(locale: Locale, value: unknown): string {
       },
     );
   const codes: Record<string, string> = {
+    IDENTITY_NOT_CONFIGURED: "Identity verification setup is incomplete. Please contact support.",
     IDENTITY_UNAVAILABLE: "Identity verification is not available yet. Please try again later.",
     IDENTITY_PROVIDER_UNAVAILABLE:
       "The identity provider could not complete this check. Please try again later.",
