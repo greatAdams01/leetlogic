@@ -1,108 +1,58 @@
-import React, { useEffect, useRef, useState } from "react";
-import { AppState, Linking, View } from "react-native";
+import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ActivityIndicator, AppState, Linking, View } from "react-native";
 import { api } from "../lib/api";
 import { useApp } from "../state";
-import { Button, Heading, Label, Notice } from "./ui";
+import { Button, Heading, Label, Notice, colors } from "./ui";
 import { Confirmation } from "./feedback";
-type IdentityData = {
-  available: boolean;
-  unavailableCode?: string | null;
-  consentVersion: string;
-  passed: boolean;
-  check: null | { status: string; mode: string };
-};
+import { createIdentityFlow, type IdentityData } from "../lib/identity-flow";
 export function DojahIdentity({ onStatus }: { onStatus: (passed: boolean) => void }) {
   const a = useApp();
-  const [data, setData] = useState<IdentityData | null>(null);
   const [consent, setConsent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const active = useRef(true);
-  const inFlight = useRef(false);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
-  const load = async (reconcile = false) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      if (reconcile) await api("/seller/verification/identity/refresh", { method: "POST" });
-      const next = await api<IdentityData>("/seller/verification/identity");
-      if (active.current) {
-        setData(next);
-        onStatusRef.current(next.passed);
-      }
-    } catch (e) {
-      if (active.current) setError(a.error(e));
-    } finally {
-      inFlight.current = false;
-      if (active.current) setBusy(false);
-    }
-  };
-  useEffect(() => {
-    active.current = true;
-    void load();
-    return () => {
-      active.current = false;
-    };
-  }, []);
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && data?.check?.status === "PENDING") void load(true);
-    });
-    // Webhooks update our server; these reads never initiate another identity lookup.
-    const timer =
-      data?.check?.status === "PENDING"
-        ? setInterval(() => {
-            if (AppState.currentState === "active") void load();
-          }, 10000)
-        : undefined;
-    return () => {
-      sub.remove();
-      if (timer) clearInterval(timer);
-    };
-  }, [data?.check?.status]);
-  const launch = async () => {
-    if (inFlight.current || !data || !consent) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError("");
-    let started = false;
-    try {
-      const result = await api<{ url: string | null; check: IdentityData["check"] }>(
-        "/seller/verification/identity/start",
-        {
+  const [flow] = useState(() =>
+    createIdentityFlow({
+      read: () => api<IdentityData>("/seller/verification/identity"),
+      reconcile: () => api("/seller/verification/identity/refresh", { method: "POST" }),
+      start: (consentVersion) =>
+        api("/seller/verification/identity/start", {
           method: "POST",
-          body: { consent: true, consentVersion: data.consentVersion },
-        },
-      );
-      if (active.current) setData((prior) => (prior ? { ...prior, check: result.check } : prior));
-      // Session URLs are server-issued and must stay on Dojah's HTTPS origin.
-      if (result.url) {
-        const url = new URL(result.url);
-        if (url.origin !== "https://identity.dojah.io")
-          throw new Error(
-            "The identity provider returned an unexpected result. Please contact support.",
-          );
-        await Linking.openURL(result.url);
-      }
-      started = true;
-    } catch (e) {
-      if (active.current) setError(a.error(e));
-    } finally {
-      inFlight.current = false;
-      if (active.current) {
-        setBusy(false);
-        if (started) void load();
-      }
-    }
-  };
+          body: { consent: true, consentVersion },
+        }),
+      open: (url) => Linking.openURL(url),
+      onStatus: (passed) => onStatusRef.current(passed),
+    }),
+  );
+  const { data, operation, error } = useSyncExternalStore(
+    flow.subscribe,
+    flow.getSnapshot,
+    flow.getSnapshot,
+  );
+  const busy = operation !== "idle";
+  useEffect(() => {
+    flow.activate();
+    void flow.load();
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener("change", (next) => {
+      const returning = next === "active" && previous !== "active";
+      previous = next;
+      if (returning) flow.returned();
+    });
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void flow.poll();
+    }, 10000);
+    return () => {
+      subscription.remove();
+      clearInterval(timer);
+      flow.dispose();
+    };
+  }, [flow]);
   const retry =
     data?.check && ["FAILED", "ABANDONED", "EXPIRED", "REVIEW"].includes(data.check.status);
   return (
     <View style={{ gap: 20 }}>
       <Heading>Verify your identity</Heading>
+      {operation === "loading" && <ActivityIndicator color={colors.green} />}
       <Label>Dojah will check your ID and selfie. Return to LeetLogic when you finish.</Label>
       {data?.check?.mode === "sandbox" && (
         <Notice text="Test verification only. This does not verify a real identity." />
@@ -127,19 +77,27 @@ export function DojahIdentity({ onStatus }: { onStatus: (passed: boolean) => voi
             label="I consent to Dojah checking my identity and selfie for seller verification."
           />
           <Button
-            title={busy ? "Loading…" : "Verify with Dojah"}
+            title={
+              operation === "launching"
+                ? "Opening…"
+                : data?.check?.status === "PENDING"
+                  ? "Resume verification"
+                  : "Verify with Dojah"
+            }
+            loading={operation === "launching"}
             disabled={busy || !data || !consent}
-            onPress={() => void launch()}
+            onPress={() => void flow.launch(consent)}
           />
         </>
       )}
       <Button
-        title="Check verification result"
+        title={operation === "checking" ? "Checking…" : "Check verification result"}
+        loading={operation === "checking"}
         secondary
         disabled={busy}
-        onPress={() => void load(!!data?.check && data.check.status === "PENDING")}
+        onPress={() => void flow.check()}
       />
-      {error && <Notice text={error} error />}
+      {error != null && <Notice text={a.error(error)} error />}
     </View>
   );
 }

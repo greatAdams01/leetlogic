@@ -87,12 +87,14 @@ export function Button({
   disabled,
   secondary,
   testID,
+  loading = false,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   secondary?: boolean;
   testID?: string;
+  loading?: boolean;
 }) {
   const tr = useUI();
   return (
@@ -100,8 +102,8 @@ export function Button({
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={tr(title)}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
+      accessibilityState={{ disabled: !!disabled || loading, busy: loading }}
+      disabled={disabled || loading}
       onPress={onPress}
       style={({ pressed }) => [
         s.button,
@@ -111,7 +113,11 @@ export function Button({
       ]}
     >
       <Text style={[s.buttonText, secondary && { color: colors.green }]}>{title}</Text>
-      {!secondary && <Icon name="arrow" size={20} />}
+      {loading ? (
+        <ActivityIndicator color={secondary ? colors.green : colors.white} />
+      ) : (
+        !secondary && <Icon name="arrow" size={20} />
+      )}
     </Pressable>
   );
 }
