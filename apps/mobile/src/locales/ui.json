@@ -2821,67 +2821,11 @@
     "O ti béèrè kóòdù lọ́pọ̀ ìgbà. Tún gbìyànjú ní ìṣẹ́jú àáyá {seconds}."
   ],
   [
-    "Cannot connect to the server. Check your connection and that the backend is running.",
-    "We no fit connect to server. Check your connection and say backend dey run.",
-    "Ba a iya haɗawa da sabar ba. Duba haɗin intanet da aikin sabar.",
-    "Enweghị ike ijikọ na sava. Lelee njikọ gị ma hụ na sava na-arụ ọrụ.",
-    "Kò lè sopọ̀ mọ́ sáfà. Ṣàyẹ̀wò ìsopọ̀ rẹ àti pé sáfà ń ṣiṣẹ́."
-  ],
-  [
-    "The server took too long to respond. Please try again.",
-    "Server take too long to answer. Try again.",
-    "Sabar ta ɗauki lokaci mai tsawo kafin amsawa. Sake gwadawa.",
-    "Sava ewereela ogologo oge ịza. Nwaa ọzọ.",
-    "Sáfà pẹ́ jù láti dáhùn. Jọ̀wọ́ tún gbìyànjú."
-  ],
-  [
-    "The server returned an unreadable response. Contact support if this continues.",
-    "Server send response wey we no fit read. Contact support if e continue.",
-    "Sabar ta dawo da amsar da ba a iya karantawa ba. Tuntuɓi tallafi idan hakan ya ci gaba.",
-    "Sava weghachitere nzaghachi a na-apụghị ịgụ. Kpọtụrụ nkwado ma ọ bụrụ na ọ gara n’ihu.",
-    "Sáfà dá èsì tí a kò lè kà padà. Kàn sí ìrànlọ́wọ́ bí ó bá ń bá a lọ."
-  ],
-  [
     "Cannot access secure storage on this device. Restart the app and try again.",
     "We no fit open secure storage for this device. Restart app and try again.",
     "Ba a iya shiga ma’ajiyar tsaro a wannan na’ura ba. Sake kunna manhajar ka gwada.",
     "Enweghị ike ịbanye na nchekwa echedoro na ngwaọrụ a. Mepee ngwa ọzọ wee nwaa.",
     "Kò lè wọ ibi ìpamọ́ ààbò lórí ẹ̀rọ yìí. Tún app bẹ̀rẹ̀ kí o sì gbìyànjú."
-  ],
-  [
-    "The account database is unavailable. Please try again when the service is restored.",
-    "Account database no dey available. Try again when service return.",
-    "Ma’ajiyar bayanan asusu ba ta aiki. Sake gwadawa idan an dawo da sabis.",
-    "Nchekwa data akaụntụ adịghị arụ ọrụ. Nwaa ọzọ mgbe ọrụ lọghachiri.",
-    "Ibi ìpamọ́ dátà àkọọ́lẹ̀ kò sí lárọ̀ọ́wọ́tó. Tún gbìyànjú nígbà tí iṣẹ́ bá padà."
-  ],
-  [
-    "The verification service is unavailable. Please try again when the service is restored.",
-    "Verification service no dey available. Try again when e return.",
-    "Sabis na tantancewa ba ya aiki. Sake gwadawa idan an dawo da shi.",
-    "Ọrụ nkwenye adịghị arụ ọrụ. Nwaa ọzọ mgbe ọrụ lọghachiri.",
-    "Iṣẹ́ ìmúdájú kò sí lárọ̀ọ́wọ́tó. Tún gbìyànjú nígbà tí iṣẹ́ bá padà."
-  ],
-  [
-    "A required server service is unavailable. Please try again later.",
-    "One service wey server need no dey available. Try again later.",
-    "Wani sabis da sabar ke buƙata ba ya aiki. Sake gwadawa daga baya.",
-    "Otu ọrụ sava chọrọ adịghị arụ ọrụ. Nwaa ọzọ ma e mesịa.",
-    "Iṣẹ́ kan tí sáfà nílò kò sí lárọ̀ọ́wọ́tó. Tún gbìyànjú lọ́jọ́ iwájú."
-  ],
-  [
-    "The server database needs an update. Please contact support.",
-    "Server database need update. Contact support.",
-    "Ma’ajiyar bayanan sabar tana buƙatar sabuntawa. Tuntuɓi tallafi.",
-    "Nchekwa data sava chọrọ mmelite. Kpọtụrụ nkwado.",
-    "Ibi ìpamọ́ dátà sáfà nílò ìmúdójúìwọ̀n. Kàn sí ìrànlọ́wọ́."
-  ],
-  [
-    "The server could not process this request. Please contact support.",
-    "Server no fit process this request. Contact support.",
-    "Sabar ba ta iya aiwatar da wannan buƙata ba. Tuntuɓi tallafi.",
-    "Sava enweghị ike ịhazi arịrịọ a. Kpọtụrụ nkwado.",
-    "Sáfà kò lè ṣe ìbéèrè yìí. Kàn sí ìrànlọ́wọ́."
   ],
   [
     "That verification code is incorrect. Check the code and try again.",
@@ -2910,13 +2854,6 @@
     "An shigar da lambobin da ba daidai ba da yawa. Nemi sabuwar lamba.",
     "Koodu ezighi ezi dị ọtụtụ. Rịọ koodu ọhụrụ.",
     "Àwọn kóòdù tí kò tọ́ pọ̀ jù. Béèrè kóòdù tuntun."
-  ],
-  [
-    "The SMS provider could not send your code. Please try again later.",
-    "SMS provider no fit send your code. Try again later.",
-    "Mai samar da SMS bai iya aika lambarka ba. Sake gwadawa daga baya.",
-    "Onye na-enye SMS enweghị ike iziga koodu gị. Nwaa ọzọ ma e mesịa.",
-    "Olùpèsè SMS kò lè fi kóòdù rẹ ránṣẹ́. Tún gbìyànjú lọ́jọ́ iwájú."
   ],
   [
     "Reference: {requestId}",
@@ -2954,34 +2891,6 @@
     "Dojah yóò ṣàyẹ̀wò ID àti àwòrán ojú rẹ. Padà sí LeetLogic nígbà tí o bá parí."
   ],
   [
-    "Test verification only. This does not verify a real identity.",
-    "Na test verification only. E no verify real person.",
-    "Gwajin tabbatarwa kawai. Wannan ba ya tabbatar da ainihin shaida.",
-    "Nke a bụ naanị nnwale. Ọ naghị ekwenye ezigbo njirimara.",
-    "Ìdánwò ìjẹ́rìísí nìkan. Èyí kò jẹ́rìí ẹni gidi."
-  ],
-  [
-    "Identity verified. You can continue to farm evidence.",
-    "Your identity don verify. You fit continue to farm evidence.",
-    "An tabbatar da shaidarka. Za ka iya ci gaba zuwa hujjar gona.",
-    "Ekwenyela njirimara gị. Ị nwere ike ịga n’ihu na ihe akaebe ugbo.",
-    "A ti jẹ́rìí ẹni tí o jẹ́. O lè tẹ̀síwájú sí ẹ̀rí oko."
-  ],
-  [
-    "Identity verification is not available yet. Please try again later.",
-    "Identity verification never ready. Abeg try again later.",
-    "Tabbatar da shaida bai samu ba tukuna. A sake gwadawa daga baya.",
-    "Nyocha njirimara adịbeghị ugbu a. Biko nwaa ọzọ ma emechaa.",
-    "Ìjẹ́rìísí ẹni kò tíì wà. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan sí i láìpẹ́."
-  ],
-  [
-    "Your identity check is in progress. Finish with Dojah, then check your result.",
-    "Your identity check dey go on. Finish for Dojah, then check your result.",
-    "Ana duba shaidarka. Kammala a Dojah, sannan duba sakamakonka.",
-    "A na-enyocha njirimara gị. Mechaa na Dojah, wee lelee nsonaazụ gị.",
-    "Àyẹ̀wò rẹ ń lọ lọ́wọ́. Parí pẹ̀lú Dojah, lẹ́yìn náà wo àbájáde rẹ."
-  ],
-  [
     "Your identity check needs another attempt. Check your details and try again.",
     "You need try identity check again. Check your details and try again.",
     "Kana bukatar sake gwada tabbatar da shaida. Duba bayananka ka sake gwadawa.",
@@ -3017,46 +2926,11 @@
     "Parí ìjẹ́rìísí rẹ pẹ̀lú Dojah kí o tó fi ránṣẹ́."
   ],
   [
-    "The identity provider could not be reached. Please try again later.",
-    "We no fit reach identity provider. Abeg try again later.",
-    "Ba a iya samun mai tabbatar da shaida ba. A sake gwadawa daga baya.",
-    "Enweghị ike iru onye na-enyocha njirimara. Biko nwaa ọzọ ma emechaa.",
-    "A kò lè dé ọ̀dọ̀ olùpèsè ìjẹ́rìísí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
-  ],
-  [
-    "The identity provider could not complete this check. Please try again later.",
-    "Identity provider no fit finish this check. Abeg try again later.",
-    "Mai tabbatar da shaida bai iya kammala wannan dubawa ba. A sake gwadawa daga baya.",
-    "Onye na-enyocha njirimara enweghị ike imecha nyocha a. Biko nwaa ọzọ ma emechaa.",
-    "Olùpèsè ìjẹ́rìísí kò lè parí àyẹ̀wò yìí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
-  ],
-  [
-    "The identity provider returned an unexpected result. Please contact support.",
-    "Identity provider return result we no expect. Abeg contact support.",
-    "Mai tabbatar da shaida ya dawo da sakamakon da ba a zata ba. Tuntuɓi tallafi.",
-    "Onye na-enyocha njirimara weghachiri nsonaazụ a na-atụghị anya ya. Biko kpọtụrụ nkwado.",
-    "Olùpèsè ìjẹ́rìísí dá àbájáde àìròtẹ́lẹ̀ padà. Jọ̀wọ́ kan ìrànlọ́wọ́."
-  ],
-  [
     "Start identity verification first.",
     "Start identity verification first.",
     "Fara tabbatar da shaida tukuna.",
     "Buru ụzọ malite nkwenye njirimara.",
     "Bẹ̀rẹ̀ ìjẹ́rìísí ẹni kọ́kọ́."
-  ],
-  [
-    "Identity session belongs to another environment.",
-    "This identity session belong to another test or live setup.",
-    "Zaman tabbatar da shaida na wani yanayi ne.",
-    "Oge nkwenye njirimara a bụ nke gburugburu ọzọ.",
-    "Àkókò ìjẹ́rìísí yìí jẹ́ ti àyíká mìíràn."
-  ],
-  [
-    "Identity verification setup is incomplete. Please contact support.",
-    "Identity verification setup never complete. Abeg contact support.",
-    "Ba a kammala saitin tabbatar da shaida ba. Tuntuɓi tallafi.",
-    "Emechabeghị ntọala nkwenye njirimara. Biko kpọtụrụ nkwado.",
-    "Ètò ìjẹ́rìísí ẹni kò tíì pé. Jọ̀wọ́ kan ìrànlọ́wọ́."
   ],
   [
     "Opening…",
@@ -3078,5 +2952,614 @@
     "Ci gaba da tabbatarwa",
     "Gaa n’ihu na nkwenye",
     "Tẹ̀síwájú ìjẹ́rìísí"
+  ],
+  [
+    "We can’t start your identity check right now. Please try again later.",
+    "We no fit start your identity check now. Abeg try again later.",
+    "Ba za mu iya fara tabbatar da shaidarka yanzu ba. Sake gwadawa daga baya.",
+    "Anyị enweghị ike ịmalite nkwenye njirimara gị ugbu a. Biko nwaa ọzọ ma emechaa.",
+    "A kò lè bẹ̀rẹ̀ ìjẹ́rìísí rẹ báyìí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "We couldn’t check your verification result. Please try again.",
+    "We no fit check your verification result. Abeg try again.",
+    "Ba mu iya duba sakamakon tabbatarwarka ba. Sake gwadawa.",
+    "Anyị enweghị ike ịlele nsonaazụ nkwenye gị. Biko nwaa ọzọ.",
+    "A kò lè wo àbájáde ìjẹ́rìísí rẹ. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "We couldn’t confirm your identity check. Please try again or contact support.",
+    "We no fit confirm your identity check. Try again or contact support.",
+    "Ba mu iya tabbatar da sakamakon shaidarka ba. Sake gwadawa ko tuntuɓi tallafi.",
+    "Anyị enweghị ike ikwenye nsonaazụ njirimara gị. Nwaa ọzọ ma ọ bụ kpọtụrụ nkwado.",
+    "A kò lè fìdí àyẹ̀wò ẹni rẹ múlẹ̀. Tún gbìyànjú tàbí kan ìrànlọ́wọ́."
+  ],
+  [
+    "Unable to connect. Check your internet connection and try again.",
+    "We no fit connect. Check your internet and try again.",
+    "Ba a iya haɗawa ba. Duba intanet ɗinka ka sake gwadawa.",
+    "Enweghị ike ijikọ. Lelee njikọ ịntanetị gị ma nwaa ọzọ.",
+    "A kò lè sopọ̀. Ṣàyẹ̀wò ìsopọ̀ ayélujára rẹ kí o tún gbìyànjú."
+  ],
+  [
+    "This is taking longer than expected. Please try again.",
+    "This dey take too long. Abeg try again.",
+    "Wannan yana ɗaukar lokaci fiye da yadda ake tsammani. Sake gwadawa.",
+    "Nke a na-ewe ogologo oge karịa ka a tụrụ anya ya. Biko nwaa ọzọ.",
+    "Èyí ń pẹ́ ju bí a ṣe retí lọ. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "We couldn’t complete this action. Please try again or contact support if it continues.",
+    "We no fit finish this action. Try again or contact support if e continue.",
+    "Ba mu iya kammala wannan aiki ba. Sake gwadawa ko tuntuɓi tallafi idan ya ci gaba.",
+    "Anyị enweghị ike imecha ihe a. Nwaa ọzọ ma ọ bụ kpọtụrụ nkwado ma ọ bụrụ na ọ gaa n’ihu.",
+    "A kò lè parí ìgbésẹ̀ yìí. Tún gbìyànjú tàbí kan ìrànlọ́wọ́ tí ó bá tẹ̀síwájú."
+  ],
+  [
+    "We can’t access your account right now. Please try again later.",
+    "We no fit open your account now. Abeg try again later.",
+    "Ba za mu iya samun asusunka yanzu ba. Sake gwadawa daga baya.",
+    "Anyị enweghị ike ịnweta akaụntụ gị ugbu a. Biko nwaa ọzọ ma emechaa.",
+    "A kò lè wọlé sí àkọọ́lẹ̀ rẹ báyìí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "We can’t verify your code right now. Please try again later.",
+    "We no fit verify your code now. Abeg try again later.",
+    "Ba za mu iya tabbatar da lambarka yanzu ba. Sake gwadawa daga baya.",
+    "Anyị enweghị ike ikwenye koodu gị ugbu a. Biko nwaa ọzọ ma emechaa.",
+    "A kò lè jẹ́rìí kóòdù rẹ báyìí. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "We couldn’t send your code. Please try again in a moment.",
+    "We no fit send your code. Abeg try again soon.",
+    "Ba mu iya aika lambarka ba. Sake gwadawa nan da ɗan lokaci.",
+    "Anyị enweghị ike iziga koodu gị. Biko nwaa ọzọ n’oge na-adịghị anya.",
+    "A kò lè fi kóòdù rẹ ránṣẹ́. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "Your identity is verified. You can continue.",
+    "We don verify your identity. You fit continue.",
+    "An tabbatar da shaidarka. Za ka iya ci gaba.",
+    "Ekwenyela njirimara gị. Ị nwere ike ịga n’ihu.",
+    "A ti jẹ́rìí ẹni tí o jẹ́. O lè tẹ̀síwájú."
+  ],
+  [
+    "Your verification is in progress. Return here when you finish to continue.",
+    "Your verification dey go on. Come back here when you finish to continue.",
+    "Ana tabbatar da shaidarka. Koma nan idan ka gama don ci gaba.",
+    "Nkwenye gị na-aga n’ihu. Laghachi ebe a mgbe ị mechara iji gaa n’ihu.",
+    "Ìjẹ́rìísí rẹ ń lọ lọ́wọ́. Padà síbí nígbà tí o bá parí láti tẹ̀síwájú."
+  ],
+  [
+    "Voice entry is not available yet. You can type your farm description.",
+    "Voice entry never ready. You fit type about your farm.",
+    "Ba a shirya shigar da murya ba tukuna. Za ka iya rubuta bayanin gonarka.",
+    "Ntinye olu adịbeghị ugbu a. Ị nwere ike ide nkọwa ugbo gị.",
+    "A kò tíì lè lo ohùn. O lè kọ àlàyé oko rẹ."
+  ],
+  [
+    "Translate description to English",
+    "Translate description to English",
+    "Fassara bayanin zuwa Turanci",
+    "Tụgharịa nkọwa gaa na Bekee",
+    "Túmọ̀ àlàyé sí Gẹ̀ẹ́sì"
+  ],
+  [
+    "We couldn’t translate your description. Please try again later.",
+    "We no fit translate your description. Try again later.",
+    "Ba mu iya fassara bayaninka ba. Sake gwadawa daga baya.",
+    "Anyị enweghị ike ịtụgharị nkọwa gị. Biko nwaa ọzọ ma emechaa.",
+    "A kò lè túmọ̀ àlàyé rẹ. Jọ̀wọ́ tún gbìyànjú láìpẹ́."
+  ],
+  [
+    "Review your English description",
+    "Check your English description",
+    "Duba bayaninka na Turanci",
+    "Lelee nkọwa Bekee gị",
+    "Ṣàyẹ̀wò àlàyé Gẹ̀ẹ́sì rẹ"
+  ],
+  [
+    "Use this description",
+    "Use this description",
+    "Yi amfani da wannan bayanin",
+    "Jiri nkọwa a",
+    "Lo àlàyé yìí"
+  ],
+  [
+    "Add farm evidence video",
+    "Add video of your farm",
+    "Ƙara bidiyon shaidar gona",
+    "Tinye vidio ihe akaebe ugbo",
+    "Fi fídíò ẹ̀rí oko kún un"
+  ],
+  [
+    "Allow photo and video access in Settings to attach your farm evidence.",
+    "Allow photo and video for Settings to add your farm evidence.",
+    "Bada damar hotuna da bidiyo a Saituna don haɗa shaidar gonarka.",
+    "Kwe ka e nweta foto na vidio na Ntọala iji tinye ihe akaebe ugbo gị.",
+    "Gba àyè sí fọ́tò àti fídíò nínú Ètò láti fi ẹ̀rí oko rẹ kún un."
+  ],
+  [
+    "Choose a video smaller than 25 MB.",
+    "Choose video wey small pass 25 MB.",
+    "Zaɓi bidiyo ƙasa da 25 MB.",
+    "Họrọ vidio na-erughị 25 MB.",
+    "Yan fídíò tí ó kéré ju 25 MB."
+  ],
+  [
+    "Choose an MP4 or MOV video.",
+    "Choose MP4 or MOV video.",
+    "Zaɓi bidiyon MP4 ko MOV.",
+    "Họrọ vidio MP4 ma ọ bụ MOV.",
+    "Yan fídíò MP4 tàbí MOV."
+  ],
+  [
+    "We couldn’t upload your file. Please try again.",
+    "We no fit upload your file. Try again.",
+    "Ba mu iya ɗora fayil ɗinka ba. Sake gwadawa.",
+    "Anyị enweghị ike ibugo faịlụ gị. Biko nwaa ọzọ.",
+    "A kò lè gbé fáìlì rẹ sókè. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "Payments and earnings",
+    "Payment and money wey you earn",
+    "Biya da kuɗin shiga",
+    "Ịkwụ ụgwọ na ego ị nwetara",
+    "Ìsanwó àti owó tí o rí gbà"
+  ],
+  [
+    "Manage payments, bank accounts and withdrawals",
+    "Manage payment, bank account and withdrawal",
+    "Sarrafa biyan kuɗi, asusun banki da cire kuɗi",
+    "Jikwaa ịkwụ ụgwọ, akaụntụ ụlọ akụ na iwepụ ego",
+    "Ṣàkóso ìsanwó, àkáǹtì báńkì àti yíyọ owó"
+  ],
+  [
+    "Your earnings",
+    "Money wey you earn",
+    "Kuɗin shigarka",
+    "Ego ị nwetara",
+    "Owó tí o rí gbà"
+  ],
+  [
+    "Held for delivery: {amount}",
+    "Money wey we hold for delivery: {amount}",
+    "Kuɗin da aka riƙe har sai an kai kaya: {amount}",
+    "Ego e debere ruo mgbe e bufere ihe: {amount}",
+    "Owó tí a dì mú títí ìfijiṣẹ: {amount}"
+  ],
+  [
+    "Available: {amount}",
+    "Money wey you fit use: {amount}",
+    "Kuɗin da ke akwai: {amount}",
+    "Ego dị: {amount}",
+    "Owó tó wà: {amount}"
+  ],
+  [
+    "Withdrawal pending: {amount}",
+    "Withdrawal wey dey wait: {amount}",
+    "Cire kuɗi da ke jira: {amount}",
+    "Iwepụ ego na-echere: {amount}",
+    "Yíyọ owó tó ń dúró: {amount}"
+  ],
+  [
+    "Payment account",
+    "Account for payment",
+    "Asusun biyan kuɗi",
+    "Akaụntụ ịkwụ ụgwọ",
+    "Àkáǹtì ìsanwó"
+  ],
+  [
+    "Complete the secure account setup to receive payments and refunds.",
+    "Finish this secure account setup to collect payment and refund.",
+    "Kammala buɗe asusun cikin tsaro don karɓar biyan kuɗi da mayar da kuɗi.",
+    "Mechaa ntọala akaụntụ e chebere iji nata ụgwọ na ego a na-eweghachi.",
+    "Parí ètò àkáǹtì tó ní ààbò láti gba ìsanwó àti owó àpadà."
+  ],
+  [
+    "First name",
+    "First name",
+    "Sunan farko",
+    "Aha mbụ",
+    "Orúkọ àkọ́kọ́"
+  ],
+  [
+    "Last name",
+    "Surname",
+    "Sunan iyali",
+    "Aha nna",
+    "Orúkọ ìdílé"
+  ],
+  [
+    "Account type",
+    "Account type",
+    "Nau'in asusu",
+    "Ụdị akaụntụ",
+    "Irú àkáǹtì"
+  ],
+  [
+    "Individual",
+    "One person",
+    "Mutum ɗaya",
+    "Onye naanị ya",
+    "Ẹnì kọ̀ọ̀kan"
+  ],
+  [
+    "Registered business",
+    "Business wey register",
+    "Kasuwanci mai rajista",
+    "Azụmahịa e debanyere aha",
+    "Ilé iṣẹ́ tí a forúkọ sílẹ̀"
+  ],
+  [
+    "Set up payments",
+    "Set up payment",
+    "Shirya biyan kuɗi",
+    "Hazie ịkwụ ụgwọ",
+    "Ṣètò ìsanwó"
+  ],
+  [
+    "Continue payment setup",
+    "Continue payment setup",
+    "Ci gaba da shirya biyan kuɗi",
+    "Gaa n'ihu na ntọala ịkwụ ụgwọ",
+    "Tẹ̀síwájú nínú ètò ìsanwó"
+  ],
+  [
+    "Check payment setup",
+    "Check payment setup",
+    "Duba shirye-shiryen biyan kuɗi",
+    "Lelee ntọala ịkwụ ụgwọ",
+    "Ṣàyẹ̀wò ètò ìsanwó"
+  ],
+  [
+    "Your payment account is ready.",
+    "Your payment account don ready.",
+    "Asusun biyan kuɗinka ya shirya.",
+    "Akaụntụ ịkwụ ụgwọ gị adịla njikere.",
+    "Àkáǹtì ìsanwó rẹ ti ṣetán."
+  ],
+  [
+    "Bank account",
+    "Bank account",
+    "Asusun banki",
+    "Akaụntụ ụlọ akụ",
+    "Àkáǹtì báńkì"
+  ],
+  [
+    "Choose bank",
+    "Choose bank",
+    "Zaɓi banki",
+    "Họrọ ụlọ akụ",
+    "Yan báńkì"
+  ],
+  [
+    "Bank",
+    "Bank",
+    "Banki",
+    "Ụlọ akụ",
+    "Báńkì"
+  ],
+  [
+    "Account number",
+    "Account number",
+    "Lambar asusu",
+    "Nọmba akaụntụ",
+    "Nọ́mbà àkáǹtì"
+  ],
+  [
+    "Verify bank account",
+    "Verify bank account",
+    "Tabbatar da asusun banki",
+    "Nyochaa akaụntụ ụlọ akụ",
+    "Jẹ́rìí àkáǹtì báńkì"
+  ],
+  [
+    "Withdraw earnings",
+    "Withdraw money wey you earn",
+    "Cire kuɗin shiga",
+    "Wepụ ego ị nwetara",
+    "Yọ owó tí o rí gbà"
+  ],
+  [
+    "Amount to receive (NGN)",
+    "Amount wey you go collect (NGN)",
+    "Kuɗin da za a karɓa (NGN)",
+    "Ego ị ga-anata (NGN)",
+    "Iye owó láti gbà (NGN)"
+  ],
+  [
+    "Withdrawal fee: {amount}",
+    "Withdrawal charge: {amount}",
+    "Kuɗin cirewa: {amount}",
+    "Ụgwọ iwepụ ego: {amount}",
+    "Owó iṣẹ́ yíyọ owó: {amount}"
+  ],
+  [
+    "Review the bank account, amount and fee before requesting your withdrawal.",
+    "Check bank account, amount and charge before you request withdrawal.",
+    "Duba asusun banki, adadin kuɗi da cajin cirewa kafin nema.",
+    "Lelee akaụntụ ụlọ akụ, ego na ụgwọ ọrụ tupu ị rịọ iwepụ ego.",
+    "Ṣàyẹ̀wò àkáǹtì báńkì, iye owó àti owó iṣẹ́ kí o tó béèrè yíyọ owó."
+  ],
+  [
+    "Request withdrawal",
+    "Request withdrawal",
+    "Nemi cire kuɗi",
+    "Rịọ iwepụ ego",
+    "Béèrè yíyọ owó"
+  ],
+  [
+    "Confirm withdrawal",
+    "Confirm withdrawal",
+    "Tabbatar da cire kuɗi",
+    "Kwenye iwepụ ego",
+    "Jẹ́rìí yíyọ owó"
+  ],
+  [
+    "The amount and withdrawal fee will be deducted from your available earnings.",
+    "We go remove the amount and withdrawal charge from money wey you fit use.",
+    "Za a cire adadin da cajin cirewa daga kuɗin shigarka da ke akwai.",
+    "A ga-ewepụ ego na ụgwọ ọrụ n'ego gị dị.",
+    "A ó yọ iye owó àti owó iṣẹ́ kúrò nínú owó tí ó wà fún ọ."
+  ],
+  [
+    "Payment activity",
+    "Payment history",
+    "Tarihin biyan kuɗi",
+    "Akụkọ ịkwụ ụgwọ",
+    "Ìtàn ìsanwó"
+  ],
+  [
+    "Payments are not available right now. Please try again later.",
+    "Payment no dey available now. Abeg try again later.",
+    "Ba a samun biyan kuɗi yanzu. Da fatan za a sake gwadawa daga baya.",
+    "Ịkwụ ụgwọ adịghị ugbu a. Biko nwaa ọzọ ma emechaa.",
+    "Ìsanwó kò sí ní báyìí. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan sí i lẹ́yìn náà."
+  ],
+  [
+    "Payment",
+    "Payment",
+    "Biyan kuɗi",
+    "Ịkwụ ụgwọ",
+    "Ìsanwó"
+  ],
+  [
+    "Payment-processing fees are shown before you pay. Non-returnable fees are deducted from refunds.",
+    "You go see payment charges before you pay. Charges wey no fit return no dey inside refund.",
+    "Ana nuna cajin biyan kuɗi kafin ka biya. Ba a mayar da cajin da ba a iya maidowa.",
+    "A na-egosi ụgwọ ọrụ tupu ị kwụọ ụgwọ. A naghị eweghachi ụgwọ ọrụ a na-apụghị iweghachi.",
+    "A ń fi owó iṣẹ́ ìsanwó hàn kí o tó sanwó. Owó iṣẹ́ tí kò ṣeé dá padà kò sí nínú owó àpadà."
+  ],
+  [
+    "Your payment is being reviewed. Please contact support for help.",
+    "We dey review your payment. Abeg contact support for help.",
+    "Ana duba biyan kuɗinka. Tuntuɓi tallafi don taimako.",
+    "A na-enyocha ịkwụ ụgwọ gị. Kpọtụrụ ndị enyemaka.",
+    "A ń ṣàyẹ̀wò ìsanwó rẹ. Kàn sí ìrànlọ́wọ́."
+  ],
+  [
+    "Pay securely",
+    "Pay safely",
+    "Biya cikin tsaro",
+    "Kwụọ ụgwọ na nchekwa",
+    "Sanwó láìséwu"
+  ],
+  [
+    "Pay delivery difference",
+    "Pay extra delivery money",
+    "Biya bambancin kuɗin jigila",
+    "Kwụọ ego nnyefe fọdụrụ",
+    "San ìyàtọ̀ owó ìfijiṣẹ"
+  ],
+  [
+    "Check payment status",
+    "Check payment status",
+    "Duba matsayin biyan kuɗi",
+    "Lelee ọnọdụ ịkwụ ụgwọ",
+    "Ṣàyẹ̀wò ipò ìsanwó"
+  ],
+  [
+    "Payment setup",
+    "Payment setup",
+    "Shirya biyan kuɗi",
+    "Ntọala ịkwụ ụgwọ",
+    "Ètò ìsanwó"
+  ],
+  [
+    "Withdrawal",
+    "Withdrawal",
+    "Cire kuɗi",
+    "Iwepụ ego",
+    "Yíyọ owó"
+  ],
+  [
+    "Refund",
+    "Refund",
+    "Mayar da kuɗi",
+    "Nkwụghachi ego",
+    "Owó àpadà"
+  ],
+  [
+    "Earnings release",
+    "Release money wey you earn",
+    "Sakin kuɗin shiga",
+    "Mwepụta ego ị nwetara",
+    "Títú owó tí o rí gbà"
+  ],
+  [
+    "Waiting for approval",
+    "Dey wait for approval",
+    "Ana jiran amincewa",
+    "Na-eche nkwenye",
+    "Ó ń dúró de ìfọwọ́sí"
+  ],
+  [
+    "Checking payment",
+    "Dey check payment",
+    "Ana duba biyan kuɗi",
+    "Na-enyocha ịkwụ ụgwọ",
+    "A ń ṣàyẹ̀wò ìsanwó"
+  ],
+  [
+    "Ready to pay",
+    "Ready to pay",
+    "A shirye don biya",
+    "Dị njikere ịkwụ ụgwọ",
+    "Ṣetán láti sanwó"
+  ],
+  [
+    "Needs review",
+    "Need review",
+    "Yana buƙatar dubawa",
+    "Chọrọ nyocha",
+    "Ó nílò àyẹ̀wò"
+  ],
+  [
+    "Payment confirmed",
+    "Payment don confirm",
+    "An tabbatar da biyan kuɗi",
+    "E kwenyela ịkwụ ụgwọ",
+    "A ti jẹ́rìí ìsanwó"
+  ],
+  [
+    "Payment expired",
+    "Payment time don pass",
+    "Lokacin biyan kuɗi ya ƙare",
+    "Oge ịkwụ ụgwọ agwụla",
+    "Àkókò ìsanwó ti kọjá"
+  ],
+  [
+    "Payment could not be completed",
+    "Payment no complete",
+    "Ba a iya kammala biyan kuɗi ba",
+    "Ịkwụ ụgwọ emezughị",
+    "Ìsanwó kò pé"
+  ],
+  [
+    "Choose an approved bank account.",
+    "Choose bank account wey dem don approve.",
+    "Zaɓi asusun banki da aka amince da shi.",
+    "Họrọ akaụntụ ụlọ akụ a kwadoro.",
+    "Yan àkáǹtì báńkì tí a fọwọ́ sí."
+  ],
+  [
+    "Your available earnings do not cover this withdrawal and its fee.",
+    "Money wey you fit use no reach this withdrawal and charge.",
+    "Kuɗin shigarka da ke akwai bai isa cirewar da cajinta ba.",
+    "Ego gị dị ezughị iwepụ ego a na ụgwọ ọrụ ya.",
+    "Owó tó wà fún ọ kò tó yíyọ owó yìí àti owó iṣẹ́ rẹ̀."
+  ],
+  [
+    "Withdrawals are paused while an order is being reviewed.",
+    "Withdrawal dey pause as we dey review one order.",
+    "An dakatar da cire kuɗi yayin duba oda.",
+    "A kwụsịtụrụ iwepụ ego ka a na-enyocha otu iwu.",
+    "Yíyọ owó dúró nígbà tí a ń ṣàyẹ̀wò ìbéèrè kan."
+  ],
+  [
+    "We’re checking the result. Please don’t start another payment.",
+    "We dey check the result. Abeg no start another payment.",
+    "Muna duba sakamakon. Kada ka fara wani biyan kuɗi.",
+    "Anyị na-enyocha nsonaazụ. Biko amalitela ịkwụ ụgwọ ọzọ.",
+    "A ń ṣàyẹ̀wò èsì. Jọ̀wọ́ má bẹ̀rẹ̀ ìsanwó mìíràn."
+  ],
+  [
+    "Refresh your delivery quote before paying.",
+    "Get fresh delivery price before you pay.",
+    "Sabunta farashin jigila kafin biya.",
+    "Nweta ọnụahịa nnyefe ọhụrụ tupu ị kwụọ ụgwọ.",
+    "Tún iye owó ìfijiṣẹ ṣe kí o tó sanwó."
+  ],
+  [
+    "Withdrawal fees are being updated. Please try again later.",
+    "We dey update withdrawal charge. Abeg try again later.",
+    "Ana sabunta cajin cire kuɗi. Sake gwadawa daga baya.",
+    "A na-emelite ụgwọ iwepụ ego. Biko nwaa ọzọ ma emechaa.",
+    "A ń ṣe àtúnṣe owó iṣẹ́ yíyọ owó. Jọ̀wọ́ gbìyànjú lẹ́yìn náà."
+  ],
+  [
+    "Return to your order to check your payment. You can also return to the LeetLogic app.",
+    "Go back to your order to check payment. You fit return to LeetLogic app too.",
+    "Koma odarka don duba biyan kuɗi. Haka kuma za ka iya komawa manhajar LeetLogic.",
+    "Laghachi n'iwu gị iji lelee ịkwụ ụgwọ. Ị nwekwara ike ịlaghachi na ngwa LeetLogic.",
+    "Padà sí ìbéèrè rẹ láti ṣàyẹ̀wò ìsanwó. O tún lè padà sí ẹ̀rọ LeetLogic."
+  ],
+  [
+    "Withdrawal fee",
+    "Withdrawal charge",
+    "Cajin cire kuɗi",
+    "Ụgwọ iwepụ ego",
+    "Owó iṣẹ́ yíyọ owó"
+  ],
+  [
+    "View order",
+    "See order",
+    "Duba oda",
+    "Lee iwu",
+    "Wo ìbéèrè"
+  ],
+  [
+    "This seller is finishing payment setup. Please try again later.",
+    "This seller still dey set up payment. Abeg try again later.",
+    "Mai sayarwa yana kammala tsarin biyan kuɗi. Sake gwadawa daga baya.",
+    "Onye na-ere ihe na-emecha ntọala ịkwụ ụgwọ. Biko nwaa ọzọ ma emechaa.",
+    "Olùtajà yìí ń parí ètò ìsanwó. Jọ̀wọ́ gbìyànjú lẹ́yìn náà."
+  ],
+  [
+    "Complete your payment account setup before continuing.",
+    "Finish your payment account setup before you continue.",
+    "Kammala shirya asusun biyan kuɗinka kafin ci gaba.",
+    "Mechaa ntọala akaụntụ ịkwụ ụgwọ gị tupu ị gaa n'ihu.",
+    "Parí ètò àkáǹtì ìsanwó rẹ kí o tó tẹ̀síwájú."
+  ],
+  [
+    "This order expired. Please place a new order.",
+    "Time for this order don pass. Abeg place new order.",
+    "Lokacin wannan oda ya ƙare. Sake yin oda.",
+    "Oge iwu a agwụla. Biko tinye iwu ọhụrụ.",
+    "Àkókò ìbéèrè yìí ti kọjá. Jọ̀wọ́ ṣe ìbéèrè tuntun."
+  ],
+  [
+    "This order cannot accept a payment right now.",
+    "This order no fit collect payment now.",
+    "Ba a iya biyan wannan oda yanzu.",
+    "Iwu a enweghị ike ịnata ịkwụ ụgwọ ugbu a.",
+    "Ìbéèrè yìí kò lè gba ìsanwó ní báyìí."
+  ],
+  [
+    "No additional payment is needed.",
+    "You no need pay extra money.",
+    "Ba a buƙatar ƙarin biyan kuɗi.",
+    "Ọ dịghị mkpa ịkwụ ụgwọ ọzọ.",
+    "Kò sí ìsanwó àfikún tí a nílò."
+  ],
+  [
+    "The withdrawal fee changed. Please review it again.",
+    "Withdrawal charge don change. Abeg check am again.",
+    "Cajin cire kuɗi ya canza. Sake dubawa.",
+    "Ụgwọ iwepụ ego agbanweela. Biko lelee ya ọzọ.",
+    "Owó iṣẹ́ yíyọ owó ti yí padà. Jọ̀wọ́ ṣàyẹ̀wò rẹ̀ lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "Delivery details cannot be changed while a payment is being checked.",
+    "You no fit change delivery details as we dey check payment.",
+    "Ba a iya sauya bayanan jigila yayin duba biyan kuɗi.",
+    "Enweghị ike ịgbanwe nkọwa nnyefe ka a na-enyocha ịkwụ ụgwọ.",
+    "A kò lè yí àlàyé ìfijiṣẹ padà nígbà tí a ń ṣàyẹ̀wò ìsanwó."
+  ],
+  [
+    "We couldn’t complete this payment action. Please try again or contact support.",
+    "We no fit complete this payment action. Abeg try again or contact support.",
+    "Ba mu iya kammala wannan biyan kuɗi ba. Sake gwadawa ko tuntuɓi tallafi.",
+    "Anyị enweghị ike imecha ịkwụ ụgwọ a. Biko nwaa ọzọ ma ọ bụ kpọtụrụ ndị enyemaka.",
+    "A kò lè parí ìgbésẹ̀ ìsanwó yìí. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan sí i tàbí kàn sí ìrànlọ́wọ́."
+  ],
+  [
+    "Your payment account needs a support review.",
+    "Support need check your payment account.",
+    "Asusun biyan kuɗinka yana buƙatar dubawar tallafi.",
+    "Ndị enyemaka kwesịrị inyocha akaụntụ ịkwụ ụgwọ gị.",
+    "Àkáǹtì ìsanwó rẹ nílò àyẹ̀wò ìrànlọ́wọ́."
   ]
 ]

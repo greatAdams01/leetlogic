@@ -33,7 +33,15 @@ export async function handle(req: NextRequest, context: { params: Promise<{ path
   const { path } = await context.params;
   if (
     path.some((x) => !/^[\w-]+$/.test(x)) ||
-    !["auth", "me", "orders", "translations", "listing-drafts", "listing-photos"].includes(path[0])
+    ![
+      "auth",
+      "me",
+      "orders",
+      "translations",
+      "listing-drafts",
+      "listing-photos",
+      "financial",
+    ].includes(path[0])
   )
     return NextResponse.json({ error: { message: "Not found" } }, { status: 404 });
   if (req.method !== "GET" && req.headers.get("origin") !== req.nextUrl.origin)

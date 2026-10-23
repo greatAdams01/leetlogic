@@ -1,4 +1,5 @@
 "use client";
+import { MoneyOperations } from "./money-operations";
 import { CustomerDelivery } from "../customer-delivery";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -608,6 +609,9 @@ function Workspace({ route, title }: { route: string; title: string }) {
           <span className="live-status">● Staff operations</span>
         </header>
         <div className="live-content">
+          {["withdrawals", "reconciliation"].includes(resource) && can("payments.read") && (
+            <MoneyOperations manage={can("payments.manage")} />
+          )}
           <div className="live-page-heading">
             <div>
               <div className="live-eyebrow">LEETLOGIC OPERATIONS</div>
@@ -1060,29 +1064,36 @@ function Workspace({ route, title }: { route: string; title: string }) {
                       Cancel order
                     </button>
                   )}
-                {resource === "orders" && can("payments.manage") && (
-                  <button
-                    onClick={() =>
-                      open(
-                        "Record escrow transaction",
-                        `orders/${selected.id}/escrow`,
-                        [
-                          select("kind", "Action", ["FUND", "RELEASE", "REFUND"]),
-                          text("amountMinor", "Amount in kobo"),
-                          {
-                            name: "externalRef",
-                            label: "Verified payment reference (required for funding)",
-                            type: "optional",
-                          },
-                          reason,
-                        ],
-                        { stepUp: true, extra: { mutationKey: crypto.randomUUID() } },
-                      )
-                    }
-                  >
-                    Manage escrow
-                  </button>
-                )}
+                {resource === "orders" &&
+                  selected.fundsProvider !== "bachs" &&
+                  can("payments.manage") && (
+                    <button
+                      onClick={() =>
+                        open(
+                          "Record escrow transaction",
+                          `orders/${selected.id}/escrow`,
+                          [
+                            select("kind", "Action", ["FUND", "RELEASE", "REFUND"]),
+                            text("amountMinor", "Amount in kobo"),
+                            {
+                              name: "externalRef",
+                              label: "Verified payment reference (required for funding)",
+                              type: "optional",
+                            },
+                            reason,
+                          ],
+                          { stepUp: true, extra: { mutationKey: crypto.randomUUID() } },
+                        )
+                      }
+                    >
+                      Manage escrow
+                    </button>
+                  )}
+                {resource === "orders" &&
+                  selected?.fundsProvider === "bachs" &&
+                  can("payments.read") && (
+                    <MoneyOperations orderId={selected.id} manage={can("payments.manage")} />
+                  )}
                 {resource === "orders" && selected?.id && (
                   <CustomerDelivery
                     id={selected.id}

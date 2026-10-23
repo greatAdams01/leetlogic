@@ -24,18 +24,17 @@ async function ready(pending = false) {
   const deps = {
     read: vi.fn().mockResolvedValue(data(pending)),
     reconcile: vi.fn().mockResolvedValue(undefined),
-    start: vi
-      .fn()
-      .mockResolvedValue({
-        url: "https://identity.dojah.io/?widget_id=test",
-        check: data(true).check,
-      }),
+    start: vi.fn().mockResolvedValue({
+      url: "https://identity.dojah.io/?widget_id=test",
+      check: data(true).check,
+    }),
     open: vi.fn().mockResolvedValue(undefined),
     onStatus: vi.fn(),
   };
   const flow = createIdentityFlow(deps);
   flow.activate();
   await flow.load();
+  deps.reconcile.mockClear();
   return { deps, flow };
 }
 describe("Dojah action and app-return coordination", () => {
@@ -53,6 +52,55 @@ describe("Dojah action and app-return coordination", () => {
     response.resolve();
     await checking;
     expect(flow.getSnapshot().operation).toBe("idle");
+  });
+  it("rechecks an existing reviewed result without reopening the browser or creating a session", async () => {
+    const { deps, flow } = await ready(true);
+    deps.read.mockResolvedValueOnce({
+      ...data(true),
+      check: { status: "REVIEW", mode: "sandbox" },
+    });
+    await flow.load();
+    deps.reconcile.mockClear();
+    deps.read.mockResolvedValueOnce(verified);
+    await flow.check();
+    expect(deps.reconcile).toHaveBeenCalledTimes(1);
+    expect(flow.getSnapshot().data?.passed).toBe(true);
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.open).not.toHaveBeenCalled();
+  });
+  it("restores a successful previous attempt on entry without starting another verification", async () => {
+    const { deps, flow } = await ready();
+    deps.read
+      .mockResolvedValueOnce({
+        ...data(),
+        check: { status: "FAILED", mode: "sandbox" },
+      })
+      .mockResolvedValueOnce(verified);
+    await flow.load();
+    expect(deps.reconcile).toHaveBeenCalledTimes(1);
+    expect(flow.getSnapshot().data?.passed).toBe(true);
+    expect(deps.onStatus).toHaveBeenLastCalledWith(true);
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.open).not.toHaveBeenCalled();
+  });
+  it("checks existing attempts before a retry and stops when an earlier one passed", async () => {
+    const { deps, flow } = await ready(true);
+    deps.read.mockResolvedValueOnce(verified);
+    await flow.launch(true);
+    expect(deps.reconcile).toHaveBeenCalledTimes(1);
+    expect(flow.getSnapshot().data?.passed).toBe(true);
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.open).not.toHaveBeenCalled();
+  });
+  it("preserves previous attempts and does not start another check when recovery is unavailable", async () => {
+    const { deps, flow } = await ready(true);
+    const error = new Error("Provider unavailable");
+    deps.reconcile.mockRejectedValueOnce(error);
+    await flow.launch(true);
+    expect(flow.getSnapshot().error).toBe(error);
+    expect(flow.getSnapshot().data?.check?.status).toBe("PENDING");
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.open).not.toHaveBeenCalled();
   });
   it("launching is consented, runs once, and does not immediately check on browser open", async () => {
     const { deps, flow } = await ready();

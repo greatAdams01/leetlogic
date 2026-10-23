@@ -99,7 +99,7 @@ export async function api<T = any>(
         : options.blob
           ? { body: options.blob }
           : {}),
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(options.blob ? 60000 : 25000),
     });
   let response: Response;
   try {
@@ -117,8 +117,8 @@ export async function api<T = any>(
       0,
       timeout ? "REQUEST_TIMEOUT" : "NETWORK_ERROR",
       timeout
-        ? "The server took too long to respond. Please try again."
-        : "Cannot connect to the server. Check your connection and that the backend is running.",
+        ? "This is taking longer than expected. Please try again."
+        : "Unable to connect. Check your internet connection and try again.",
     );
   }
   let data;
@@ -128,7 +128,7 @@ export async function api<T = any>(
     throw new ApiError(
       response.status,
       "INVALID_SERVER_RESPONSE",
-      "The server returned an unreadable response. Contact support if this continues.",
+      "We couldn’t complete this action. Please try again or contact support if it continues.",
     );
   }
   if (!response.ok)

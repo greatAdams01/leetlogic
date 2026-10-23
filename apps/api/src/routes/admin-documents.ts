@@ -1,7 +1,5 @@
 import { Router, raw } from "express";
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { resolve, sep } from "node:path";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
 import { getConfig } from "../config.js";
@@ -9,9 +7,9 @@ import { decryptSecret, encryptSecret, safeEqual } from "../lib/crypto.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
+import { storeMedia, readMedia, deleteMedia } from "../services/storage/private-media.js";
 export const adminDocumentsRouter = Router();
 export const documentUploadsRouter = Router();
-const root = () => resolve(getConfig().PRIVATE_STORAGE_ROOT);
 adminDocumentsRouter.get(
   "/:id",
   requireAuth("admin"),
@@ -41,24 +39,7 @@ adminDocumentsRouter.get(
     const encryptedKey = document?.encryptedObjectKey || evidence?.encryptedObjectKey;
     if (!encryptedKey) throw new AppError(404, "DOCUMENT_UNAVAILABLE", "Document is unavailable");
     const objectKey = decryptSecret(encryptedKey);
-    if (
-      !/^[a-zA-Z0-9_./-]+$/.test(objectKey) ||
-      objectKey.split("/").some((part) => part === ".." || part === ".")
-    )
-      throw new AppError(404, "DOCUMENT_UNAVAILABLE", "Document is unavailable");
-    let bytes: Buffer;
-    try {
-      const base = await realpath(root());
-      const path = await realpath(resolve(base, objectKey));
-      if (!path.startsWith(base + sep)) throw new Error("Outside storage");
-      bytes = await readFile(path);
-    } catch {
-      throw new AppError(
-        404,
-        "DOCUMENT_UNAVAILABLE",
-        "Document file is unavailable in private storage",
-      );
-    }
+    const bytes = await readMedia(objectKey);
     if (
       document &&
       createHash("sha256").update(bytes).digest("hex") !== document.checksumSha256.toLowerCase()
@@ -73,6 +54,7 @@ adminDocumentsRouter.get(
       .set({
         "Content-Type":
           document?.mimeType ||
+          evidence?.mimeType ||
           (bytes.subarray(0, 5).toString() === "%PDF-"
             ? "application/pdf"
             : bytes[0] === 137
@@ -89,7 +71,10 @@ adminDocumentsRouter.get(
 documentUploadsRouter.post(
   "/",
   requireAuth("customer"),
-  raw({ type: ["image/jpeg", "image/png", "application/pdf"], limit: "10mb" }),
+  raw({
+    type: ["image/jpeg", "image/png", "application/pdf", "video/mp4", "video/quicktime"],
+    limit: "25mb",
+  }),
   async (req, res) => {
     const kind = z.enum(["identity", "evidence"]).default("identity").parse(req.query.kind);
     const documentType =
@@ -99,13 +84,26 @@ documentUploadsRouter.post(
             .parse(req.query.documentType)
         : null;
     const mimeType = z
-      .enum(["image/jpeg", "image/png", "application/pdf"])
+      .enum(["image/jpeg", "image/png", "application/pdf", "video/mp4", "video/quicktime"])
       .parse(req.get("Content-Type"));
     const bytes = req.body;
     if (!Buffer.isBuffer(bytes) || bytes.length === 0)
       throw new AppError(422, "FILE_REQUIRED", "Upload a PDF, PNG, or JPEG document");
-    const magicValid =
-      mimeType === "application/pdf"
+    if (kind === "identity" && mimeType.startsWith("video/"))
+      throw new AppError(
+        422,
+        "FILE_TYPE_MISMATCH",
+        "Choose an image or PDF for your identity document",
+      );
+    if (!mimeType.startsWith("video/") && bytes.length > 10 * 1024 * 1024)
+      throw new AppError(413, "FILE_TOO_LARGE", "Choose an image or PDF smaller than 10 MB");
+    const magicValid = mimeType.startsWith("video/")
+      ? bytes.length > 12 &&
+        bytes.subarray(4, 8).toString() === "ftyp" &&
+        ["isom", "iso2", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ", "qt  "].includes(
+          bytes.subarray(8, 12).toString(),
+        )
+      : mimeType === "application/pdf"
         ? bytes.subarray(0, 5).toString() === "%PDF-"
         : mimeType === "image/png"
           ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
@@ -121,32 +119,39 @@ documentUploadsRouter.post(
     });
     if (!verification || !["DRAFT", "RESUBMISSION_REQUIRED"].includes(verification.status))
       throw new AppError(409, "VERIFICATION_LOCKED", "No editable verification case is available");
-    const objectKey = `${farmer.id}/${randomUUID()}`;
-    await mkdir(resolve(root(), farmer.id), { recursive: true, mode: 0o700 });
-    await writeFile(resolve(root(), objectKey), bytes, { mode: 0o600, flag: "wx" });
-    if (kind === "evidence") {
-      const evidence = await prisma.farmEvidence.create({
-        data: { verificationCaseId: verification.id, encryptedObjectKey: encryptSecret(objectKey) },
+    const objectKey = await storeMedia(bytes, mimeType, `${farmer.id}/${randomUUID()}`);
+    try {
+      if (kind === "evidence") {
+        const evidence = await prisma.farmEvidence.create({
+          data: {
+            verificationCaseId: verification.id,
+            mimeType,
+            encryptedObjectKey: encryptSecret(objectKey),
+          },
+        });
+        res.status(201).json({ evidence: { id: evidence.id, hasPhoto: true, mimeType } });
+        return;
+      }
+      const document = await prisma.verificationDocument.create({
+        data: {
+          verificationCaseId: verification.id,
+          documentType: documentType!,
+          mimeType,
+          checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+          encryptedObjectKey: encryptSecret(objectKey),
+        },
       });
-      res.status(201).json({ evidence: { id: evidence.id, hasPhoto: true } });
-      return;
+      res.status(201).json({
+        document: {
+          id: document.id,
+          documentType,
+          mimeType,
+          checksumSha256: document.checksumSha256,
+        },
+      });
+    } catch (error) {
+      await deleteMedia(objectKey);
+      throw error;
     }
-    const document = await prisma.verificationDocument.create({
-      data: {
-        verificationCaseId: verification.id,
-        documentType: documentType!,
-        mimeType,
-        checksumSha256: createHash("sha256").update(bytes).digest("hex"),
-        encryptedObjectKey: encryptSecret(objectKey),
-      },
-    });
-    res.status(201).json({
-      document: {
-        id: document.id,
-        documentType,
-        mimeType,
-        checksumSha256: document.checksumSha256,
-      },
-    });
   },
 );

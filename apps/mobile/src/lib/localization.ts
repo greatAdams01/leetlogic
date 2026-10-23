@@ -44,33 +44,35 @@ export function localizedError(locale: Locale, value: unknown): string {
       },
     );
   const codes: Record<string, string> = {
-    IDENTITY_NOT_CONFIGURED: "Identity verification setup is incomplete. Please contact support.",
-    IDENTITY_UNAVAILABLE: "Identity verification is not available yet. Please try again later.",
-    IDENTITY_PROVIDER_UNAVAILABLE:
-      "The identity provider could not complete this check. Please try again later.",
+    MEDIA_UNAVAILABLE: "We couldn’t upload your file. Please try again.",
+    IDENTITY_NOT_CONFIGURED:
+      "We can’t start your identity check right now. Please try again later.",
+    IDENTITY_UNAVAILABLE: "We can’t start your identity check right now. Please try again later.",
+    IDENTITY_PROVIDER_UNAVAILABLE: "We couldn’t check your verification result. Please try again.",
     IDENTITY_INVALID_RESPONSE:
-      "The identity provider returned an unexpected result. Please contact support.",
+      "We couldn’t confirm your identity check. Please try again or contact support.",
     IDENTITY_REFERENCE_MISMATCH:
-      "The identity provider returned an unexpected result. Please contact support.",
+      "We couldn’t confirm your identity check. Please try again or contact support.",
     IDENTITY_REQUIRED: "Complete identity verification with Dojah before submitting.",
     IDENTITY_NOT_STARTED: "Start identity verification first.",
-    IDENTITY_ENVIRONMENT_MISMATCH: "Identity session belongs to another environment.",
+    IDENTITY_ENVIRONMENT_MISMATCH:
+      "We can’t start your identity check right now. Please try again later.",
     INVALID_NIGERIAN_PHONE:
       "This number is not recognized as a Nigerian mobile number. Check its prefix and digits.",
-    NETWORK_ERROR:
-      "Cannot connect to the server. Check your connection and that the backend is running.",
-    REQUEST_TIMEOUT: "The server took too long to respond. Please try again.",
+    NETWORK_ERROR: "Unable to connect. Check your internet connection and try again.",
+    REQUEST_TIMEOUT: "This is taking longer than expected. Please try again.",
     INVALID_SERVER_RESPONSE:
-      "The server returned an unreadable response. Contact support if this continues.",
+      "We couldn’t complete this action. Please try again or contact support if it continues.",
     DEVICE_STORAGE_UNAVAILABLE:
       "Cannot access secure storage on this device. Restart the app and try again.",
-    DATABASE_UNAVAILABLE:
-      "The account database is unavailable. Please try again when the service is restored.",
-    REDIS_UNAVAILABLE:
-      "The verification service is unavailable. Please try again when the service is restored.",
-    DEPENDENCY_UNAVAILABLE: "A required server service is unavailable. Please try again later.",
-    DATABASE_SCHEMA_MISMATCH: "The server database needs an update. Please contact support.",
-    INTERNAL_ERROR: "The server could not process this request. Please contact support.",
+    DATABASE_UNAVAILABLE: "We can’t access your account right now. Please try again later.",
+    REDIS_UNAVAILABLE: "We can’t verify your code right now. Please try again later.",
+    DEPENDENCY_UNAVAILABLE:
+      "We couldn’t complete this action. Please try again or contact support if it continues.",
+    DATABASE_SCHEMA_MISMATCH:
+      "We couldn’t complete this action. Please try again or contact support if it continues.",
+    INTERNAL_ERROR:
+      "We couldn’t complete this action. Please try again or contact support if it continues.",
     AUTH_REQUIRED: "Please sign in again.",
     SESSION_EXPIRED: "Please sign in again.",
     SIGN_IN_REQUIRED: "Please sign in again.",
@@ -81,12 +83,30 @@ export function localizedError(locale: Locale, value: unknown): string {
     OTP_RATE_LIMITED: "Too many attempts. Please wait and try again.",
     OTP_RESEND_TOO_SOON: "A code was already requested. Wait before resending.",
     OTP_ATTEMPTS_EXCEEDED: "Too many incorrect codes. Request a new code.",
-    OTP_DELIVERY_FAILED: "The SMS provider could not send your code. Please try again later.",
+    OTP_DELIVERY_FAILED: "We couldn’t send your code. Please try again in a moment.",
     INVENTORY_UNAVAILABLE: "This produce is no longer available in that quantity.",
     OWN_LISTING: "You cannot buy your own produce.",
     VALIDATION_ERROR: "Check the required fields and try again.",
     INVALID_QUANTITY: "Enter a positive quantity with at most three decimal places.",
     INVALID_TOTAL: "Enter a price in naira with at most two decimal places.",
+    SELLER_PAYMENTS_UNAVAILABLE: "This seller is finishing payment setup. Please try again later.",
+    PAYMENT_SETUP_REQUIRED: "Complete your payment account setup before continuing.",
+    PAYMENT_ACCOUNT_MISMATCH: "Your payment account needs a support review.",
+    ORDER_EXPIRED: "This order expired. Please place a new order.",
+    PAYMENT_LOCKED: "This order cannot accept a payment right now.",
+    CHECKOUT_ACTIVE: "Delivery details cannot be changed while a payment is being checked.",
+    TOPUP_NOT_REQUIRED: "No additional payment is needed.",
+    PAYOUT_FEE_CHANGED: "The withdrawal fee changed. Please review it again.",
+    PAYMENT_PROVIDER_REJECTED:
+      "We couldn’t complete this payment action. Please try again or contact support.",
+    PAYMENTS_UNAVAILABLE: "Payments are not available right now. Please try again later.",
+    PAYMENT_RESULT_UNKNOWN: "We’re checking the result. Please don’t start another payment.",
+    QUOTE_EXPIRED: "Refresh your delivery quote before paying.",
+    BANK_NOT_READY: "Choose an approved bank account.",
+    PAYOUT_FEE_UNAVAILABLE: "Withdrawal fees are being updated. Please try again later.",
+    PAYOUT_BLOCKED: "Withdrawals are paused while an order is being reviewed.",
+    INSUFFICIENT_BALANCE: "Your available earnings do not cover this withdrawal and its fee.",
+    PAYMENT_REVIEW_REQUIRED: "Your payment is being reviewed. Please contact support for help.",
     DELIVERY_UNAVAILABLE: "Delivery quotes are not available yet.",
     DELIVERY_LOCKED: "Delivery details cannot be changed after payment or dispatch.",
     DELIVERY_PRICE_CHANGED: "Delivery price changed. Staff must review the payment before booking.",
@@ -101,9 +121,7 @@ export function localizedError(locale: Locale, value: unknown): string {
     locale,
     codes[code] || (catalogue[message] ? message : "Request failed. Please try again."),
   );
-  return error?.requestId
-    ? `${description}\n${ui(locale, "Reference: {requestId}", { requestId: error.requestId })}`
-    : description;
+  return description;
 }
 export function unitLabel(locale: Locale, code: string) {
   const names: Record<string, string> = {
@@ -133,6 +151,30 @@ export function dateLabel(locale: Locale, value: string) {
 }
 
 export function localizedStatus(locale: Locale, code: string) {
+  const financial: Record<string, string> = {
+    ACCOUNT: "Payment setup",
+    DESTINATION: "Bank account",
+    CHECKOUT: "Payment",
+    PAYOUT: "Withdrawal",
+    REFUND: "Refund",
+    REFUND_PAYOUT: "Refund",
+    REFUND_TRANSFER: "Refund",
+    RELEASE: "Earnings release",
+    DELIVERY_TOPUP: "Payment",
+    ORDER: "Payment",
+    REQUESTED: "Waiting for approval",
+    QUEUED: "Checking payment",
+    PROCESSING: "Checking payment",
+    PROVIDER_PENDING: "Checking payment",
+    UNKNOWN: "Checking payment",
+    OPEN: "Ready to pay",
+    BLOCKED: "Needs review",
+    EXCEPTION: "Needs review",
+    SUCCEEDED: "Completed",
+    EXPIRED: "Payment expired",
+    FAILED: "Payment could not be completed",
+  };
+  if (financial[code]) return ui(locale, financial[code]!);
   const label = code
     .toLowerCase()
     .replaceAll("_", " ")

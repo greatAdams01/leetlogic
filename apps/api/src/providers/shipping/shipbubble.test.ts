@@ -34,13 +34,20 @@ describe("Shipbubble protocol", () => {
             request_token: "token",
             couriers: [
               {
+                courier_id: "test-courier",
                 service_code: "pickup",
                 courier_name: "Courier",
                 total: 120.5,
                 service_type: "pickup",
                 delivery_eta: "Tomorrow",
               },
-              { service_code: "drop", courier_name: "Station", total: 50, service_type: "dropoff" },
+              {
+                courier_id: "drop-courier",
+                service_code: "drop",
+                courier_name: "Station",
+                total: 50,
+                service_type: "dropoff",
+              },
             ],
           },
         }),
@@ -79,14 +86,21 @@ describe("Shipbubble protocol", () => {
       }),
     );
     await expect(
-      provider.book({ requestToken: "token", serviceCode: "courier" }),
+      provider.book({ requestToken: "token", serviceCode: "courier", courierId: "test-courier" }),
     ).resolves.toMatchObject({ id: "SB-123" });
     expect(fetcher.mock.calls[0]![0]).toBe("https://api.shipbubble.com/v1/shipping/labels");
+  });
+  it("reads the prepaid wallet balance in kobo", async () => {
+    fetcher.mockResolvedValue(
+      Response.json({ status: "success", data: { balance: 80124.2, country_code: "NG" } }),
+    );
+    expect(await provider.wallet()).toBe(8012420n);
+    expect(fetcher.mock.calls[0]![0]).toBe("https://api.shipbubble.com/v1/shipping/wallet/balance");
   });
   it("propagates failures without issuing a second booking", async () => {
     fetcher.mockRejectedValue(new Error("timeout"));
     await expect(
-      provider.book({ requestToken: "token", serviceCode: "courier" }),
+      provider.book({ requestToken: "token", serviceCode: "courier", courierId: "test-courier" }),
     ).rejects.toThrow();
     expect(fetcher).toHaveBeenCalledTimes(1);
   });

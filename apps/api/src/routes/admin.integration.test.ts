@@ -298,6 +298,52 @@ integration("admin PostgreSQL and Redis workflows", () => {
           .send({ note: "Produce grown on our farm" })
       ).status,
     ).toBe(201);
+    const video = Buffer.concat([
+      Buffer.from([0, 0, 0, 20]),
+      Buffer.from("ftypisom"),
+      Buffer.alloc(8),
+    ]);
+    const uploadedVideo = await request(app)
+      .post("/v1/seller/verification/uploads?kind=evidence")
+      .set({ ...customerAuth, "Content-Type": "video/mp4" })
+      .send(video);
+    expect(uploadedVideo.status).toBe(201);
+    expect(uploadedVideo.body.evidence.mimeType).toBe("video/mp4");
+    const audioOnly = Buffer.concat([
+      Buffer.from([0, 0, 0, 20]),
+      Buffer.from("ftypM4A "),
+      Buffer.alloc(8),
+    ]);
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/uploads?kind=evidence")
+          .set({ ...customerAuth, "Content-Type": "video/mp4" })
+          .send(audioOnly)
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/uploads?documentType=NIN_SLIP")
+          .set({ ...customerAuth, "Content-Type": "video/mp4" })
+          .send(video)
+      ).status,
+    ).toBe(422);
+    const voice = await request(app).get("/v1/seller/verification/voice").set(customerAuth);
+    expect(voice.body).toEqual({ enabled: false, languages: [], acceptsAudio: false });
+    expect(
+      (
+        await request(app)
+          .post("/v1/seller/verification/description/translate")
+          .send({ text: "Farm", sourceLocale: "en" })
+      ).status,
+    ).toBe(401);
+    const translation = await request(app)
+      .post("/v1/seller/verification/description/translate")
+      .set(customerAuth)
+      .send({ text: "Our farm description", sourceLocale: "en" });
+    expect(translation.body.text).toBe("Our farm description");
     const draft = await request(app).get("/v1/seller/verification").set(customerAuth);
     expect(draft.body.verification.evidence.some((e: { hasPhoto: boolean }) => e.hasPhoto)).toBe(
       true,
@@ -317,6 +363,14 @@ integration("admin PostgreSQL and Redis workflows", () => {
       .get(`/v1/admin/verifications/${verification.id}`)
       .set(auth());
     expect(reviewed.status).toBe(200);
+    const videoEvidence = reviewed.body.verification.evidence.find(
+      (e: { id: string }) => e.id === uploadedVideo.body.evidence.id,
+    );
+    const videoLink = videoEvidence.readUrl.replace("/api/admin/", "/v1/admin/");
+    expect((await request(app).get(videoLink)).status).toBe(401);
+    const streamedVideo = await request(app).get(videoLink).set(auth());
+    expect(streamedVideo.status).toBe(200);
+    expect(streamedVideo.headers["content-type"]).toContain("video/mp4");
     const evidenceLink = reviewed.body.verification.evidence
       .find((e: { readUrl: string }) => e.readUrl)
       .readUrl.replace("/api/admin/", "/v1/admin/");

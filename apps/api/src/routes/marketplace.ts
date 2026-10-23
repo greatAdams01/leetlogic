@@ -1,3 +1,4 @@
+import { getConfig } from "../config.js";
 import { createHash } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
@@ -141,6 +142,7 @@ marketplaceRouter.post("/orders", async (req, res) => {
         quantity,
         totalMinor: BigInt(total.toFixed(0)),
         feeBasisPoints: settings.platformFeeBasisPoints,
+        ...(getConfig().PAYMENTS_ENABLED ? {fundsProvider:"bachs",reservationExpiresAt:new Date(Date.now()+15*60000)} : {}),
       },
     });
     await tx.listing.update({

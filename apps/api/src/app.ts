@@ -1,3 +1,9 @@
+import {
+  paymentsRouter,
+  financialRouter,
+  moneyAdminRouter,
+  bachsWebhookRouter,
+} from "./routes/payments.js";
 import { identityRouter, dojahWebhookRouter } from "./routes/identity.js";
 import { marketplaceRouter } from "./routes/marketplace.js";
 import { producePhotosRouter, staffProducePhotosRouter } from "./routes/produce-photos.js";
@@ -35,6 +41,7 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.use(helmet());
   app.use(cors({ origin: false }));
   app.use("/v1/webhooks/dojah", express.raw({ type: "application/json", limit: "1mb" }));
+  app.use("/v1/webhooks/bachs", express.raw({ type: "application/json", limit: "256kb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(requestContext);
   app.use(
@@ -85,6 +92,10 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.use("/v1/admin/verifications/documents", adminDocumentsRouter);
   app.use("/v1/admin/produce-photos", staffProducePhotosRouter);
   app.use("/v1/listing-photos", producePhotosRouter);
+  app.use("/v1/orders", paymentsRouter);
+  app.use("/v1/financial", financialRouter);
+  app.use("/v1/admin/money", moneyAdminRouter);
+  app.use("/v1/webhooks/bachs", bachsWebhookRouter);
   app.use("/v1/orders", customerDeliveryRouter);
   app.use("/v1/admin/delivery-orders", staffDeliveryRouter);
   app.use("/v1/webhooks", deliveryWebhookRouter);

@@ -12,6 +12,50 @@ const encryptionKeySchema = z.string().refine((value) => {
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_FORMAT: z.enum(["pretty", "json"]).optional(),
+  BACHS_MODE: z.enum(["sandbox", "live"]).default("sandbox"),
+  BACHS_API_KEY: z.string().optional(),
+  BACHS_WEBHOOK_SECRET: z.string().optional(),
+  BACHS_ORGANIZATION_ID: z.string().default(""),
+  PAYMENTS_RETURN_ORIGIN: z.string().url().default("http://localhost:3001"),
+  BACHS_NGN_PAYOUT_FEE_MINOR: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .regex(/^\d{1,12}$/)
+      .optional(),
+  ),
+  PAYMENTS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  PAYMENTS_LIVE_COLLECTIONS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  PAYMENTS_TRANSFERS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  PAYMENTS_PAYOUTS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  PAYMENTS_REFUNDS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  PAYMENTS_LIVE_MONEY: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  BACHS_PLATFORM_APPROVED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  BACHS_BANK_REFUNDS_VERIFIED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
   DELIVERY_ENABLED: z
     .enum(["true", "false"])
     .default("false")
@@ -69,6 +113,16 @@ const schema = z.object({
   EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
   RESEND_API_KEY: z.string().optional(),
   ADMIN_EMAIL_FROM: z.string().default("LeetLogic <admin@leetlogic.ng>"),
+  MEDIA_STORAGE: z.enum(["local", "cloudinary"]).default("local"),
+  CLOUDINARY_CLOUD_NAME: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .optional(),
+  ),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
   PRIVATE_STORAGE_ROOT: z.string().default(".private-objects"),
   ADMIN_WEB_URL: z.string().url().default("http://localhost:3001"),
   TERMII_API_KEY: z.string().optional(),

@@ -204,6 +204,8 @@ suite("delivery and language database workflows", () => {
   it("routes special handling to manual review and serves real quotes without provider tokens", async () => {
     const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
       {
+        courierId:"test-courier",
+        walletMinor:1000n,
         requestToken: "provider-secret",
         serviceCode: "courier",
         courier: "Courier",
@@ -283,6 +285,7 @@ suite("delivery and language database workflows", () => {
   it("does not repeat an uncertain booking, including after a worker restart", async () => {
     // The schema can contain earlier runs' shipments. Worker-wide reconciliation
     // must never contact the real carrier while this booking fixture runs.
+    vi.spyOn(shippingProvider, "wallet").mockResolvedValue(1000000n);
     const backgroundTrack = vi
       .spyOn(shippingProvider, "track")
       .mockRejectedValue(new Error("Fixture tracking unavailable"));

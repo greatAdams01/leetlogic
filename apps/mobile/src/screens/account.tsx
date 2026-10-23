@@ -30,6 +30,11 @@ export function Profile() {
       <Text style={s.sectionTitle}>Settings</Text>
       <Card>
         {[
+          {
+            label: "Payments and earnings",
+            sub: "Manage payments, bank accounts and withdrawals",
+            route: "finance",
+          },
           { label: "Personal details", sub: "Name, display name and email", route: "details" },
           {
             label: a.role === "SELLER" ? "Farm and pickup locations" : "Delivery addresses",

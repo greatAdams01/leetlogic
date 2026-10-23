@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 const appDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceDirectory = resolve(appDirectory, "../..");
 
+// Next sets its own dev/build/start NODE_ENV before reading this config.
+// Load shared server settings here without overriding that or deployment values.
+const rootEnv = join(workspaceDirectory, ".env");
+if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   turbopack: {

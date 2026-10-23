@@ -9,9 +9,11 @@ const redisUrl = new URL(process.env.REDIS_URL);
 redisUrl.pathname = "/15";
 const env = {
   ...process.env,
+  MEDIA_STORAGE: "local",
   REDIS_URL: redisUrl.toString(),
   DATABASE_URL: url.toString(),
   NODE_ENV: "test",
+  PAYMENTS_ENABLED: "false",
   LOG_LEVEL: "fatal",
   PRIVATE_STORAGE_ROOT: "/tmp/leetlogic-admin-docs-tests",
   ADMIN_INTEGRATION: "1",

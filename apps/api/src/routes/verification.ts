@@ -1,6 +1,8 @@
 import { getConfig } from "../config.js";
-import { identityPassed, latestIdentity, publicIdentity } from "../services/identity.js";
+import { identityPassed, effectiveIdentity, publicIdentity } from "../services/identity.js";
 import { Router } from "express";
+import { z } from "zod";
+import { translateResource } from "../services/translation.js";
 import {
   farmEvidenceSchema,
   submitVerificationSchema,
@@ -30,7 +32,7 @@ async function currentCase(userId: string) {
 }
 verificationRouter.get("/", async (req, res) => {
   const { farmer, item } = await currentCase(req.auth!.sub);
-  const check = await latestIdentity(item.id);
+  const check = await effectiveIdentity(item.id);
   res.json({
     farmer,
     verification: {
@@ -49,6 +51,7 @@ verificationRouter.get("/", async (req, res) => {
         id: e.id,
         note: e.note,
         hasPhoto: !!e.encryptedObjectKey,
+        mimeType: e.mimeType,
       })),
       reviews: item.reviews.map((r) => ({ reason: r.reason, decision: r.decision })),
     },
@@ -59,6 +62,33 @@ verificationRouter.post("/", async (req, res) => {
   if (!["DRAFT", "RESUBMISSION_REQUIRED"].includes(item.status))
     throw new AppError(409, "VERIFICATION_LOCKED", "Verification is already under review");
   res.json({ farmer, verification: item });
+});
+verificationRouter.get("/voice", async (req, res) => {
+  await currentCase(req.auth!.sub);
+  // No production-eligible free Igbo speech provider has passed validation.
+  // Do not collect audio until it can be processed without retention.
+  res.json({ enabled: false, languages: [], acceptsAudio: false });
+});
+verificationRouter.post("/description/translate", async (req, res) => {
+  const { item } = await currentCase(req.auth!.sub);
+  if (!["DRAFT", "RESUBMISSION_REQUIRED"].includes(item.status))
+    throw new AppError(409, "VERIFICATION_LOCKED", "Your application cannot be edited now");
+  const body = z
+    .object({
+      text: z.string().trim().min(1).max(2000),
+      sourceLocale: z.enum(["en", "ha", "ig", "yo"]),
+    })
+    .strict()
+    .parse(req.body);
+  res.json(
+    await translateResource({
+      resourceType: "farm-description",
+      resourceId: item.id,
+      sourceLocale: body.sourceLocale,
+      targetLocale: "en",
+      text: body.text,
+    }),
+  );
 });
 verificationRouter.post("/documents", async (req, res) => {
   const body = verificationDocumentSchema.parse(req.body);
@@ -124,7 +154,7 @@ verificationRouter.post("/submit", async (req, res) => {
     await tx.$queryRaw`SELECT id FROM verification_cases WHERE id = ${item.id}::uuid FOR UPDATE`;
     const locked = await tx.verificationCase.findUniqueOrThrow({ where: { id: item.id } });
     const requiredIdentity = needsIdentity || locked.identityRequired;
-    if (requiredIdentity && !identityPassed(await latestIdentity(item.id, tx)))
+    if (requiredIdentity && !identityPassed(await effectiveIdentity(item.id, tx)))
       throw new AppError(
         422,
         "IDENTITY_REQUIRED",

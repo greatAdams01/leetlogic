@@ -8,6 +8,8 @@ import { audit } from "../services/audit.js";
 import {
   applyIdentityResult,
   identityPassed,
+  effectiveIdentity,
+  reconcileIdentityAttempts,
   latestIdentity,
   publicIdentity,
 } from "../services/identity.js";
@@ -16,7 +18,6 @@ import {
   dojahLaunchUrl,
   dojahReady,
   dojahResultSchema,
-  fetchDojahResult,
   identityConsentVersion,
   requireDojah,
   validDojahSignature,
@@ -36,7 +37,7 @@ async function ownedCase(userId: string) {
 }
 identityRouter.get("/", async (req, res) => {
   const item = await ownedCase(req.auth!.sub);
-  const check = await latestIdentity(item.id);
+  const check = await effectiveIdentity(item.id);
   res.json({
     provider: "dojah",
     required: item.identityRequired || getConfig().IDENTITY_PROVIDER === "dojah",
@@ -51,7 +52,7 @@ identityRouter.post("/start", async (req, res) => {
   z.object({ consent: z.literal(true), consentVersion: z.literal(identityConsentVersion) })
     .strict()
     .parse(req.body);
-  const c = requireDojah();
+  const c = getConfig();
   const owned = await ownedCase(req.auth!.sub);
   const check = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM verification_cases WHERE id = ${owned.id}::uuid FOR UPDATE`;
@@ -62,6 +63,9 @@ identityRouter.post("/start", async (req, res) => {
         "VERIFICATION_LOCKED",
         "Your application cannot be edited in its current state",
       );
+    const accepted = await effectiveIdentity(item.id, tx);
+    if (identityPassed(accepted)) return accepted!;
+    requireDojah(c);
     const latest = await latestIdentity(item.id, tx);
     if (
       latest &&
@@ -106,33 +110,15 @@ identityRouter.post("/start", async (req, res) => {
   });
 });
 identityRouter.post("/refresh", async (req, res) => {
-  const c = requireDojah();
   const item = await ownedCase(req.auth!.sub);
-  const check = await latestIdentity(item.id);
+  const check = await effectiveIdentity(item.id);
   if (!check) throw new AppError(404, "IDENTITY_NOT_STARTED", "Start identity verification first.");
-  if (check.mode !== c.DOJAH_MODE)
-    throw new AppError(
-      409,
-      "IDENTITY_ENVIRONMENT_MISMATCH",
-      "Identity session belongs to another environment.",
-    );
-  // Atomically throttle outbound reads across devices; no customer-supplied reference is accepted.
-  const claimed =
-    check.status === "PENDING" &&
-    (await prisma.identityCheck.updateMany({
-      where: {
-        id: check.id,
-        status: "PENDING",
-        OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: new Date(Date.now() - 15000) } }],
-      },
-      data: { lastCheckedAt: new Date() },
-    }));
-  if (claimed && claimed.count) {
-    const result = await fetchDojahResult(check.id, c);
-    if (result) await applyIdentityResult(result, "reconcile", req);
-  }
-  const updated = await latestIdentity(item.id);
-  res.json({ check: publicIdentity(updated), passed: identityPassed(updated) });
+  await reconcileIdentityAttempts(item.id, req);
+  const updated = await effectiveIdentity(item.id);
+  res.json({
+    check: publicIdentity(updated),
+    passed: identityPassed(updated),
+  });
 });
 export const dojahWebhookRouter = Router();
 dojahWebhookRouter.post("/", async (req, res) => {

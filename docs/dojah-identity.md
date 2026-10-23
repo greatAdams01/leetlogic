@@ -23,9 +23,9 @@ Do not put these values in `apps/mobile/.env`, any `EXPO_PUBLIC_*` variable, a s
 In Dojah EasyOnboard:
 
 1. Publish a **sandbox** flow restricted to Nigeria and the ID services actually enabled for the account. Dojah owns ID-type selection and capture; LeetLogic does not pretend that an uploaded photograph is a registry check.
-2. Include `user_data`, `government_data`, and `selfie` steps. Enable name matching against government data, face matching to the government identity, and liveness. Require those checks for success. A selfie capture by itself is insufficient.
+2. Configure the identity checks and acceptance rules required for the seller flow in Dojah. The app uses the published flow’s overall provider decision; it does not require specific step keys such as `user_data`, `government_data`, or `selfie`. Different approved flows may return different step breakdowns.
 3. Configure suitable matching/liveness thresholds in Dojah and confirm them with the provider. The integration uses Dojah's step decisions, not invented client-side thresholds. Do not add credit checks, BVN checks, location collection or other unrelated steps to this seller flow.
-4. Validate the mandatory checks using provider-approved sandbox fixtures, including a mismatch and a failed liveness check. Set `DOJAH_FLOW_POLICY_CONFIRMED=true` **only after verifying this configuration**. Sandbox launches are allowed before this flag is set so the flow can be tested. Live launches require the flag. A wrongly configured widget is not made safe by a successful HTTP response.
+4. Validate the configured acceptance rules using provider-approved sandbox fixtures, including rejected outcomes. Set `DOJAH_FLOW_POLICY_CONFIRMED=true` **only after verifying this configuration**. Sandbox launches are allowed before this flag is set so the flow can be tested. Live launches require the flag. A wrongly configured widget is not made safe by a successful HTTP response.
 5. Subscribe the `kyc_widget` service to `https://<backend-host>/v1/webhooks/dojah`. Copy that subscription's **webhook secret** into `DOJAH_WEBHOOK_SECRET`. The handler checks the `x-dojah-signature` HMAC against the exact request bytes. It does not accept the static v2 signature in its place.
 6. Start the backend from the repository root with `pnpm dev`. Its command loads the root `.env` via `--env-file=../../.env` from `apps/api`. Restart the API after changing environment variables. Restart/reload Expo Go to pick up the application changes.
 
@@ -61,12 +61,12 @@ App-owned prompts are bundled in all five locales. The hosted Dojah flow's langu
 
 All customer endpoints require the existing customer session and operate only on its latest verification case. They never accept a user-supplied check ID or verification outcome.
 
-- `GET /v1/seller/verification/identity`: availability, required consent version, sanitized latest status, and `passed`.
+- `GET /v1/seller/verification/identity`: availability, required consent version, sanitized effective status and `passed`. Attempt history stays internal.
 - `POST /v1/seller/verification/identity/start`: `{ "consent": true, "consentVersion": "dojah-identity-v1" }`. Creates/reuses a session and returns the Dojah launch URL. Concurrent duplicate starts share a reference.
-- `POST /v1/seller/verification/identity/refresh`: reconciles the account's latest session with Dojah.
+- `POST /v1/seller/verification/identity/refresh`: reconciles the account’s existing attempts with Dojah (up to ten per request, prioritizing least recently checked records). No new verification is created.
 - `POST /v1/webhooks/dojah`: raw JSON and `x-dojah-signature`; no customer login. Unknown references do not create records.
 
-`PENDING` waits for a result. `VERIFIED` requires `Completed`, overall `status: true`, passing mandatory steps, no explicitly failed step, and the expected widget ID. Completion alone, document OCR alone, and a browser success callback never pass. Unsuccessful completed results become `REVIEW`; failures and abandoned flows retain their distinct states. New attempts use new references; delayed old events cannot verify the newer session or reverse a terminal result.
+`PENDING` waits for a result. `VERIFIED` requires `Completed`, overall `status: true`, and the expected widget ID from a server-authenticated result. The overall decision is authoritative for the configured flow; absent or differently named optional steps do not override it. Completion alone without overall success and browser success callbacks never pass. Unsuccessful completed results become `REVIEW`; failures and abandoned flows retain their distinct states. New attempts use new references; delayed old events cannot verify the newer session or reverse a terminal result.
 
 The database stores session references, environment, widget, consent version/time, status, and event digests. It does not store the raw NIN, full provider payload, returned identity record, selfie URLs or biometric images. Existing farm evidence and legacy private documents retain their existing storage rules. Logs omit provider bodies and credentials. Audit records track starts and result changes. Admin verification details show the identity result and sandbox label; required identity checks cannot be bypassed by farm approval.
 
@@ -91,3 +91,15 @@ pnpm --filter @leetlogic/mobile test
 - [Sandbox and production](https://docs.dojah.io/api-reference/get-started/environments)
 
 If consent is selected but verification cannot open, check the root `.env` path and `DOJAH_ENABLED=true`. The app keeps the consented launch action available so the server can report configuration errors and a previously loaded unavailable state cannot permanently disable it. Missing server credentials are reported as `IDENTITY_NOT_CONFIGURED`, without exposing their values.
+
+## Recover a completed verification
+
+Use **Check verification result** in the app. The server reads the already saved Dojah reference; it does not open a browser or start a new identity check. REST responses may wrap the record in `entity`, while widget events put it at the top level; both shapes retain strict reference and widget binding.
+
+An earlier non-verified record can recover to `VERIFIED` through an authenticated server reconciliation when Dojah confirms overall success for the bound flow. Verified records remain terminal and are reused on subsequent starts with a null launch URL. Duplicates never erase a verified result.
+
+A successful configured card/document flow is accepted when Dojah returns `Completed` and `status: true`. LeetLogic previously imposed three extra step names, which incorrectly left successful sessions in `REVIEW`. Reconcile these existing references to recover them without repeating verification. The actual checks performed remain the responsibility of the published Dojah flow.
+
+The summary stores only completion flags and missing-step names. It does not store card numbers, names, raw provider records, images or biometric data. Existing completed document checks can be backfilled from the provider by the same stored reference without creating another session.
+
+An accepted result from any attempt in the authenticated account’s current application takes precedence over later unsuccessful attempts. Submission, admin approval, and mobile continuation use this same result. Cached success remains reusable when the provider is unavailable. On entry and before retrying, the mobile screen checks existing attempts and restores recovered success without opening another session. Attempt history remains in server records and audits, never in the customer UI or status response.

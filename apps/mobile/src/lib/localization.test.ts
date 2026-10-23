@@ -14,19 +14,19 @@ import {
 } from "./localization";
 import { en } from "../../../../packages/localization/src/customer-messages";
 describe("complete mobile interface localization", () => {
-  it("distinguishes verification failures and preserves support references and cooldown details", () => {
+  it("uses actionable customer messages without internal details and preserves cooldown details", () => {
     const invalid = localizedError("en", { code: "OTP_INVALID" });
     const expired = localizedError("en", { code: "OTP_EXPIRED" });
     expect(invalid).toContain("incorrect");
     expect(expired).toContain("expired");
     expect(invalid).not.toBe(expired);
-    expect(localizedError("en", { code: "OTP_DELIVERY_FAILED" })).toContain("SMS provider");
+    expect(localizedError("en", { code: "OTP_DELIVERY_FAILED" })).toContain("send your code");
     expect(
       localizedError("en", { code: "DATABASE_UNAVAILABLE", requestId: "support-ref" }),
-    ).toContain("account database");
+    ).toContain("access your account");
     expect(
       localizedError("ig", { code: "DATABASE_UNAVAILABLE", requestId: "support-ref" }),
-    ).toContain("support-ref");
+    ).not.toContain("support-ref");
     expect(localizedError("yo", { code: "OTP_RESEND_TOO_SOON", retryAfterSeconds: 23 })).toContain(
       "23",
     );
@@ -106,10 +106,16 @@ describe("complete mobile interface localization", () => {
       const key = s.replace(/\s+/g, " ").trim().replace(/ \*$/, "");
       if (/[A-Za-zÀ-ž]/.test(key) && !brandOrAutonym.has(key) && !catalogue[key]) missing.add(key);
     };
-    for (const file of readdirSync(resolve("src/screens")).filter((f) => f.endsWith(".tsx"))) {
+    const files = [
+      ...readdirSync(resolve("src/screens"))
+        .filter((f) => f.endsWith(".tsx"))
+        .map((f) => resolve("src/screens", f)),
+      resolve("src/components/order-payment.tsx"),
+    ];
+    for (const file of files) {
       const tree = ts.createSourceFile(
         file,
-        readFileSync(resolve("src/screens", file), "utf8"),
+        readFileSync(file, "utf8"),
         ts.ScriptTarget.Latest,
         true,
         ts.ScriptKind.TSX,

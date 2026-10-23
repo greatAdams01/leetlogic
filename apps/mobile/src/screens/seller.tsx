@@ -2,6 +2,7 @@ import { DojahIdentity } from "../components/dojah-identity";
 import { Confirmation } from "../components/feedback";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { accountRoleKey } from "../lib/onboarding";
+import * as ImagePicker from "expo-image-picker";
 import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useRef, useState } from "react";
 import { BackHandler, Image, Pressable, View } from "react-native";
@@ -67,6 +68,7 @@ export function Seller() {
   const [photo, setPhoto] = useState<Awaited<ReturnType<typeof choosePhoto>>>(null);
   const [readable, setReadable] = useState(false);
   const [note, setNote] = useState("");
+  const [englishDraft, setEnglishDraft] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState("");
   const [declaration, setDeclaration] = useState(false);
   const requestActive = useRef(false);
@@ -588,11 +590,55 @@ export function Seller() {
                 value={note}
                 onChangeText={(v) => {
                   setNote(v);
+                  setEnglishDraft(null);
                   setDeclaration(false);
                 }}
                 maxLength={2000}
                 multiline
               />
+              <Label muted>
+                Voice entry is not available yet. You can type your farm description.
+              </Label>
+              {["ha", "ig", "yo"].includes(a.locale) && (
+                <Button
+                  title="Translate description to English"
+                  secondary
+                  disabled={busy || !note.trim()}
+                  onPress={() =>
+                    void run(async () => {
+                      const result = await api<{ text: string; translated: boolean }>(
+                        "/seller/verification/description/translate",
+                        { method: "POST", body: { text: note, sourceLocale: a.locale } },
+                      );
+                      if (!result.translated)
+                        throw new Error(
+                          "We couldn’t translate your description. Please try again later.",
+                        );
+                      setEnglishDraft(result.text);
+                    })
+                  }
+                />
+              )}
+              {englishDraft !== null && (
+                <>
+                  <Field
+                    label="Review your English description"
+                    value={englishDraft}
+                    onChangeText={setEnglishDraft}
+                    maxLength={2000}
+                    multiline
+                  />
+                  <Button
+                    title="Use this description"
+                    disabled={busy}
+                    onPress={() => {
+                      setNote(englishDraft);
+                      setEnglishDraft(null);
+                      setDeclaration(false);
+                    }}
+                  />
+                </>
+              )}
               {verification?.evidence.some((e) => e.hasPhoto) && (
                 <Notice text="Farm evidence uploaded privately." success />
               )}
@@ -618,6 +664,41 @@ export function Seller() {
                       blob: await photoBlob(chosen.uri, chosen.mimeType),
                     });
                     setEvidencePhotos((photos) => [...photos, chosen.uri]);
+                    await refresh();
+                  })
+                }
+              />
+              <Button
+                title="Add farm evidence video"
+                secondary
+                disabled={busy}
+                onPress={() =>
+                  void run(async () => {
+                    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                    if (!permission.granted)
+                      throw new Error(
+                        "Allow photo and video access in Settings to attach your farm evidence.",
+                      );
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ["videos"],
+                      allowsEditing: false,
+                    });
+                    if (result.canceled) return;
+                    const video = result.assets[0]!;
+                    if (video.fileSize && video.fileSize > 25 * 1024 * 1024)
+                      throw new Error("Choose a video smaller than 25 MB.");
+                    const mime =
+                      video.mimeType ||
+                      (video.uri.toLowerCase().endsWith(".mov") ? "video/quicktime" : "video/mp4");
+                    if (!["video/mp4", "video/quicktime"].includes(mime))
+                      throw new Error("Choose an MP4 or MOV video.");
+                    const blob = await (await fetch(video.uri)).blob();
+                    if (!blob.size || blob.size > 25 * 1024 * 1024)
+                      throw new Error("Choose a video smaller than 25 MB.");
+                    await api("/seller/verification/uploads?kind=evidence", {
+                      method: "POST",
+                      blob: new Blob([blob], { type: mime }),
+                    });
                     await refresh();
                   })
                 }

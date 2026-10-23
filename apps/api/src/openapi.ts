@@ -1,3 +1,4 @@
+import {paymentsOpenApiPaths} from "./payments-openapi.js";
 import { identityOpenApiPaths } from "./identity-openapi.js";
 import { marketplaceOpenApiPaths } from "./marketplace-openapi.js";
 import { deliveryOpenApiPaths } from "./delivery-openapi.js";
@@ -20,6 +21,7 @@ export const openapi = {
   components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } }, schemas: { Error: { type: "object", properties: { error: { type: "object", required: ["code", "message", "requestId"], properties: { code: { type: "string" }, message: { type: "string" }, fieldErrors: { type: "object" }, requestId: { type: "string", format: "uuid" }, retryAfterSeconds: { type: "integer" } } } } } } },
   paths: {
     ...identityOpenApiPaths,
+    ...paymentsOpenApiPaths,
     ...deliveryOpenApiPaths,
     ...marketplaceOpenApiPaths,
     "/auth/otp/request": { post: { summary: "Request customer OTP", requestBody: body(otp), responses: { "202": { description: "Accepted" }, "422": { description: "Invalid request" } } } },

@@ -20,6 +20,8 @@ export const parcelSchema = z.object({
 export type Contact = z.infer<typeof contactSchema>;
 export type Parcel = z.infer<typeof parcelSchema>;
 export type ShippingRate = {
+  courierId: string;
+  walletMinor: bigint;
   requestToken: string;
   serviceCode: string;
   courier: string;
@@ -45,7 +47,9 @@ export interface ShippingProvider {
     name: string;
     valueMinor: bigint;
   }): Promise<ShippingRate[]>;
-  book(quote: Pick<ShippingRate, "requestToken" | "serviceCode">): Promise<TrackedShipment>;
+  book(
+    quote: Pick<ShippingRate, "requestToken" | "serviceCode" | "courierId">,
+  ): Promise<TrackedShipment>;
   track(id: string): Promise<TrackedShipment>;
   cancel(id: string): Promise<void>;
 }
@@ -130,11 +134,16 @@ export class Shipbubble implements ShippingProvider {
         request_token: z.string(),
         couriers: z.array(
           z.object({
+            courier_id: z.union([z.string(), z.number()]).transform(String),
+            connected_account: z.boolean().optional(),
+            currency: z.literal("NGN").optional(),
+            rate_card_amount: z.number().nonnegative().optional(),
             service_code: z.string(),
             courier_name: z.string(),
             total: z.number().nonnegative().max(10000000),
             service_type: z.string(),
             delivery_eta: z.string().optional(),
+            delivery_eta_time: z.string().optional(),
           }),
         ),
       })
@@ -161,16 +170,23 @@ export class Shipbubble implements ShippingProvider {
         }),
       );
     return data.couriers
-      .filter((x) => x.service_type === "pickup")
+      .filter(
+        (x) =>
+          x.service_type === "pickup" &&
+          !x.connected_account &&
+          (x.rate_card_amount === undefined || x.rate_card_amount === x.total),
+      )
       .map((x) => ({
+        courierId: x.courier_id,
+        walletMinor: BigInt(Math.round(x.total * 100)),
         requestToken: data.request_token,
         serviceCode: x.service_code,
         courier: x.courier_name,
         amountMinor: BigInt(Math.round(x.total * 100)),
-        eta: x.delivery_eta,
+        eta: x.delivery_eta || x.delivery_eta_time,
       }));
   }
-  async book(quote: Pick<ShippingRate, "requestToken" | "serviceCode">) {
+  async book(quote: Pick<ShippingRate, "requestToken" | "serviceCode" | "courierId">) {
     const c = getConfig();
     if (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS)
       throw new AppError(503, "LIVE_BOOKING_DISABLED", "Live delivery booking is disabled");
@@ -178,8 +194,14 @@ export class Shipbubble implements ShippingProvider {
       await this.call("/shipping/labels", "POST", {
         request_token: quote.requestToken,
         service_code: quote.serviceCode,
+        courier_id: quote.courierId,
       }),
     );
+  }
+  async wallet(): Promise<bigint> {
+    const data = await this.call("/shipping/wallet/balance");
+    const value = z.object({ balance: z.number().nonnegative() }).parse(data).balance;
+    return BigInt(Math.round(value * 100));
   }
   async track(id: string) {
     const data = z

@@ -1,4 +1,5 @@
 "use client";
+import { CustomerPayment } from "./customer-payments";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TranslatedText } from "./translated-text";
@@ -115,10 +116,18 @@ export function CustomerDelivery({
         <dd>{money(String(BigInt(data.order.totalMinor) + BigInt(d?.shippingMinor || "0")))}</dd>
       </dl>
       <p>{t("delivery.payment")}</p>
+      {!staff && (
+        <CustomerPayment
+          orderId={id}
+          isBuyer={data.order.isBuyer}
+          topup={d?.status === "TOPUP_REQUIRED"}
+          onChanged={load}
+        />
+      )}
       {d && (
         <>
           <h2>{t(`status.${d.status}` as MessageKey) || d.status}</h2>
-          {d.failureCode && <p role="status">{d.failureCode}</p>}
+          {d.failureCode && <p role="status">{staff ? d.failureCode : t("common.unavailable")}</p>}
           {d.trackingUrl && (
             <a href={d.trackingUrl} target="_blank" rel="noreferrer">
               {t("delivery.tracking")}

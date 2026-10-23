@@ -1,4 +1,4 @@
-import { identityPassed, latestIdentity, publicIdentity } from "../services/identity.js";
+import { identityPassed, effectiveIdentity, publicIdentity } from "../services/identity.js";
 import { z } from "zod";
 import { issueAdminLink } from "../services/admin-email.js";
 import { Router } from "express";
@@ -102,7 +102,7 @@ adminRouter.get("/verifications/:id", requirePermission("verification.read"), as
     },
   });
   if (!item) throw new AppError(404, "VERIFICATION_NOT_FOUND", "Verification case was not found");
-  const identity = await latestIdentity(item.id);
+  const identity = await effectiveIdentity(item.id);
   const storage = new LocalPrivateObjectStorage();
   const documents = await Promise.all(
     item.documents.map(async (document) => ({
@@ -127,6 +127,7 @@ adminRouter.get("/verifications/:id", requirePermission("verification.read"), as
           id: evidence.id,
           verificationCaseId: evidence.verificationCaseId,
           note: evidence.note,
+          mimeType: evidence.mimeType,
           createdAt: evidence.createdAt,
           readUrl: evidence.encryptedObjectKey
             ? await storage.createReadUrl(evidence.id, 300)
@@ -146,7 +147,7 @@ async function decide(req: any, res: any, decision: "APPROVED" | "REJECTED") {
     if (
       decision === "APPROVED" &&
       item.identityRequired &&
-      !identityPassed(await latestIdentity(item.id, tx))
+      !identityPassed(await effectiveIdentity(item.id, tx))
     )
       throw new AppError(
         422,

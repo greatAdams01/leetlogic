@@ -3,7 +3,17 @@ export type IdentityData = {
   unavailableCode?: string | null;
   consentVersion: string;
   passed: boolean;
-  check: null | { status: string; mode: string };
+  check: null | {
+    id?: string;
+    createdAt?: string;
+    status: string;
+    mode: string;
+    summary?: {
+      providerCompleted: boolean;
+      documentPassed: boolean;
+      missingRequiredSteps: string[];
+    } | null;
+  };
 };
 export type IdentityOperation = "idle" | "loading" | "launching" | "checking";
 type Snapshot = { data: IdentityData | null; operation: IdentityOperation; error: unknown | null };
@@ -63,7 +73,7 @@ export function createIdentityFlow(deps: Dependencies) {
   };
   const check = () =>
     run("checking", async (token) => {
-      if (state.data?.check?.status === "PENDING") await deps.reconcile();
+      if (!state.data?.passed && state.data?.check) await deps.reconcile();
       if (current(token)) await read(token);
     });
   return {
@@ -85,19 +95,35 @@ export function createIdentityFlow(deps: Dependencies) {
       polling = null;
       state = { ...state, operation: "idle" };
     },
-    load: () => run("loading", read),
+    load: () =>
+      run("loading", async (token) => {
+        await read(token);
+        if (current(token) && !state.data?.passed && state.data?.check) {
+          update({ operation: "checking" });
+          await deps.reconcile();
+          if (current(token)) await read(token);
+        }
+      }),
     check,
     launch(consent: boolean) {
       if (!consent || !state.data || state.data.passed) return Promise.resolve();
       const version = state.data.consentVersion;
-      return run("launching", async (token) => {
+      const previousAttempt = !!state.data.check;
+      return run(previousAttempt ? "checking" : "launching", async (token) => {
+        if (previousAttempt) {
+          await deps.reconcile();
+          if (!current(token)) return;
+          await read(token);
+          if (!current(token) || state.data?.passed) return;
+          update({ operation: "launching" });
+        }
         const result = await deps.start(version);
         if (!current(token)) return;
         update({ data: { ...state.data!, check: result.check } });
         if (result.url) {
           if (new URL(result.url).origin !== "https://identity.dojah.io")
             throw new Error(
-              "The identity provider returned an unexpected result. Please contact support.",
+              "We couldn’t confirm your identity check. Please try again or contact support.",
             );
           browserPending = true;
           try {

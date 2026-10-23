@@ -69,7 +69,7 @@ Use Netlify's automatically detected Next.js runtime for either setup.
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and replace all secrets.
+1. Copy `.env.example` to the **repository-root `.env`** and replace all secrets.
    Generate `TOTP_ENCRYPTION_KEY` with `openssl rand -hex 32` (64 hex characters) or
    `openssl rand -base64 32` (a Base64-encoded 32-byte key).
 2. Start PostgreSQL and Redis with `docker compose up -d`.
@@ -81,6 +81,29 @@ Use Netlify's automatically detected Next.js runtime for either setup.
 
 API documentation is available at `http://localhost:3000/docs`. Health endpoints are
 `/health/live` and `/health/ready`.
+
+## Environment files
+
+The repository-root `.env` is the single source for local **server credentials**.
+The API startup command and Next.js configuration load it explicitly.
+Prisma uses `packages/database/prisma.config.ts` to load the same root file,
+including when running `pnpm --filter @leetlogic/database exec prisma ...`.
+Seed commands inherit that environment. Explicit shell/deployment environment
+variables take precedence; restart the affected process after editing `.env`.
+
+`apps/.env`, `packages/.env`, and `packages/database/.env` are legacy duplicates;
+they are not needed by the configured commands. Existing copies have been left
+untouched. Move any values present only in those files into the root file before
+removing them yourself; do not overwrite secrets blindly. In particular, changing
+a JWT, token-hashing, or TOTP encryption key can invalidate sessions or prevent
+reading encrypted data. These are persistent credentials, not values to regenerate
+when fixing an environment path.
+
+Expo is separate: its optional `apps/mobile/.env` may contain **only public**
+`EXPO_PUBLIC_*` values such as the API URL (see `apps/mobile/.env.example`). Never
+copy the server `.env` or Cloudinary/payment/identity secrets into the mobile app.
+Next.js only exposes explicitly public `NEXT_PUBLIC_*` values to browser code;
+server credentials must remain unprefixed.
 
 ## Database viewer
 
@@ -141,3 +164,11 @@ Delivery, customer language selection, cached Azure translation, and typed produ
 The Expo/React Native customer app is in `apps/mobile` and connects to the same API as the website. Run `pnpm --filter @leetlogic/mobile ios` or `pnpm --filter @leetlogic/mobile android` after starting the API. See [mobile scope, simulator setup and test checklist](docs/mobile.md). No mobile admin, wallet provider, or unvalidated voice feature is introduced.
 
 Dojah seller identity verification setup and sandbox testing: [integration guide](docs/dojah-identity.md).
+
+Cloudinary setup, private image/video uploads, and the farm-description voice milestone are documented in [Media and farm descriptions](docs/media-and-farm-description.md).
+
+### Bachs payments and Shipbubble delivery
+
+See [payment and delivery setup, worker commands, sandbox gates and recovery](docs/payments-and-delivery.md). Hosted checkout, seller payment onboarding, bank verification, receipt-based release and staff-approved withdrawals are integrated into the existing web/admin and mobile app. Payments remain disabled until the required provider configuration is verified; an API key alone does not enable money movement.
+
+Run isolated payment checks with `pnpm --filter @leetlogic/api test:payments`. Production requires the separate `worker:payments` process documented above.

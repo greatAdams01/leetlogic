@@ -101,8 +101,9 @@ export async function runDeliveryJobs() {
       if (
         !quote ||
         quote.expiresAt <= new Date() ||
-        d.paidMinor !== quote.amountMinor ||
-        order.status !== "FUNDED"
+        d.paidMinor < quote.amountMinor ||
+        order.status !== "FUNDED" ||
+        order.financialHold
       ) {
         await prisma.delivery.update({
           where: { id: d.id },
@@ -114,7 +115,11 @@ export async function runDeliveryJobs() {
         });
         continue;
       }
-      if (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS) {
+      if (
+        (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS) ||
+        (order.fundsProvider === "bachs" &&
+          (c.BACHS_MODE === "live") !== (c.SHIPBUBBLE_MODE === "live"))
+      ) {
         await prisma.delivery.update({
           where: { id: d.id },
           data: {
@@ -125,7 +130,40 @@ export async function runDeliveryJobs() {
         });
         continue;
       }
+      if (!quote.courierId) {
+        await prisma.delivery.update({
+          where: { id: d.id },
+          data: {
+            status: "BOOKING_BLOCKED",
+            failureCode: "QUOTE_REFRESH_REQUIRED",
+            leaseUntil: null,
+          },
+        });
+        continue;
+      }
+      let wallet: bigint;
+      try {
+        wallet = await shippingProvider.wallet();
+      } catch {
+        await prisma.delivery.update({
+          where: { id: d.id },
+          data: {
+            status: "BOOKING_BLOCKED",
+            failureCode: "SHIPPING_WALLET_UNAVAILABLE",
+            leaseUntil: null,
+          },
+        });
+        continue;
+      }
+      if (wallet < (quote.walletMinor ?? quote.amountMinor)) {
+        await prisma.delivery.update({
+          where: { id: d.id },
+          data: { status: "BOOKING_BLOCKED", failureCode: "SHIPPING_WALLET_LOW", leaseUntil: null },
+        });
+        continue;
+      }
       const result = await shippingProvider.book({
+        courierId: quote.courierId,
         requestToken: quote.requestToken,
         serviceCode: quote.serviceCode,
       });
@@ -145,6 +183,30 @@ export async function runDeliveryJobs() {
           create: { orderId: d.orderId, carrier: result.courier, trackingRef: result.id },
           update: { carrier: result.courier, trackingRef: result.id },
         });
+        if (order.fundsProvider === "bachs") {
+          const cost = result.shippingMinor;
+          if (cost !== undefined) {
+            const { journal } = await import("./payments.js");
+            const covered = cost > d.paidMinor ? d.paidMinor : cost;
+            await journal(
+              tx,
+              `shipping-cost:${d.id}:${result.id}`,
+              [
+                [`held_shipping:${order.id}`, covered],
+                ["shipping_variance_expense", cost - covered],
+                ["shipping_wallet_asset", -cost],
+              ],
+              order.id,
+            );
+          }
+          if (cost === undefined || cost !== (quote.walletMinor ?? quote.amountMinor)) {
+            await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
+            await tx.delivery.update({
+              where: { id: d.id },
+              data: { failureCode: "SHIPPING_COST_REVIEW_REQUIRED" },
+            });
+          }
+        }
         await deliveryEvent(tx, d.id, "BOOKED", "shipbubble", `${d.id}:booked`);
       });
     } catch {

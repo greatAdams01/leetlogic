@@ -3,7 +3,13 @@ import { prisma, type IdentityCheck, type Prisma } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "./audit.js";
-import { dojahOutcome, type DojahResult } from "../providers/identity/dojah.js";
+import {
+  dojahOutcome,
+  dojahSummary,
+  fetchDojahResult,
+  requireDojah,
+  type DojahResult,
+} from "../providers/identity/dojah.js";
 import type { Request } from "express";
 
 export const latestIdentity = (caseId: string, tx: Prisma.TransactionClient = prisma) =>
@@ -11,6 +17,52 @@ export const latestIdentity = (caseId: string, tx: Prisma.TransactionClient = pr
     where: { verificationCaseId: caseId },
     orderBy: { createdAt: "desc" },
   });
+/** A later unsuccessful attempt must never mask this account/case's accepted identity. */
+export async function effectiveIdentity(caseId: string, tx: Prisma.TransactionClient = prisma) {
+  const c = getConfig();
+  const accepted = await tx.identityCheck.findFirst({
+    where: {
+      verificationCaseId: caseId,
+      status: "VERIFIED",
+      mode: c.NODE_ENV === "production" ? "live" : c.DOJAH_MODE,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  return accepted ?? latestIdentity(caseId, tx);
+}
+/** Read existing provider records only. Never launches or bills for a new check. */
+export async function reconcileIdentityAttempts(caseId: string, req: Request) {
+  if (identityPassed(await effectiveIdentity(caseId))) return;
+  const c = requireDojah();
+  // Oldest last-checked first makes progress across the history on repeated syncs.
+  const checks = await prisma.identityCheck.findMany({
+    where: { verificationCaseId: caseId, mode: c.DOJAH_MODE, status: { not: "VERIFIED" } },
+    orderBy: [{ lastCheckedAt: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
+    take: 10,
+  });
+  const results = await Promise.allSettled(
+    checks.map(async (check) => {
+      const claimed = await prisma.identityCheck.updateMany({
+        where: {
+          id: check.id,
+          status: { not: "VERIFIED" },
+          OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: new Date(Date.now() - 15000) } }],
+        },
+        data: { lastCheckedAt: new Date() },
+      });
+      if (!claimed.count) return false;
+      const result = await fetchDojahResult(check.id, c);
+      if (result) await applyIdentityResult(result, "reconcile", req);
+      return true;
+    }),
+  );
+  // A successful older result wins even when another attempt's provider request failed.
+  if (identityPassed(await effectiveIdentity(caseId))) return;
+  const failures = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failures.length) throw failures[0]!.reason;
+}
 export function identityPassed(check: Pick<IdentityCheck, "status" | "mode"> | null | undefined) {
   return (
     check?.status === "VERIFIED" && (getConfig().NODE_ENV !== "production" || check.mode === "live")
@@ -26,6 +78,8 @@ export function publicIdentity(check: IdentityCheck | null) {
           check.status === "PENDING" && check.expiresAt < new Date() ? "EXPIRED" : check.status,
         expiresAt: check.expiresAt,
         updatedAt: check.updatedAt,
+        createdAt: check.createdAt,
+        summary: check.resultSummary,
       }
     : null;
 }
@@ -59,16 +113,25 @@ export async function applyIdentityResult(
     .digest("hex");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM identity_checks WHERE id = ${check.id}::uuid FOR UPDATE`;
-    if (await tx.identityCheckEvent.findUnique({ where: { digest } })) return;
+    const duplicate = await tx.identityCheckEvent.findUnique({ where: { digest } });
     const current = await tx.identityCheck.findUniqueOrThrow({ where: { id: check.id } });
-    await tx.identityCheckEvent.create({
-      data: { identityCheckId: check.id, digest, source, status: outcome },
-    });
-    // Late and duplicate events never undo terminal results. Retrying uses a new reference.
-    if (current.status !== "PENDING") return;
+    if (!duplicate)
+      await tx.identityCheckEvent.create({
+        data: { identityCheckId: check.id, digest, source, status: outcome },
+      });
+    // A verified identity never regresses. Earlier attempts can recover from an
+    // earlier result when the authenticated provider now confirms overall success.
+    const recover =
+      source === "reconcile" && current.status !== "VERIFIED" && outcome === "VERIFIED";
+    const backfill = current.status === "REVIEW" && !current.resultSummary && outcome === "REVIEW";
+    if (
+      (current.status !== "PENDING" && !recover && !backfill) ||
+      (duplicate && !recover && !backfill)
+    )
+      return;
     await tx.identityCheck.update({
       where: { id: check.id },
-      data: { status: outcome, lastCheckedAt: new Date() },
+      data: { status: outcome, resultSummary: dojahSummary(result), lastCheckedAt: new Date() },
     });
     await audit(
       req,

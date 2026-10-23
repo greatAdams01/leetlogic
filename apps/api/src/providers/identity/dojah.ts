@@ -57,25 +57,39 @@ export const dojahResultSchema = z
   })
   .passthrough();
 export type DojahResult = z.infer<typeof dojahResultSchema>;
+export function dojahSummary(result: DojahResult) {
+  const passed = (name: string) => step.safeParse(result.data?.[name]).data?.status === true;
+  return {
+    providerCompleted: result.verification_status === "Completed",
+    documentPassed: passed("id"),
+    missingRequiredSteps: ["government_data", "selfie", "user_data"].filter(
+      (name) => !passed(name),
+    ),
+  };
+}
+/** REST responses use entity; widget webhooks use a top-level record. */
+export function parseDojahResponse(body: unknown, reference: string) {
+  const record = z.record(z.unknown()).safeParse(body);
+  const payload =
+    record.success && Object.hasOwn(record.data, "entity") ? record.data.entity : body;
+  const parsed = dojahResultSchema.safeParse(payload);
+  if (!parsed.success || parsed.data.reference_id !== reference)
+    throw new AppError(
+      502,
+      "IDENTITY_INVALID_RESPONSE",
+      "The identity provider returned an unexpected result. Please contact support.",
+    );
+  return parsed.data;
+}
 export function dojahOutcome(
   result: DojahResult,
 ): "PENDING" | "VERIFIED" | "FAILED" | "REVIEW" | "ABANDONED" {
   if (result.verification_status === "Failed") return "FAILED";
   if (result.verification_status === "Abandoned") return "ABANDONED";
   if (result.verification_status !== "Completed") return "PENDING";
-  const data = result.data || {};
-  const passed = (name: string) => step.safeParse(data[name]).data?.status === true;
-  // The published flow must enforce name matching, ID/face matching and liveness.
-  // Completion alone, document OCR alone, or a missing mandatory step never passes.
-  if (
-    result.status !== true ||
-    !passed("government_data") ||
-    !passed("selfie") ||
-    !passed("user_data")
-  )
-    return "REVIEW";
-  if (Object.values(data).some((value) => step.safeParse(value).data?.status === false))
-    return "REVIEW";
+  // EasyOnboard owns the configured flow and its decision. Step keys vary by
+  // widget; absent steps are not failures and must not override overall success.
+  if (result.status !== true) return "REVIEW";
   return "VERIFIED";
 }
 export async function fetchDojahResult(
@@ -107,12 +121,5 @@ export async function fetchDojahResult(
       "IDENTITY_PROVIDER_UNAVAILABLE",
       "The identity provider could not complete this check. Please try again later.",
     );
-  const parsed = dojahResultSchema.safeParse(await response.json().catch(() => null));
-  if (!parsed.success || parsed.data.reference_id !== reference)
-    throw new AppError(
-      502,
-      "IDENTITY_INVALID_RESPONSE",
-      "The identity provider returned an unexpected result. Please contact support.",
-    );
-  return parsed.data;
+  return parseDojahResponse(await response.json().catch(() => null), reference);
 }

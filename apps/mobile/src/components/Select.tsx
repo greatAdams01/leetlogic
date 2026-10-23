@@ -13,7 +13,7 @@ export function Select({
 }: {
   label: string;
   value: string;
-  options: readonly string[];
+  options: readonly (string | { value: string; label: string })[];
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
@@ -24,8 +24,12 @@ export function Select({
     setOpen(false);
     setSearch("");
   };
-  const filtered = options.filter((option) =>
-    tr(option).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+  const records = options.map((option) =>
+    typeof option === "string" ? { value: option, label: option } : option,
+  );
+  const selectedLabel = records.find((option) => option.value === value)?.label || value;
+  const filtered = records.filter((option) =>
+    tr(option.label).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
   );
   return (
     <View style={{ gap: 8 }}>
@@ -33,7 +37,7 @@ export function Select({
       <Pressable
         accessibilityRole="combobox"
         accessibilityLabel={tr(label)}
-        accessibilityValue={{ text: value ? tr(value) : tr("Choose an option") }}
+        accessibilityValue={{ text: value ? tr(selectedLabel) : tr("Choose an option") }}
         accessibilityState={{ disabled, expanded: open }}
         disabled={disabled}
         onPress={() => setOpen(true)}
@@ -44,7 +48,7 @@ export function Select({
         ]}
       >
         <Text style={[s.text, { flex: 1, color: value ? colors.ink : colors.muted }]}>
-          {value || (disabled ? "Select a state first" : "Choose an option")}
+          {selectedLabel || (disabled ? "Select a state first" : "Choose an option")}
         </Text>
         <View style={{ transform: [{ rotate: "90deg" }] }}>
           <Icon name="chevron" size={18} />
@@ -65,20 +69,20 @@ export function Select({
           />
           <FlatList
             data={filtered}
-            keyExtractor={(item) => item}
+            keyExtractor={(item) => item.value}
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={<Text style={s.text}>No matching options</Text>}
             renderItem={({ item }) => (
               <Pressable
                 accessibilityRole="radio"
-                accessibilityState={{ selected: item === value }}
+                accessibilityState={{ selected: item.value === value }}
                 onPress={() => {
-                  onChange(item);
+                  onChange(item.value);
                   close();
                 }}
-                style={[s.choice, { marginBottom: 8 }, item === value && s.selected]}
+                style={[s.choice, { marginBottom: 8 }, item.value === value && s.selected]}
               >
-                <Text style={s.text}>{item}</Text>
+                <Text style={s.text}>{item.label}</Text>
               </Pressable>
             )}
           />

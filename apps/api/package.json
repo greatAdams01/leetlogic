@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:identity": "node --env-file=../../.env scripts/test-identity.mjs",
     "test:delivery": "node --env-file=../../.env scripts/test-delivery.mjs",
-    "test:admin": "node --env-file=../../.env scripts/test-admin.mjs"
+    "test:admin": "node --env-file=../../.env scripts/test-admin.mjs",
+    "worker:payments": "node --env-file=../../.env --import tsx src/payment-jobs.ts",
+    "test:payments": "node --env-file=../../.env scripts/test-payments.mjs"
   },
   "dependencies": {
     "@leetlogic/contracts": "workspace:*",

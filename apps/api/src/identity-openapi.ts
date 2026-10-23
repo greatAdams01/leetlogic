@@ -50,7 +50,7 @@ export const identityOpenApiPaths = {
   },
   "/seller/verification/identity/refresh": {
     post: {
-      summary: "Reconcile the authenticated seller's latest identity session",
+      summary: "Reconcile the authenticated seller's existing identity attempts",
       security,
       description:
         "A server-only call to Dojah using the account-bound reference. Outbound reads are throttled to once per 15 seconds. Never accepts client success callbacks as evidence.",

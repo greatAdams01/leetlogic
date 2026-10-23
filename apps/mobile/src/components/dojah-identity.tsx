@@ -53,19 +53,18 @@ export function DojahIdentity({ onStatus }: { onStatus: (passed: boolean) => voi
     <View style={{ gap: 20 }}>
       <Heading>Verify your identity</Heading>
       {operation === "loading" && <ActivityIndicator color={colors.green} />}
-      <Label>Dojah will check your ID and selfie. Return to LeetLogic when you finish.</Label>
-      {data?.check?.mode === "sandbox" && (
-        <Notice text="Test verification only. This does not verify a real identity." />
+      {!data?.passed && (
+        <Label>Dojah will check your ID and selfie. Return to LeetLogic when you finish.</Label>
       )}
       {data?.passed ? (
-        <Notice text="Identity verified. You can continue to farm evidence." success />
+        <Notice text="Your identity is verified. You can continue." success />
       ) : (
         <>
           {data && !data.available && (
             <Notice text={a.error({ code: data.unavailableCode || "IDENTITY_UNAVAILABLE" })} />
           )}
           {data?.check?.status === "PENDING" && (
-            <Notice text="Your identity check is in progress. Finish with Dojah, then check your result." />
+            <Notice text="Your verification is in progress. Return here when you finish to continue." />
           )}
           {retry && (
             <Notice text="Your identity check needs another attempt. Check your details and try again." />
@@ -84,19 +83,22 @@ export function DojahIdentity({ onStatus }: { onStatus: (passed: boolean) => voi
                   ? "Resume verification"
                   : "Verify with Dojah"
             }
+            secondary={!!data?.check}
             loading={operation === "launching"}
             disabled={busy || !data || !consent}
             onPress={() => void flow.launch(consent)}
           />
         </>
       )}
-      <Button
-        title={operation === "checking" ? "Checking…" : "Check verification result"}
-        loading={operation === "checking"}
-        secondary
-        disabled={busy}
-        onPress={() => void flow.check()}
-      />
+      {!data?.passed && (
+        <Button
+          title={operation === "checking" ? "Checking…" : "Check verification result"}
+          loading={operation === "checking"}
+          secondary={!data?.check || data.passed}
+          disabled={busy}
+          onPress={() => void flow.check()}
+        />
+      )}
       {error != null && <Notice text={a.error(error)} error />}
     </View>
   );

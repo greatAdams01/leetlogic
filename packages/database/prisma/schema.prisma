@@ -282,6 +282,7 @@ model IdentityCheck {
   mode String @db.VarChar(10)
   widgetId String @map("widget_id") @db.VarChar(120)
   status IdentityCheckStatus @default(PENDING)
+  resultSummary Json? @map("result_summary")
   consentVersion String @map("consent_version") @db.VarChar(50)
   consentAt DateTime @default(now()) @map("consent_at") @db.Timestamptz(6)
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
@@ -321,6 +322,7 @@ model VerificationDocument {
 }
 
 model FarmEvidence {
+  mimeType String? @map("mime_type") @db.VarChar(40)
   id                 String           @id @default(uuid()) @db.Uuid
   verificationCaseId String           @map("verification_case_id") @db.Uuid
   encryptedObjectKey String?          @map("encrypted_object_key") @db.VarChar(1000)
@@ -591,6 +593,9 @@ model IdempotencyRecord {
 }
 
 model TradeOrder {
+  fundsProvider String? @map("funds_provider") @db.VarChar(20)
+  reservationExpiresAt DateTime? @map("reservation_expires_at") @db.Timestamptz(6)
+  financialHold Boolean @default(false) @map("financial_hold")
   id                  String             @id @default(uuid()) @db.Uuid
   reference           String             @unique @db.VarChar(60)
   buyerId             String             @db.Uuid
@@ -838,6 +843,8 @@ model Delivery {
 }
 
 model DeliveryQuote {
+  courierId String? @db.VarChar(120)
+  walletMinor BigInt?
   id String @id @default(uuid()) @db.Uuid
   deliveryId String @db.Uuid
   requestToken String @db.Text
@@ -901,6 +908,7 @@ model ListingDraft {
 
 
 model ProducePhoto {
+  storageKey String? @map("storage_key") @db.VarChar(1000)
   id String @id @default(uuid()) @db.Uuid
   userId String @db.Uuid
   listingId String? @db.Uuid
@@ -924,4 +932,128 @@ model DeliveryNotification {
   @@unique([eventId, userId])
   @@index([userId, createdAt])
   @@map("delivery_notifications")
+}
+
+model FinancialAccount {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  mode String @db.VarChar(10)
+  providerAccountId String? @unique @db.VarChar(160)
+  status String @default("ONBOARDING") @db.VarChar(40)
+  capabilities String[] @default([])
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@unique([userId, mode])
+  @@map("financial_accounts")
+}
+model PaymentAttempt {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @db.Uuid
+  buyerId String @db.Uuid
+  mode String @db.VarChar(10)
+  kind String @default("ORDER") @db.VarChar(30)
+  status String @default("QUEUED") @db.VarChar(40)
+  amountMinor BigInt
+  produceMinor BigInt
+  shippingMinor BigInt
+  processingFeeMinor BigInt @default(0)
+  quoteId String? @db.Uuid
+  checkoutId String? @unique @db.VarChar(160)
+  checkoutUrl String? @db.Text
+  chargeId String? @unique @db.VarChar(160)
+  method String? @db.VarChar(40)
+  paidMinor BigInt @default(0)
+  exceptionCode String? @db.VarChar(80)
+  expiresAt DateTime @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@index([orderId, mode, status])
+  @@map("payment_attempts")
+}
+model MoneyOperation {
+  id String @id @default(uuid()) @db.Uuid
+  ownerId String @db.Uuid
+  actorId String? @db.Uuid
+  orderId String? @db.Uuid
+  paymentId String? @db.Uuid
+  mode String @db.VarChar(10)
+  kind String @db.VarChar(40)
+  status String @default("QUEUED") @db.VarChar(40)
+  mutationKey String @unique @db.VarChar(240)
+  requestHash String @db.Char(64)
+  amountMinor BigInt @default(0)
+  feeMinor BigInt @default(0)
+  providerRef String? @db.VarChar(160)
+  payload Json @db.JsonB
+  encryptedPayload String? @db.Text
+  failureCode String? @db.VarChar(80)
+  attempts Int @default(0)
+  leaseUntil DateTime? @db.Timestamptz(6)
+  nextRunAt DateTime @default(now()) @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@index([mode, status, nextRunAt])
+  @@index([orderId, kind])
+  @@map("money_operations")
+}
+model BankDestination {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  mode String @db.VarChar(10)
+  providerId String @db.VarChar(160)
+  bankCode String @db.VarChar(20)
+  bankName String @db.VarChar(120)
+  accountName String @db.VarChar(160)
+  accountLastFour String @db.VarChar(4)
+  fingerprint String @db.Char(64)
+  usable Boolean @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([mode, providerId])
+  @@unique([userId, mode, fingerprint])
+  @@map("bank_destinations")
+}
+model MoneyWebhook {
+  id String @id @db.VarChar(160)
+  mode String @db.VarChar(10)
+  eventType String @db.VarChar(100)
+  resourceId String? @db.VarChar(160)
+  accountId String? @db.VarChar(160)
+  bodyHash String @db.Char(64)
+  status String @default("QUEUED") @db.VarChar(30)
+  nextRunAt DateTime @default(now()) @db.Timestamptz(6)
+  failureCode String? @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([mode,status,nextRunAt])
+  @@map("money_webhooks")
+}
+model MoneyJournal {
+  id String @id @default(uuid()) @db.Uuid
+  reference String @unique @db.VarChar(240)
+  mode String @db.VarChar(10)
+  orderId String? @db.Uuid
+  operationId String? @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  lines MoneyJournalLine[]
+  @@map("money_journals")
+}
+model MoneyJournalLine {
+  id String @id @default(uuid()) @db.Uuid
+  journalId String @db.Uuid
+  account String @db.VarChar(160)
+  amountMinor BigInt
+  currency String @default("NGN") @db.VarChar(3)
+  journal MoneyJournal @relation(fields:[journalId], references:[id], onDelete:Restrict)
+  @@index([account])
+  @@map("money_journal_lines")
+}
+model MoneyReconciliation {
+  id String @id @default(uuid()) @db.Uuid
+  mode String @db.VarChar(10)
+  platformAvailableMinor BigInt
+  heldProduceMinor BigInt
+  pendingOperations Int
+  exceptionCount Int
+  shippingWalletMinor BigInt?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@map("money_reconciliations")
 }

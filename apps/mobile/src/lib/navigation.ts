@@ -11,6 +11,7 @@ export type Route = {
     | "orders"
     | "delivery"
     | "quotes"
+    | "finance"
     | "profile"
     | "details"
     | "addresses"

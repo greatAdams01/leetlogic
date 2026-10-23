@@ -5,7 +5,31 @@ const require = createRequire(import.meta.url);
 const databaseRequire = createRequire(resolve("../../packages/database/package.json"));
 const url = new URL(process.env.DATABASE_URL);
 url.searchParams.set("schema", "leetlogic_delivery_integration");
-const redisUrl = new URL(process.env.REDIS_URL); redisUrl.pathname = "/14";
-const env = { ...process.env, DATABASE_URL: url.toString(), REDIS_URL: redisUrl.toString(), NODE_ENV: "test", LOG_LEVEL: "fatal", PRIVATE_STORAGE_ROOT: "/tmp/leetlogic-delivery-tests", DELIVERY_INTEGRATION: "1" };
-execFileSync(process.execPath, [databaseRequire.resolve("prisma/build/index.js"), "migrate", "deploy", "--schema", "../../packages/database/prisma/schema.prisma"], { env, stdio: "inherit" });
-execFileSync(process.execPath, [require.resolve("vitest/vitest.mjs"), "run", "src/routes/delivery.integration.test.ts"], { env, stdio: "inherit" });
+const redisUrl = new URL(process.env.REDIS_URL);
+redisUrl.pathname = "/14";
+const env = {
+  ...process.env,
+  DATABASE_URL: url.toString(),
+  REDIS_URL: redisUrl.toString(),
+  NODE_ENV: "test",
+  PAYMENTS_ENABLED: "false",
+  LOG_LEVEL: "fatal",
+  PRIVATE_STORAGE_ROOT: "/tmp/leetlogic-delivery-tests",
+  DELIVERY_INTEGRATION: "1",
+};
+execFileSync(
+  process.execPath,
+  [
+    databaseRequire.resolve("prisma/build/index.js"),
+    "migrate",
+    "deploy",
+    "--schema",
+    "../../packages/database/prisma/schema.prisma",
+  ],
+  { env, stdio: "inherit" },
+);
+execFileSync(
+  process.execPath,
+  [require.resolve("vitest/vitest.mjs"), "run", "src/routes/delivery.integration.test.ts"],
+  { env, stdio: "inherit" },
+);

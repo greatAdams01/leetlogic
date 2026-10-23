@@ -5,6 +5,8 @@ import {
   dojahConfigurationError,
   dojahLaunchUrl,
   dojahOutcome,
+  dojahSummary,
+  parseDojahResponse,
   dojahReady,
   dojahResultSchema,
   fetchDojahResult,
@@ -57,6 +59,28 @@ describe("Dojah identity protocol", () => {
     expect(error?.message).not.toContain(config.DOJAH_APP_ID!);
     expect(dojahReady({ ...config, DOJAH_WIDGET_ID: " " })).toBe(false);
   });
+  it("unwraps the observed REST entity envelope without relaxing reference binding", () => {
+    const result = passed();
+    expect(parseDojahResponse({ entity: result }, result.reference_id)).toEqual(result);
+    expect(parseDojahResponse(result, result.reference_id)).toEqual(result);
+    expect(() =>
+      parseDojahResponse(
+        { entity: { ...result, reference_id: randomUUID() }, reference_id: result.reference_id },
+        result.reference_id,
+      ),
+    ).toThrow();
+    expect(() => parseDojahResponse({ entity: null }, result.reference_id)).toThrow();
+  });
+  it("accepts overall provider success for a configured document flow", () => {
+    const card = { ...passed(), data: { index: { status: true }, id: { status: true } } };
+    expect(dojahOutcome(card)).toBe("VERIFIED");
+    expect(dojahSummary(card)).toEqual({
+      providerCompleted: true,
+      documentPassed: true,
+      missingRequiredSteps: ["government_data", "selfie", "user_data"],
+    });
+    expect(dojahSummary(passed()).missingRequiredSteps).toEqual([]);
+  });
   it("requires a raw-body HMAC and rejects changed bodies and v2-style shared hashes", () => {
     const raw = Buffer.from('{ "reference_id": "test" }');
     const signature = createHmac("sha256", "secret").update(raw).digest("hex");
@@ -68,18 +92,19 @@ describe("Dojah identity protocol", () => {
     for (const value of ["", "abc", "z".repeat(64)])
       expect(validDojahSignature(raw, value, "secret")).toBe(false);
   });
-  it("does not equate completion or a document upload with identity verification", () => {
+  it("requires explicit provider success rather than completion alone", () => {
     expect(dojahOutcome(passed())).toBe("VERIFIED");
     expect(dojahOutcome({ ...passed(), status: false })).toBe("REVIEW");
-    expect(dojahOutcome({ ...passed(), data: {} })).toBe("REVIEW");
+    expect(dojahOutcome({ ...passed(), data: {} })).toBe("VERIFIED");
     for (const mandatory of ["government_data", "selfie", "user_data"]) {
       const result = passed();
       delete result.data[mandatory as keyof typeof result.data];
-      expect(dojahOutcome(result)).toBe("REVIEW");
+      expect(dojahOutcome(result)).toBe("VERIFIED");
     }
     expect(
       dojahOutcome({ ...passed(), data: { ...passed().data, address: { status: false } } }),
-    ).toBe("REVIEW");
+    ).toBe("VERIFIED");
+    expect(dojahOutcome({ ...passed(), status: undefined })).toBe("REVIEW");
     expect(dojahOutcome({ ...passed(), verification_status: "Pending" })).toBe("PENDING");
     expect(dojahOutcome({ ...passed(), verification_status: "Failed" })).toBe("FAILED");
     expect(dojahOutcome({ ...passed(), verification_status: "Abandoned" })).toBe("ABANDONED");
@@ -96,7 +121,7 @@ describe("Dojah identity protocol", () => {
   });
   it("reconciles only through the configured sandbox with server-only credentials", async () => {
     const result = passed();
-    const fetcher = vi.fn().mockResolvedValue(Response.json(result));
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ entity: result }));
     vi.stubGlobal("fetch", fetcher);
     expect(await fetchDojahResult(result.reference_id, config)).toEqual(result);
     const [url, options] = fetcher.mock.calls[0]!;

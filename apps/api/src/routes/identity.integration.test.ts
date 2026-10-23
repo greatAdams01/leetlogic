@@ -284,6 +284,64 @@ suite("Dojah identity, account access and farm approval", () => {
     ).toBe(false);
     expect((await event({ ...passed(), reference_id: randomUUID() })).status).toBe(200);
   });
+  it("recovers a completed card check from its existing provider reference, without creating a session", async () => {
+    const card = { ...passed(), data: { index: { status: true }, id: { status: true } } };
+    expect((await event(card)).status).toBe(200);
+    const original = await prisma.identityCheck.count({ where: { verificationCaseId: caseId } });
+    const stored = await request(app).get("/v1/seller/verification/identity").set(auth());
+    expect(stored.body.check.summary.documentPassed).toBe(true);
+    expect(stored.body.passed).toBe(true);
+    await prisma.identityCheck.update({ where: { id: reference }, data: { lastCheckedAt: null } });
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) =>
+        String(url).includes(reference)
+          ? Response.json({ entity: card })
+          : new Response(null, { status: 404 }),
+      );
+    const recovered = await request(app)
+      .post("/v1/seller/verification/identity/refresh")
+      .set(auth());
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.check.id).toBe(reference);
+    expect(recovered.body.check.summary.missingRequiredSteps).toContain("selfie");
+    expect(await prisma.identityCheck.count({ where: { verificationCaseId: caseId } })).toBe(
+      original,
+    );
+    fetcher.mockRestore();
+  });
+  it("recovers REVIEW into VERIFIED from an authenticated complete result and reuses it on start", async () => {
+    await prisma.identityCheck.update({
+      where: { id: reference },
+      data: { status: "REVIEW", lastCheckedAt: null },
+    });
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) =>
+        String(url).includes(reference)
+          ? Response.json({ entity: { ...passed(), data: { id: { status: true } } } })
+          : new Response(null, { status: 404 }),
+      );
+    const recovered = await request(app)
+      .post("/v1/seller/verification/identity/refresh")
+      .set(auth());
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.passed).toBe(true);
+    const existingCount = await prisma.identityCheck.count({
+      where: { verificationCaseId: caseId },
+    });
+    const reused = await request(app)
+      .post("/v1/seller/verification/identity/start")
+      .set(auth())
+      .send(consent);
+    expect(reused.status).toBe(200);
+    expect(reused.body.url).toBeNull();
+    expect(reused.body.check.id).toBe(reference);
+    expect(await prisma.identityCheck.count({ where: { verificationCaseId: caseId } })).toBe(
+      existingCount,
+    );
+    fetcher.mockRestore();
+  });
   it("records provider success without approving the farm, and ignores delayed regressions", async () => {
     expect((await event(passed())).status).toBe(200);
     expect((await event({ ...pending(), verification_status: "Ongoing" })).status).toBe(200);
@@ -298,6 +356,60 @@ suite("Dojah identity, account access and farm approval", () => {
       where: { identityCheckId: reference },
     });
     expect(JSON.stringify(evidence)).not.toContain("selfie");
+  });
+  it("recovers an earlier success despite a newer failure, and reuses it during an outage", async () => {
+    await prisma.identityCheck.update({
+      where: { id: reference },
+      data: { status: "EXPIRED", lastCheckedAt: null },
+    });
+    await prisma.identityCheck.create({
+      data: {
+        verificationCaseId: caseId,
+        mode: "sandbox",
+        widgetId: "test-widget",
+        consentVersion: identityConsentVersion,
+        status: "FAILED",
+        expiresAt: new Date(Date.now() + 86400000),
+      },
+    });
+    const count = await prisma.identityCheck.count({ where: { verificationCaseId: caseId } });
+    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (String(url).includes(reference)) return Response.json({ entity: passed() });
+      throw new Error("Newer attempt unavailable");
+    });
+    const recovered = await request(app)
+      .post("/v1/seller/verification/identity/refresh")
+      .set(auth());
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.passed).toBe(true);
+    expect(recovered.body.check.id).toBe(reference);
+    expect(recovered.body.attempts).toBeUndefined();
+    fetcher.mockClear();
+    const c = getConfig();
+    c.DOJAH_ENABLED = false;
+    try {
+      const reused = await request(app)
+        .post("/v1/seller/verification/identity/start")
+        .set(auth())
+        .send(consent);
+      expect(reused.status).toBe(200);
+      expect(reused.body.url).toBeNull();
+      expect(reused.body.check.id).toBe(reference);
+      const state = await request(app).get("/v1/seller/verification/identity").set(auth());
+      expect(state.body.passed).toBe(true);
+      const other = await request(app)
+        .get("/v1/seller/verification/identity")
+        .set("Authorization", `Bearer ${otherAccess}`);
+      expect(other.body.passed).toBe(false);
+      expect(other.body.attempts).toBeUndefined();
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(await prisma.identityCheck.count({ where: { verificationCaseId: caseId } })).toBe(
+        count,
+      );
+    } finally {
+      c.DOJAH_ENABLED = true;
+      fetcher.mockRestore();
+    }
   });
   it("accepts provider-verified applications without demanding another ID-photo upload", async () => {
     const result = await request(app)

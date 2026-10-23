@@ -14,6 +14,18 @@ const quoteBody = z.object({
   destination: contactSchema,
   parcel: parcelSchema,
 });
+async function unlockedCheckout(tx: any, orderId: string) {
+  if (
+    await tx.paymentAttempt.count({
+      where: { orderId, status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
+    })
+  )
+    throw new AppError(
+      409,
+      "CHECKOUT_ACTIVE",
+      "Finish the current payment before changing delivery details.",
+    );
+}
 function safeQuote(q: any) {
   return {
     id: q.id,
@@ -150,6 +162,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     if (!eligible) {
       await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+        await unlockedCheckout(tx, order.id);
         const current = await tx.tradeOrder.findUniqueOrThrow({
           where: { id: order.id },
           include: { delivery: true, shipment: true },
@@ -203,6 +216,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     });
     const items = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: order.id },
         include: { delivery: true, shipment: true },
@@ -264,6 +278,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       throw new AppError(403, "FORBIDDEN", "Order management permission required");
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id } });
       const d = await tx.delivery.findUniqueOrThrow({ where: { orderId: order.id } });
       const quote = await tx.deliveryQuote.findUnique({ where: { id: quoteId } });
@@ -329,7 +344,10 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       valueMinor: order.totalMinor,
     });
     const rate = rates.find((x) => x.serviceCode === selected.serviceCode);
-    if (!rate || (d.paidMinor > 0n && d.paidMinor !== rate.amountMinor))
+    if (
+      !rate ||
+      (d.paidMinor > 0n && d.paidMinor !== rate.amountMinor && order.fundsProvider !== "bachs")
+    )
       throw new AppError(
         409,
         "DELIVERY_PRICE_CHANGED",
@@ -337,6 +355,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       );
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
       const current = await tx.delivery.findUniqueOrThrow({ where: { id: d.id } });
       if (
         current.selectedQuoteId !== d.selectedQuoteId ||
@@ -358,7 +377,12 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         data: {
           selectedQuoteId: quote.id,
           shippingMinor: rate.amountMinor,
-          status: d.paidMinor > 0n ? "PAID" : "PAYMENT_PENDING",
+          status:
+            d.paidMinor > 0n
+              ? d.paidMinor < rate.amountMinor
+                ? "TOPUP_REQUIRED"
+                : "PAID"
+              : "PAYMENT_PENDING",
           failureCode: null,
         },
       });
@@ -409,10 +433,10 @@ export async function queueBooking(orderId: string) {
       ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } })
       : null;
     if (
-      order.status !== "FUNDED" ||
+      order.status !== "FUNDED" || order.financialHold ||
       !quote ||
       quote.expiresAt <= new Date() ||
-      d.paidMinor !== quote.amountMinor
+      d.paidMinor < quote.amountMinor
     )
       throw new AppError(
         409,
@@ -432,6 +456,7 @@ staffDeliveryRouter.post(
   requireRecentStepUp,
   async (req, res) => {
     const order = await orderAccess(req);
+    if(order.fundsProvider==="bachs")throw new AppError(409,"PROVIDER_PAYMENT_REQUIRED","Delivery payment is confirmed by the payment provider.");
     const body = z
       .object({
         amountMinor: z.string().regex(/^\d{1,12}$/),
@@ -440,6 +465,7 @@ staffDeliveryRouter.post(
       .parse(req.body);
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
       const d = await tx.delivery.findUniqueOrThrow({ where: { orderId: order.id } });
       if (d.paymentRef === body.reference && d.paidMinor === BigInt(body.amountMinor)) return;
       const quote = d.selectedQuoteId
@@ -590,6 +616,7 @@ customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
     throw new AppError(409, "DELIVERY_NOT_READY", "Only the buyer can confirm a delivered order");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+    await unlockedCheckout(tx, order.id);
     const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id } });
     if (current.status !== "FUNDED" && current.status !== "DELIVERED")
       throw new AppError(409, "ORDER_NOT_FUNDED", "Order cannot be confirmed");
@@ -635,6 +662,7 @@ staffDeliveryRouter.post(
       .parse(req.body);
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: order.id },
         include: { delivery: true },
@@ -696,6 +724,7 @@ staffDeliveryRouter.post(
       .parse(req.body);
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: order.id },
         include: { delivery: true, shipment: true },

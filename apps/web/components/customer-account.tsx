@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import {ui} from "../../mobile/src/lib/localization";
 import Link from "next/link";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 export function CustomerAccount() {
-  const { t, setLocale } = useLanguage();
+  const { t, setLocale, locale } = useLanguage();
   const [user, setUser] = useState<any>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -96,6 +97,9 @@ export function CustomerAccount() {
       ) : (
         <>
           <p>{user.phoneE164}</p>
+          <p>
+            <Link href="/account/payments">{ui(locale,"Payments and earnings")}</Link>
+          </p>
           <button
             onClick={async () => {
               await customerApi("auth/logout", {});

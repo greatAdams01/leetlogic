@@ -1,3 +1,4 @@
+import { OrderPayment } from "../components/order-payment";
 import { Select } from "../components/Select";
 import { nigeriaStates } from "../lib/locations";
 import { LocalizedText as Text } from "../localization";
@@ -75,6 +76,12 @@ export function Delivery() {
               Produce and shipping are accounted for separately.
             </Label>
           </Card>
+          <OrderPayment
+            orderId={a.route.id!}
+            isBuyer={data.order.isBuyer}
+            topup={d?.status === "TOPUP_REQUIRED"}
+            onChanged={r.reload}
+          />
           {d && (
             <Card>
               <View style={s.row}>
