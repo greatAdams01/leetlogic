@@ -139,3 +139,23 @@ The seller application now advances through separate screens: farm details, farm
 Phone and OTP screens follow Figma frames `2521:25322` and `2521:25366`. Original flag, lock, format hint and back assets are bundled with native SVG dimensions. Phone entry accepts at most 11 digits with a fixed country badge: 11 local digits beginning with 0, or 10 without the leading 0. Do not enter the country code again. Invalid/incomplete input is checked before submitting; network, cooldown, expired/incorrect OTP, provider and dependency failures have distinct messages, and server request IDs are preserved for support. Continue displays a spinner while a request is pending. OTP uses six visual boxes backed by one native input for paste, autofill, deletion and screen readers; it does not prefill the sample code in the design. Resend cooldown is calculated from a deadline and refreshed when the app returns from the background.
 
 The website now has `/terms` and `/privacy` draft pages. In local development mobile opens the API host on web port 3001, unless `EXPO_PUBLIC_WEB_URL` is set. For release, set `EXPO_PUBLIC_WEB_URL` to the deployed HTTPS website or supply `EXPO_PUBLIC_TERMS_URL` and `EXPO_PUBLIC_PRIVACY_URL`. Review the drafts, verify the operator/support contact and approve retention periods and provider/transfer arrangements before treating them as final production policies. No live site was deployed by this change.
+
+## Seller dashboard and navigation
+
+The seller home follows Figma `2575:22158`. Signed-in seller mode uses **Home, Listings, Sell, Orders, Menu**; buyer mode retains **Home, Search, Orders, Menu**. The compact 28px active pill and neighbouring tabs animate together. Reduced motion is respected. Application verification and listing review remain separate from the main tabs.
+
+The home screen reads actual owned listings, drafts, seller sales, account verification and earnings. It refreshes on returning to the app or pulling down. Available earnings exclude held/reserved funds. Identity and payment badges require confirmed backend state; no sample balances or orders are shown. “Withdraw” opens the existing payment setup/withdrawal screen.
+
+Only funded orders that have not been picked up are counted as ready to pack. Unpaid purchases are not counted as sales. “Review order” opens the existing delivery detail; this change does not add a new order-acceptance state or release escrow. Low-stock alerts currently mean **at most two unreserved selling units**, with zero-available and paused listings excluded.
+
+Drafts saved on the device appear separately from server drafts. Resume edits the same server draft; delete affects only an owned unsubmitted draft. Unapproved farmers can save/review drafts, but submission still requires farmer approval and listing moderation. Restock sets the **total** stock, including reserved units, so repeated submissions do not add inventory twice. Stock cannot be reduced below reservations, and inventory controls cannot activate unreviewed/rejected listings. Changes are audited.
+
+Manual checks in Expo Go:
+
+1. Sign in as a seller: confirm the farm dashboard and five seller tabs; check Home → Listings → Sell → Orders → Menu, then language changes and reduced-motion settings.
+2. Check an approved, pending and rejected seller: badges/actions must follow actual status. Payment setup must not appear linked until the payment account is ready.
+3. Save a produce draft, return Home, resume it, update it and delete it. Confirm submission remains blocked without approval.
+4. Restock or pause an approved listing; verify the quantity/status after refreshing. Try reducing stock below reserved orders and confirm the actionable error.
+5. Confirm paid sales appear in seller Orders while the same account's purchases appear only in buyer mode. Buyer navigation and marketplace remain unchanged.
+
+Menu responsiveness: tab movement uses native transforms/opacity; tab widths change once per selection instead of being recalculated on every animation frame. The green pill uses fixed-size end caps and a transformed middle, retaining its 28px rounded shape. Menu shows cached account information immediately and schedules its initial refresh for idle time. Concurrent account reads share one request; unchanged account data does not trigger an app-wide state update. Icon XML is cached and repeated icon instances share disk reads. The navigation badge refreshes on entering the app, without fetching all seller orders on every tab tap. Component regression tests cover repeated Menu transitions, refresh cancellation, native animation settings and bounded renders; device-level smoothness remains part of the manual Expo Go checks.

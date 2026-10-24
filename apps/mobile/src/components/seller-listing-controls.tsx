@@ -132,6 +132,8 @@ export function ListingControls({
 const styles = StyleSheet.create({
   actions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   action: {
+    flexShrink: 1,
+    maxWidth: "100%",
     backgroundColor: "#ecfdf5",
     borderRadius: 8,
     paddingHorizontal: 12,

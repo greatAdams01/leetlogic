@@ -1,3 +1,4 @@
+import { BankAccounts } from "./src/screens/bank-accounts";
 import { Finance } from "./src/screens/finance";
 import React, { useEffect, useState } from "react";
 import * as SplashScreen from "expo-splash-screen";
@@ -34,6 +35,7 @@ function Router() {
     delivery: Delivery,
     quotes: Quotes,
     finance: Finance,
+    banks: BankAccounts,
     profile: Profile,
     details: Details,
     addresses: Addresses,
@@ -49,6 +51,7 @@ function Router() {
     "delivery",
     "quotes",
     "finance",
+    "banks",
     "profile",
     "details",
     "addresses",

@@ -72,6 +72,27 @@ describe("Bachs payment protocol", () => {
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("accepts the actual sandbox onboarding origin without accepting lookalikes", async () => {
+    fetcher.mockResolvedValue(
+      Response.json({ url: "https://sandbox-connect.bachs.io/onboarding/private-link" }),
+    );
+    expect(await provider.accountLink("acct_1", "link-key")).toBe(
+      "https://sandbox-connect.bachs.io/onboarding/private-link",
+    );
+    for (const url of [
+      "http://sandbox-connect.bachs.io/a",
+      "https://sandbox-connect.bachs.io.evil.test/a",
+      "https://user@sandbox-connect.bachs.io/a",
+      "https://sandbox-connect.bachs.io:8443/a",
+      "not-a-url",
+    ])
+      expect(() => hostedUrl(url, "onboarding")).toThrow();
+    config.BACHS_MODE = "live";
+    expect(() => hostedUrl("https://sandbox-connect.bachs.io/a", "onboarding")).toThrow();
+    expect(hostedUrl("https://connect.bachs.io/a", "onboarding")).toBe(
+      "https://connect.bachs.io/a",
+    );
+  });
   it("blocks unapproved live money and unsafe hosted redirects", () => {
     config.BACHS_MODE = "live";
     expect(() => paymentReady()).toThrow();

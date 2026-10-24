@@ -47,6 +47,7 @@ describe("seller dashboard and navigation", () => {
         order("COMPLETED"),
         order("CANCELLED"),
         order("FUNDED", "IN_TRANSIT"),
+        order("FUNDED", "FAILED_ATTEMPT"),
         order("FUNDED", "RETURNED"),
         order("FUNDED", "BOOKED"),
         order("FUNDED"),

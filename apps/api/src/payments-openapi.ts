@@ -87,6 +87,9 @@ export const paymentsOpenApiPaths = {
       ]),
     ),
   },
+  "/financial/banks/operations/{id}": {
+    get: operation("Read owned bank verification progress and masked destination", undefined, [id]),
+  },
   "/financial/withdrawals": {
     post: operation(
       "Reserve earnings and submit staff-approved withdrawal with fee consent",

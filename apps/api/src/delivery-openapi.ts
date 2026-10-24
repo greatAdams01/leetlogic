@@ -50,7 +50,12 @@ function operation(summary: string, schema?: unknown, hasId = true) {
   };
 }
 export const deliveryOpenApiPaths: Record<string, unknown> = {
-  "/orders": { get: operation("List customer orders", undefined, false) },
+  "/orders": {
+    get: {
+      ...operation("List owned orders; optionally select purchases or sales", undefined, false),
+      parameters: [{ name: "view", in: "query", schema: { enum: ["buyer", "seller"] } }],
+    },
+  },
   "/orders/notifications": {
     get: operation("List private delivery notifications", undefined, false),
   },
@@ -61,6 +66,7 @@ export const deliveryOpenApiPaths: Record<string, unknown> = {
     get: operation("Listing categories, units and owned farm addresses", undefined, false),
   },
   "/listing-drafts": {
+    get: operation("List owned unsubmitted produce drafts", undefined, false),
     post: operation(
       "Save an owned produce draft",
       object(
@@ -89,7 +95,17 @@ export const deliveryOpenApiPaths: Record<string, unknown> = {
       false,
     ),
   },
-  "/listing-drafts/{id}": { get: operation("Read owned draft") },
+  "/listing-drafts/{id}": {
+    get: operation("Read owned draft"),
+    patch: operation("Update owned unsubmitted draft using the same fields as draft creation"),
+    delete: {
+      ...operation("Delete owned unsubmitted draft"),
+      responses: {
+        "204": { description: "Draft deleted" },
+        "404": { description: "Unavailable or already submitted" },
+      },
+    },
+  },
   "/listing-drafts/{id}/submit": {
     post: operation(
       "Confirm and submit draft for moderation",

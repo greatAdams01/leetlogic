@@ -22,20 +22,16 @@ import {
   sellerSummary,
   type SavedListingDraft,
 } from "../lib/seller-dashboard";
+import { sellerPaymentAction, type FinancialSummary } from "../lib/finance";
 import { sellerMenuState } from "../lib/seller-menu";
 import { ListingPhoto } from "./market";
 
-type Financial = {
-  enabled: boolean;
-  earnings: { availableMinor: string };
-  account: { ready: boolean } | null;
-};
 export function SellerHome() {
   const a = useApp();
   const listings = useResource<{ items: Listing[] }>("/marketplace/my-listings");
   const orders = useResource<{ items: Order[] }>("/orders?view=seller");
   const drafts = useResource<{ items: SavedListingDraft[] }>("/listing-drafts");
-  const financial = useResource<Financial>("/financial");
+  const financial = useResource<FinancialSummary>("/financial");
   const verification = useResource<{ verification: { identityPassed?: boolean } }>(
     "/seller/verification",
     !!a.user?.farmerProfile,
@@ -43,6 +39,7 @@ export function SellerHome() {
   const [deviceDraft, setDeviceDraft] = useState<{ title?: string } | null>(null);
   const [error, setError] = useState(""),
     [deleting, setDeleting] = useState("");
+  const paymentAction = sellerPaymentAction(financial.data);
   const state = sellerMenuState(a.user?.farmerProfile, "SELLER");
   const approved = state === "approved";
   const { active, lowStock, toPack } = sellerSummary(
@@ -78,10 +75,19 @@ export function SellerHome() {
       orders.reload(),
       drafts.reload(),
       financial.reload(),
+      verification.reload(),
       readDraft(),
       a.loadUser(),
     ]);
-  }, [listings.reload, orders.reload, drafts.reload, financial.reload, readDraft, a.loadUser]);
+  }, [
+    listings.reload,
+    orders.reload,
+    drafts.reload,
+    financial.reload,
+    verification.reload,
+    readDraft,
+    a.loadUser,
+  ]);
   useEffect(() => {
     void readDraft().catch((e) => setError(localizedError(a.locale, e)));
     void a.loadUser().catch((e) => setError(localizedError(a.locale, e)));
@@ -173,49 +179,60 @@ export function SellerHome() {
           </View>
         </View>
         <View style={styles.body}>
-          <Card style={{ ...styles.card, padding: 20 }}>
-            <View style={styles.between}>
-              <Label style={styles.muted}>Available earnings</Label>
-              <SmallAction title="Withdraw" onPress={() => a.go("finance")} />
+          <Card style={styles.earningsCard}>
+            <View style={styles.earningsHeader}>
+              <Label style={[styles.muted, { flexGrow: 1, flexBasis: 130 }]}>
+                Available earnings
+              </Label>
+              <SmallAction title={paymentAction.title} onPress={() => a.go(paymentAction.route)} />
             </View>
-            <Label style={styles.balance}>
+            <Label numberOfLines={1} adjustsFontSizeToFit style={styles.balance}>
               {financial.data ? money(financial.data.earnings.availableMinor) : "—"}
             </Label>
-            <Label style={styles.caption}>
-              {financial.data?.enabled && financial.data.account?.ready
-                ? "ready to withdraw"
-                : "Complete payment setup to withdraw earnings."}
-            </Label>
-            {financial.error && <Notice text={financial.error} error />}
-            <View style={styles.stats}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => a.reset("myListings")}
-                style={styles.stat}
-              >
-                <View style={[styles.statIcon, { backgroundColor: "#d1fae5" }]}>
-                  <Icon name="sellerListings" nativeSize={{ width: 20, height: 20 }} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Label style={styles.statNumber}>{listings.data ? active.length : "—"}</Label>
-                  <Label style={styles.caption}>Active listings</Label>
-                </View>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => a.reset("orders")}
-                style={styles.stat}
-              >
-                <View style={[styles.statIcon, { backgroundColor: "#fef3c7" }]}>
-                  <Icon name="sellerPack" nativeSize={{ width: 20, height: 20 }} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Label style={styles.statNumber}>{orders.data ? toPack.length : "—"}</Label>
-                  <Label style={styles.caption}>Orders to pack</Label>
-                </View>
-              </Pressable>
+            <View style={styles.earningsBreakdown}>
+              <View style={styles.earningsColumn}>
+                <Label style={styles.caption}>Awaiting release</Label>
+                <Label numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryBalance}>
+                  {financial.data ? money(financial.data.heldMinor) : "—"}
+                </Label>
+              </View>
+              <View style={styles.earningsColumn}>
+                <Label style={styles.caption}>Pending withdrawals</Label>
+                <Label numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryBalance}>
+                  {financial.data ? money(financial.data.earnings.reservedMinor) : "—"}
+                </Label>
+              </View>
             </View>
+            {financial.error && <Notice text={financial.error} error />}
           </Card>
+          <View style={styles.stats}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => a.reset("myListings")}
+              style={styles.stat}
+            >
+              <View style={[styles.statIcon, { backgroundColor: "#d1fae5" }]}>
+                <Icon name="sellerListings" nativeSize={{ width: 20, height: 20 }} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Label style={styles.statNumber}>{listings.data ? active.length : "—"}</Label>
+                <Label style={styles.caption}>Active listings</Label>
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => a.reset("orders")}
+              style={styles.stat}
+            >
+              <View style={[styles.statIcon, { backgroundColor: "#fef3c7" }]}>
+                <Icon name="sellerPack" nativeSize={{ width: 20, height: 20 }} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Label style={styles.statNumber}>{orders.data ? toPack.length : "—"}</Label>
+                <Label style={styles.caption}>Orders to pack</Label>
+              </View>
+            </Pressable>
+          </View>
           <Pressable
             accessibilityRole="button"
             onPress={() => a.reset("sell")}
@@ -292,10 +309,14 @@ export function SellerHome() {
               </View>
               {verification.data?.verification.identityPassed && <Check text="Identity verified" />}
               {approved && <Check text="Farm location confirmed" />}
-              {financial.data?.account?.ready ? (
-                <Check text="Payment account linked" />
+              {financial.data?.account?.ready &&
+              financial.data.destinations.some((bank) => bank.usable) ? (
+                <Check text="Bank account linked" />
               ) : (
-                <SmallAction title="Set up payment account" onPress={() => a.go("finance")} />
+                <SmallAction
+                  title={paymentAction.title}
+                  onPress={() => a.go(paymentAction.route)}
+                />
               )}
               {!approved && (
                 <SmallAction
@@ -511,6 +532,25 @@ const styles = StyleSheet.create({
   between: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   muted: { fontSize: 14, lineHeight: 20, color: "#78716c" },
   caption: { fontSize: 12, lineHeight: 17, color: "#78716c" },
+  earningsCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(231,229,228,0.7)",
+    padding: 20,
+    gap: 20,
+  },
+  earningsHeader: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12 },
+  earningsBreakdown: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderColor: "#f0efeb",
+  },
+  earningsColumn: { flexGrow: 1, flexBasis: 120, minWidth: 0, gap: 6 },
+  secondaryBalance: { fontSize: 18, lineHeight: 26, fontFamily: "NotoBold" },
   balance: {
     fontFamily: "Montserrat",
     fontWeight: "700",
@@ -521,12 +561,10 @@ const styles = StyleSheet.create({
   stats: {
     flexDirection: "row",
     gap: 12,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderColor: "#f5f5f4",
   },
   stat: {
     flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,

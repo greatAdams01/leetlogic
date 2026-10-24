@@ -11,12 +11,18 @@ import {
   ActivityIndicator,
   type TextInputProps,
   type ViewStyle,
+  type ViewProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 import { Asset } from "expo-asset";
 import { File } from "expo-file-system";
 import { icons } from "../icons";
+import { assetCache } from "../lib/async-cache";
+const iconXml = assetCache(async (name: keyof typeof icons) => {
+  const asset = await Asset.fromModule(icons[name]).downloadAsync();
+  return new File(asset.localUri || asset.uri).text();
+});
 export const colors = {
   paper: "#faf7f0",
   green: "#14532d",
@@ -28,41 +34,50 @@ export const colors = {
   white: "#fff",
   gold: "#e3a008",
 };
-export function Icon({
-  name,
-  size = 22,
-  nativeSize,
-}: {
-  name: keyof typeof icons;
-  size?: number;
-  nativeSize?: { width: number; height: number };
-}) {
-  const [xml, setXml] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    let active = true;
-    Asset.fromModule(icons[name])
-      .downloadAsync()
-      .then(async (a) => {
-        const source = await new File(a.localUri || a.uri).text();
-        if (active) setXml(source);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [name]);
-  if (nativeSize)
-    return (
-      <View style={{ ...nativeSize, alignItems: "center", justifyContent: "center" }}>
-        {xml && <SvgXml xml={xml} />}
-      </View>
+export const Icon = React.memo(
+  function Icon({
+    name,
+    size = 22,
+    nativeSize,
+  }: {
+    name: keyof typeof icons;
+    size?: number;
+    nativeSize?: { width: number; height: number };
+  }) {
+    const [xml, setXml] = React.useState<string | null>(() => iconXml.peek(name) || null);
+    React.useEffect(() => {
+      let active = true;
+      const cached = iconXml.peek(name);
+      setXml(cached || null);
+      if (!cached)
+        void iconXml
+          .read(name)
+          .then((source) => {
+            if (active) setXml(source);
+          })
+          .catch(() => {});
+      return () => {
+        active = false;
+      };
+    }, [name]);
+    if (nativeSize)
+      return (
+        <View style={{ ...nativeSize, alignItems: "center", justifyContent: "center" }}>
+          {xml && <SvgXml xml={xml} />}
+        </View>
+      );
+    return xml ? (
+      <SvgXml xml={xml} width={name === "wordmark" ? size * 5.068 : size} height={size} />
+    ) : (
+      <View style={{ width: size, height: size }} />
     );
-  return xml ? (
-    <SvgXml xml={xml} width={name === "wordmark" ? size * 5.068 : size} height={size} />
-  ) : (
-    <View style={{ width: size, height: size }} />
-  );
-}
+  },
+  (previous, next) =>
+    previous.name === next.name &&
+    previous.size === next.size &&
+    previous.nativeSize?.width === next.nativeSize?.width &&
+    previous.nativeSize?.height === next.nativeSize?.height,
+);
 export function Label({
   children,
   muted = false,
@@ -152,8 +167,20 @@ export function Field({
     </View>
   );
 }
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
-  return <View style={[s.card, style]}>{children}</View>;
+export function Card({
+  children,
+  style,
+  onLayout,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  onLayout?: ViewProps["onLayout"];
+}) {
+  return (
+    <View onLayout={onLayout} style={[s.card, style]}>
+      {children}
+    </View>
+  );
 }
 export function Notice({
   text,
@@ -204,6 +231,7 @@ export function Page({
   back,
   footer,
   footerSafeArea = true,
+  scrollRef,
   green = false,
   loading = false,
   brand = false,
@@ -214,6 +242,7 @@ export function Page({
   back?: () => void;
   footer?: React.ReactNode;
   footerSafeArea?: boolean;
+  scrollRef?: React.Ref<ScrollView>;
   green?: boolean;
   loading?: boolean;
   brand?: boolean;
@@ -259,6 +288,7 @@ export function Page({
           </View>
         )}
         <ScrollView
+          ref={scrollRef}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[s.body, brand && { gap: 16 }]}
         >

@@ -12,6 +12,7 @@ export type Route = {
     | "delivery"
     | "quotes"
     | "finance"
+    | "banks"
     | "profile"
     | "details"
     | "addresses"

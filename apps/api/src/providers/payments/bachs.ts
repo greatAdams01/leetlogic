@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { isHostedPaymentUrl } from "@leetlogic/contracts";
 import { getConfig } from "../../config.js";
 import { AppError } from "../../lib/errors.js";
 export function minor(value: string): bigint {
@@ -88,22 +89,20 @@ export function verifyBachs(
   });
 }
 export function hostedUrl(value: string, type: "checkout" | "onboarding" = "checkout") {
-  const url = new URL(value);
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    !(
-      type === "checkout"
-        ? ["checkout.bachs.io"]
-        : ["connect.bachs.io", "app.bachs.io", "checkout.bachs.io"]
-    ).includes(url.hostname)
-  )
-    throw new AppError(
+  if (!isHostedPaymentUrl(value, type, getConfig().BACHS_MODE)) {
+    const error = new AppError(
       502,
       "PAYMENT_PROVIDER_RESPONSE",
       "We couldn’t open the secure payment page. Please try again.",
     );
+    error.diagnostics = {
+      provider: "bachs",
+      operation: `${type}-link`,
+      reason: "UNEXPECTED_HOSTED_URL",
+      hint: "Check the hosted origin and payment mode. Do not log the private link.",
+    };
+    throw error;
+  }
   return value;
 }
 export class Bachs {

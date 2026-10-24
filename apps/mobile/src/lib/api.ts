@@ -12,6 +12,8 @@ export const API_URL = resolveApiUrl({
 if (__DEV__) console.info(`[LeetLogic API] ${API_URL}`);
 type Session = { accessToken: string; refreshToken: string };
 let session: Session | null = null;
+let generation = 0;
+export const sessionVersion = () => generation;
 let refresh: Promise<void> | null = null;
 let devicePromise: Promise<string> | null = null;
 export const uuid = () => Crypto.randomUUID();
@@ -36,18 +38,21 @@ export async function hydrateSession() {
   if (saved) {
     try {
       session = JSON.parse(saved);
+      generation++;
     } catch {
       await clearSession();
     }
   }
   return !!session;
 }
-export async function saveSession(value: Session) {
+export async function saveSession(value: Session, preserveIdentity = false) {
   await SecureStore.setItemAsync("leetlogic-session", JSON.stringify(value));
   session = value;
+  if (!preserveIdentity) generation++;
 }
 export async function clearSession() {
   session = null;
+  generation++;
   await SecureStore.deleteItemAsync("leetlogic-session");
 }
 export class ApiError extends Error {
@@ -78,7 +83,7 @@ async function rotate() {
     throw new ApiError(r.status, "SESSION_EXPIRED", "Please sign in again.");
   }
   const data = await r.json();
-  if (session?.refreshToken === token) await saveSession(data);
+  if (session?.refreshToken === token) await saveSession(data, true);
 }
 export async function api<T = any>(
   path: string,

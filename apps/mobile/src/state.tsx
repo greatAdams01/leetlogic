@@ -4,7 +4,7 @@ import { ui, localizedError, unitLabel, dateLabel, localizedStatus } from "./lib
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, BackHandler, Alert, type AlertButton } from "react-native";
-import { api, hydrateSession, clearSession, authHeaders } from "./lib/api";
+import { api, hydrateSession, clearSession, authHeaders, sessionVersion } from "./lib/api";
 import type { Customer } from "./lib/domain";
 import {
   en,
@@ -14,6 +14,8 @@ import {
 } from "../../../packages/localization/src/customer-messages";
 import { type Route, openLanguageScreen, finishLanguageSelection } from "./lib/navigation";
 import { accountRoleKey, restoredAccount } from "./lib/onboarding";
+import { singleFlight } from "./lib/async-cache";
+const readAccount = singleFlight<number, { user: Customer }>(() => api<{ user: Customer }>("/me"));
 const Context = createContext<any>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [stack, setStack] = useState<Route[]>([{ name: "language" }]),
@@ -33,8 +35,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const reset = useCallback((name: Route["name"]) => setStack([{ name }]), []);
   const back = useCallback(() => setStack((v) => (v.length > 1 ? v.slice(0, -1) : v)), []);
   const loadUser = useCallback(async () => {
-    const r = await api<{ user: Customer }>("/me");
-    if (authHeaders().Authorization) setUser(r.user);
+    const version = sessionVersion();
+    const r = await readAccount(version);
+    // A completed request from an old session must not replace the current account.
+    if (authHeaders().Authorization && sessionVersion() === version)
+      setUser((current) => (JSON.stringify(current) === JSON.stringify(r.user) ? current : r.user));
     return r.user;
   }, []);
   useEffect(() => {

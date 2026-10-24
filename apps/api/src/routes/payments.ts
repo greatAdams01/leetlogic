@@ -203,16 +203,24 @@ financialRouter.post("/onboarding", async (req, res) => {
   const account = await prisma.financialAccount.findUnique({
     where: { userId_mode: { userId: req.auth!.sub, mode: mode() } },
   });
-  const url = account?.providerAccountId
-    ? await bachs.accountLink(account.providerAccountId, `${account.id}:${Date.now()}`)
-    : null;
-  res.status(url ? 200 : 202).json({ url });
+  const current = account?.providerAccountId ? await refreshAccount(req.auth!.sub) : null;
+  const ready = current?.status === "READY";
+  const url =
+    current?.providerAccountId && !ready
+      ? await bachs.accountLink(current.providerAccountId, `${current.id}:${Date.now()}`)
+      : null;
+  res.status(ready || url ? 200 : 202).json({ url, ready });
 });
 financialRouter.post("/onboarding/link", async (req, res) => {
   await throttle(req.auth!.sub, "onboarding");
-  const account = await paymentAccount(req.auth!.sub, false);
+  paymentReady("ONBOARD");
+  const account = await refreshAccount(req.auth!.sub);
+  const ready = account.status === "READY";
   res.json({
-    url: await bachs.accountLink(account.providerAccountId!, `${account.id}:${Date.now()}`),
+    ready,
+    url: ready
+      ? null
+      : await bachs.accountLink(account.providerAccountId!, `${account.id}:${Date.now()}`),
   });
 });
 financialRouter.post("/refresh", async (req, res) => {
@@ -254,6 +262,32 @@ financialRouter.post("/banks", async (req, res) => {
   const op = await addBank(req.auth!.sub, input, req);
   if (op.status === "QUEUED") await runMoneyOperation(op.id);
   res.status(202).json({ id: op.id });
+});
+// Read-only progress for the signed-in customer's bank verification operation.
+financialRouter.get("/banks/operations/:id", async (req, res) => {
+  const operation = await prisma.moneyOperation.findFirst({
+    where: {
+      id: uuid.parse(req.params.id),
+      ownerId: req.auth!.sub,
+      mode: mode(),
+      kind: "DESTINATION",
+    },
+  });
+  if (!operation)
+    throw new AppError(404, "BANK_NOT_FOUND", "This bank verification could not be found.");
+  const destination = operation.providerRef
+    ? await prisma.bankDestination.findFirst({
+        where: { userId: req.auth!.sub, mode: mode(), providerId: operation.providerRef },
+        select: {
+          id: true,
+          bankName: true,
+          accountName: true,
+          accountLastFour: true,
+          usable: true,
+        },
+      })
+    : null;
+  res.json({ status: operation.status, destination });
 });
 financialRouter.post("/withdrawals", async (req, res) => {
   const input = z

@@ -14,6 +14,7 @@ export function sellerSummary(listings: Listing[], orders: Order[]) {
         "PICKED_UP",
         "IN_TRANSIT",
         "OUT_FOR_DELIVERY",
+        "FAILED_ATTEMPT",
         "DELIVERED",
         "CANCELLED",
         "RETURNED",

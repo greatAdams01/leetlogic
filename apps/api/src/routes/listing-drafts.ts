@@ -58,12 +58,18 @@ listingDraftRouter.get("/", async (req, res) => {
 });
 listingDraftRouter.delete("/:id", async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
-  const result = await prisma.listingDraft.deleteMany({
-    where: { id, userId: req.auth!.sub, listingId: null },
+  await prisma.$transaction(async (tx) => {
+    const result = await tx.listingDraft.deleteMany({
+      where: { id, userId: req.auth!.sub, listingId: null },
+    });
+    if (!result.count)
+      throw new AppError(404, "DRAFT_NOT_FOUND", "This draft is no longer available.");
+    await audit(
+      req,
+      { action: "listing.draft.deleted", entityType: "listingDraft", entityId: id },
+      tx,
+    );
   });
-  if (!result.count)
-    throw new AppError(404, "DRAFT_NOT_FOUND", "This draft is no longer available.");
-  await audit(req, { action: "listing.draft.deleted", entityType: "listingDraft", entityId: id });
   res.status(204).end();
 });
 listingDraftRouter.patch("/:id", async (req, res) => {

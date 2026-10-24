@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { isHostedPaymentUrl } from "../../../packages/contracts/src/payment-urls";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 import { ui, localizedError, localizedStatus } from "../../mobile/src/lib/localization";
@@ -134,11 +135,7 @@ export function CustomerFinance() {
     }
   };
   const hosted = (url: string) => {
-    const parsed = new URL(url);
-    if (
-      parsed.protocol !== "https:" ||
-      !["connect.bachs.io", "app.bachs.io", "checkout.bachs.io"].includes(parsed.hostname)
-    )
+    if (!isHostedPaymentUrl(url, "onboarding"))
       throw new Error("We couldn’t open the secure payment page. Please try again.");
     location.assign(url);
   };
@@ -200,7 +197,7 @@ export function CustomerFinance() {
                 onClick={() =>
                   void act(async () => {
                     const r = await customerApi("financial/onboarding/link", {});
-                    hosted(r.url);
+                    if (r.url) hosted(r.url);
                   })
                 }
               >

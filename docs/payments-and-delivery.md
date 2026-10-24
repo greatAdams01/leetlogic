@@ -8,7 +8,7 @@ Use the root `.env`; restart API and worker after changes. The example contains 
 
 1. Set `BACHS_MODE=sandbox`, the sandbox `BACHS_API_KEY`, `BACHS_ORGANIZATION_ID` and endpoint `BACHS_WEBHOOK_SECRET`. Set `PAYMENTS_RETURN_ORIGIN` to the web app origin reachable from the testing device. Keep live switches false.
 2. Configure Bachs webhook destination `https://<ngrok-host>/v1/webhooks/bachs` with checkout, collection, refund, payout, transfer, dispute, account and capability events. Subscribe to connected-account events as well as platform events. Raw-body signatures, timestamps and account ownership are checked; webhook notifications trigger authoritative provider reads.
-3. Enable `PAYMENTS_ENABLED` for the pilot. Enable transfers, payouts and refunds separately only for the sandbox flows being tested. Farmer setup is available under Account → Payments and earnings, and `/account/payments` on web. Farmers must finish hosted account onboarding, obtain transfer/payout capabilities, and verify an owned bank before buyer checkout is offered.
+3. Enable `PAYMENTS_ENABLED` for the pilot. Enable transfers, payouts and refunds separately only for the sandbox flows being tested. Farmer setup is available under Menu → Payments and earnings, and `/account/payments` on web. Farmers must finish hosted account onboarding, obtain transfer/payout capabilities, and verify an owned bank before buyer checkout is offered.
 4. Confirm exact NGN payout fees with Bachs for this account. Set `BACHS_NGN_PAYOUT_FEE_MINOR` to the verified fee in kobo; leaving it blank disables withdrawal requests. Same-currency Bachs payout quotes do not quote fees. A changed actual fee blocks local completion and requires reconciliation; never guess this price.
 5. Cards are enabled first. Bank transfers require `BACHS_BANK_REFUNDS_VERIFIED=true` after demonstrating the original-payer bank-refund transfer and payout flow. A bank refund requires the buyer's approved connected account and owned usable bank; missing payer details require an audited staff evidence review.
 6. Configure Shipbubble test key/access and eligible category/routes using the delivery settings already documented. Confirm wallet balance before booking. Sandbox payments cannot fund live courier bookings. Unsupported produce, bulk and cold-chain stay in manual review.
@@ -80,3 +80,15 @@ Before live use, obtain Bachs approval for platform collection and delayed farme
 - [Bachs payout quotes](https://docs.bachs.io/api-reference/payouts/create-payout-quote)
 - [Bachs bank reference API](https://docs.bachs.io/api-reference/reference/list-banks)
 - [Shipbubble official SDK API specification](https://github.com/Shipbubble/node-sdk/blob/main/openapi.yaml)
+
+## Farmer bank-account flow and home earnings
+
+Mobile now exposes **Menu → Bank accounts** and a bank-setup action from seller Home. The sequence is Bachs connected-account setup → choose a Nigerian bank → enter a 10-digit account number → review → verify and save. The registered name and masked number are displayed after provider confirmation. Multiple bank destinations remain supported; only usable destinations appear in the withdrawal selector. Pending/uncertain verification stays pending, resumes from its owned operation, and is checked through a read-only status endpoint. The app never treats an HTTP 202 as verified success or repeats a provider write while polling.
+
+The seller home is an earnings summary, not a stored-value wallet product:
+
+- **Available earnings:** provider-confirmed released produce proceeds, net of platform commission, less active withdrawal reservations (including their fees).
+- **Awaiting release:** paid produce value still held against orders; this is shown before platform fees and excludes shipping.
+- **Pending withdrawals:** money reserved for requested/processing withdrawals, including payout fees; this does not mean the bank has received it.
+
+When payment setup or a usable bank is missing, the home action leads to the required setup instead of inviting a withdrawal. The existing staff approval, dispute checks and provider-confirmation requirements remain in place. No automatic bank payouts or buyer/seller top-ups are introduced by this UI flow.

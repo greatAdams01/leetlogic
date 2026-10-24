@@ -1,54 +1,93 @@
-import React, { useState, useRef } from "react";
-import { Linking } from "react-native";
+import React, { useState, useRef, useEffect } from "react";
+import { Linking, AppState, ScrollView, AccessibilityInfo } from "react-native";
 import * as Crypto from "expo-crypto";
 import { Page, Card, Heading, Label, Field, Button, Notice } from "../components/ui";
 import { Select } from "../components/Select";
 import { useApp, useResource } from "../state";
 import { api } from "../lib/api";
 import { money, toMinor } from "../lib/domain";
+import { isHostedPaymentUrl } from "../../../../packages/contracts/src/payment-urls";
+import type { FinancialSummary } from "../lib/finance";
 export function Finance() {
   const a = useApp(),
-    r = useResource<any>("/financial");
+    r = useResource<FinancialSummary>("/financial");
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [errorScope, setErrorScope] = useState<"setup" | "withdraw">("setup"),
+    [task, setTask] = useState<"setup" | "check" | "withdraw" | null>(null),
+    [setupNotice, setSetupNotice] = useState("");
   const [firstName, setFirst] = useState(""),
     [lastName, setLast] = useState(""),
     [email, setEmail] = useState(a.user?.profile?.email || ""),
     [entity, setEntity] = useState("individual");
-  const [banks, setBanks] = useState<Array<{ code: string; name: string }>>([]),
-    [bankCode, setBankCode] = useState(""),
-    [accountNumber, setAccountNumber] = useState("");
   const [destination, setDestination] = useState(""),
     [amount, setAmount] = useState("");
   const running = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionY = useRef({ setup: 0, withdraw: 0 });
   const withdrawalKey = useRef({ input: "", key: "" });
-  const run = async (work: () => Promise<unknown>) => {
+  const run = async (
+    work: () => Promise<unknown>,
+    scope: "setup" | "withdraw" = "setup",
+    action: "setup" | "check" | "withdraw" = scope,
+  ) => {
     if (running.current) return;
     running.current = true;
     setBusy(true);
+    setTask(action);
     setError("");
+    setSetupNotice("");
     try {
       await work();
-      await r.reload();
     } catch (e) {
-      setError(a.error(e));
+      const message = a.error(e);
+      setErrorScope(scope);
+      setError(message);
+      AccessibilityInfo.announceForAccessibility(message);
+      requestAnimationFrame(() =>
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, sectionY.current[scope] - 16),
+          animated: true,
+        }),
+      );
     } finally {
+      // Account creation may succeed even if opening its hosted link fails.
+      await r.reload();
       running.current = false;
       setBusy(false);
+      setTask(null);
     }
   };
   const open = async (url: string) => {
-    const parsed = new URL(url);
-    if (
-      parsed.protocol !== "https:" ||
-      !["connect.bachs.io", "app.bachs.io", "checkout.bachs.io"].includes(parsed.hostname)
-    )
+    if (!isHostedPaymentUrl(url, "onboarding"))
       throw new Error("We couldn’t open the secure payment page. Please try again.");
     await Linking.openURL(url);
   };
+  const finishSetup = async (result: { ready?: boolean; url?: string | null }) => {
+    if (result.ready) {
+      a.go("banks");
+      return;
+    }
+    if (result.url) await open(result.url);
+    else setSetupNotice("Your payment setup is being prepared. Check its status shortly.");
+  };
   const data = r.data;
+  useEffect(() => {
+    if (!data?.enabled || !data.account || data.account.ready) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active")
+        void run(() => api("/financial/refresh", { method: "POST", body: {} }), "setup", "check");
+    });
+    return () => sub.remove();
+  }, [data?.enabled, data?.account?.ready]);
   return (
-    <Page title="Payments and earnings" back={a.back} loading={r.loading}>
+    <Page
+      title="Payments and earnings"
+      back={a.back}
+      loading={r.loading && !data}
+      scrollRef={scrollRef}
+    >
+      {r.error && <Notice text={r.error} error />}
       {data && !data.enabled && (
         <Notice text="Payments are not available right now. Please try again later." />
       )}
@@ -56,17 +95,31 @@ export function Finance() {
         <>
           <Card>
             <Heading>Your earnings</Heading>
+            <Label>
+              Earnings come from your produce sales. Funds become available after an order is
+              released and platform fees are deducted.
+            </Label>
             <Label>{a.ui("Held for delivery: {amount}", { amount: money(data.heldMinor) })}</Label>
             <Label>
               {a.ui("Available: {amount}", { amount: money(data.earnings.availableMinor) })}
             </Label>
             <Label>
-              {a.ui("Withdrawal pending: {amount}", { amount: money(data.earnings.reservedMinor) })}
+              {a.ui("Reserved for withdrawals and fees: {amount}", {
+                amount: money(data.earnings.reservedMinor),
+              })}
             </Label>
           </Card>
-          <Card>
+          <Card
+            onLayout={(event) => {
+              sectionY.current.setup = event.nativeEvent.layout.y;
+            }}
+          >
             <Heading>Payment account</Heading>
-            <Label>Complete the secure account setup to receive payments and refunds.</Label>
+            {error && errorScope === "setup" && <Notice text={error} error />}
+            {setupNotice && <Notice text={setupNotice} />}
+            <Label>
+              Complete the secure Bachs setup, then add your bank account to receive earnings.
+            </Label>
             {!data.account && (
               <>
                 <Field label="First name" value={firstName} onChangeText={setFirst} />
@@ -88,7 +141,8 @@ export function Finance() {
                   onChange={setEntity}
                 />
                 <Button
-                  title="Set up payments"
+                  title={task === "setup" ? "Setting up payments…" : "Set up payments"}
+                  loading={task === "setup"}
                   disabled={busy || !firstName || !lastName || !email}
                   onPress={() =>
                     void run(async () => {
@@ -103,7 +157,7 @@ export function Finance() {
                             a.user?.farmerProfile?.farmName || `${firstName} ${lastName}`,
                         },
                       });
-                      if (result.url) await open(result.url);
+                      await finishSetup(result);
                     })
                   }
                 />
@@ -111,7 +165,8 @@ export function Finance() {
             )}
             {data.account && !data.account.ready && (
               <Button
-                title="Continue payment setup"
+                title={task === "setup" ? "Opening payment setup…" : "Continue payment setup"}
+                loading={task === "setup"}
                 disabled={busy}
                 onPress={() =>
                   void run(async () => {
@@ -119,7 +174,7 @@ export function Finance() {
                       method: "POST",
                       body: {},
                     });
-                    await open(result.url);
+                    await finishSetup(result);
                   })
                 }
               />
@@ -127,7 +182,8 @@ export function Finance() {
             {data.account?.ready && <Notice text="Your payment account is ready." success />}
             {data.account && (
               <Button
-                title="Check payment setup"
+                title={task === "check" ? "Checking payment setup…" : "Check payment setup"}
+                loading={task === "check"}
                 secondary
                 disabled={busy}
                 onPress={() =>
@@ -136,58 +192,24 @@ export function Finance() {
               />
             )}
           </Card>
-          {data.account && (
-            <Card>
-              <Heading>Bank account</Heading>
-              <Button
-                title="Choose bank"
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  void run(async () => {
-                    setBanks((await api("/financial/banks")).items);
-                  })
-                }
-              />
-              {!!banks.length && (
-                <Select
-                  label="Bank"
-                  value={bankCode}
-                  options={banks.map((b) => ({ value: b.code, label: b.name }))}
-                  onChange={setBankCode}
-                />
-              )}
-              <Field
-                label="Account number"
-                value={accountNumber}
-                onChangeText={(v) => setAccountNumber(v.replace(/\D/g, ""))}
-                keyboardType="number-pad"
-                maxLength={10}
-              />
-              <Button
-                title="Verify bank account"
-                disabled={busy || !bankCode || accountNumber.length !== 10}
-                onPress={() =>
-                  void run(async () => {
-                    await api("/financial/banks", {
-                      method: "POST",
-                      body: { bankCode, accountNumber },
-                    });
-                    setAccountNumber("");
-                  })
-                }
-              />
-              {data.destinations.map((bank: any) => (
-                <Label key={bank.id}>
-                  {bank.bankName} · ****{bank.accountLastFour} · {bank.accountName} ·{" "}
-                  {a.ui(bank.usable ? "Ready" : "Under review")}
-                </Label>
-              ))}
-            </Card>
-          )}
-          {data.account?.ready && (
-            <Card>
+          <Card>
+            <Heading>Bank accounts</Heading>
+            <Label>
+              Choose where your earnings are paid. Only verified bank accounts can receive payouts.
+            </Label>
+            <Button
+              title={data.destinations.length ? "Manage bank accounts" : "Add bank account"}
+              onPress={() => a.go("banks")}
+            />
+          </Card>
+          {data.account?.ready && data.destinations.some((bank) => bank.usable) && (
+            <Card
+              onLayout={(event) => {
+                sectionY.current.withdraw = event.nativeEvent.layout.y;
+              }}
+            >
               <Heading>Withdraw earnings</Heading>
+              {error && errorScope === "withdraw" && <Notice text={error} error />}
               <Select
                 label="Bank account"
                 value={destination}
@@ -214,7 +236,8 @@ export function Finance() {
                 Review the bank account, amount and fee before requesting your withdrawal.
               </Label>
               <Button
-                title="Request withdrawal"
+                title={task === "withdraw" ? "Requesting withdrawal…" : "Request withdrawal"}
+                loading={task === "withdraw"}
                 disabled={busy || !destination || !amount || data.payoutFeeMinor === null}
                 onPress={() =>
                   a.alert(
@@ -244,7 +267,7 @@ export function Finance() {
                             });
                             setAmount("");
                             withdrawalKey.current = { input: "", key: "" };
-                          }),
+                          }, "withdraw"),
                       },
                     ],
                   )
@@ -262,7 +285,6 @@ export function Finance() {
           </Card>
         </>
       )}
-      {(error || r.error) && <Notice text={error || r.error} error />}
     </Page>
   );
 }

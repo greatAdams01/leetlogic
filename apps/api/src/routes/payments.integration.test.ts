@@ -594,6 +594,21 @@ suite("provider-backed payment safeguards", () => {
     expect((await send(raw + " ")).status).toBe(400);
   });
   it("expires unfunded reservations and enforces balanced append-only journals", async () => {
+    // More held orders than the worker batch size must not starve eligible expirations.
+    const heldPrefix = `HELD-${randomUUID()}`;
+    await prisma.tradeOrder.createMany({
+      data: Array.from({ length: 21 }, (_, index) => ({
+        reference: `${heldPrefix}-${index}`,
+        buyerId: buyer,
+        farmerProfileId: farmer,
+        listingId: listing,
+        quantity: "1",
+        totalMinor: 10000n,
+        fundsProvider: "bachs",
+        financialHold: true,
+        reservationExpiresAt: new Date(0),
+      })),
+    });
     const { o } = await order();
     await prisma.tradeOrder.update({
       where: { id: o.id },
@@ -612,6 +627,15 @@ suite("provider-backed payment safeguards", () => {
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).status).toBe(
       "CANCELLED",
     );
+    expect(
+      await prisma.tradeOrder.count({
+        where: {
+          reference: { startsWith: heldPrefix },
+          status: "AWAITING_PAYMENT",
+          financialHold: true,
+        },
+      }),
+    ).toBe(21);
     const ref = `test:${randomUUID()}`;
     await prisma.$transaction((tx) =>
       journal(tx, ref, [
@@ -639,5 +663,141 @@ suite("provider-backed payment safeguards", () => {
         }),
       ),
     ).rejects.toThrow();
+  });
+  it("exposes only owned masked bank verification results", async () => {
+    const sellerToken = (
+      await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })
+    ).accessToken;
+    const bank = await prisma.bankDestination.findUniqueOrThrow({ where: { id: destination } });
+    const op = await prisma.moneyOperation.create({
+      data: {
+        ownerId: seller,
+        mode: "sandbox",
+        kind: "DESTINATION",
+        status: "SUCCEEDED",
+        mutationKey: randomUUID(),
+        requestHash: "a".repeat(64),
+        providerRef: bank.providerId,
+        payload: {},
+        encryptedPayload: "private-bank-input",
+      },
+    });
+    const path = `/v1/financial/banks/operations/${op.id}`;
+    expect(
+      (
+        await request(app)
+          .get(path)
+          .set({ Authorization: `Bearer ${outsider}` })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .get(path)
+          .set({ Authorization: `Bearer ${token}` })
+      ).status,
+    ).toBe(404);
+    const result = await request(app)
+      .get(path)
+      .set({ Authorization: `Bearer ${sellerToken}` });
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      status: "SUCCEEDED",
+      destination: {
+        id: bank.id,
+        bankName: bank.bankName,
+        accountName: bank.accountName,
+        accountLastFour: bank.accountLastFour,
+        usable: true,
+      },
+    });
+    expect(JSON.stringify(result.body)).not.toContain("private-bank-input");
+    await prisma.moneyOperation.update({ where: { id: op.id }, data: { kind: "PAYOUT" } });
+    expect(
+      (
+        await request(app)
+          .get(path)
+          .set({ Authorization: `Bearer ${sellerToken}` })
+      ).status,
+    ).toBe(404);
+  });
+  it("verifies a bank through the existing provider operation without exposing its full number", async () => {
+    const sellerToken = (
+      await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })
+    ).accessToken;
+    vi.spyOn(bachs, "account").mockResolvedValue({
+      id: `acct_${seller}`,
+      parent_organization_id: "org_fixture",
+      enabled_capabilities: ["transfers", "payouts"],
+    });
+    vi.spyOn(bachs, "call").mockResolvedValue({
+      id: `new_bank_${randomUUID()}`,
+      currency: "NGN",
+      account_name: "Example Farmer",
+      account_number: "1234567891",
+      bank_code: "001",
+      bank_name: "Test bank",
+      is_usable: true,
+    });
+    const result = await request(app)
+      .post("/v1/financial/banks")
+      .set({ Authorization: `Bearer ${sellerToken}` })
+      .send({ bankCode: "001", accountNumber: "1234567891" });
+    expect(result.status).toBe(202);
+    const saved = await request(app)
+      .get(`/v1/financial/banks/operations/${result.body.id}`)
+      .set({ Authorization: `Bearer ${sellerToken}` });
+    expect(saved.status).toBe(200);
+    expect(saved.body.status).toBe("SUCCEEDED");
+    expect(saved.body.destination.accountName).toBe("Example Farmer");
+    expect(saved.body.destination.accountLastFour).toBe("7891");
+    expect(JSON.stringify(saved.body)).not.toContain("1234567891");
+    expect(
+      (
+        await request(app)
+          .post("/v1/financial/banks")
+          .set({ Authorization: `Bearer ${sellerToken}` })
+          .send({ bankCode: "001", accountNumber: "123456789" })
+      ).status,
+    ).toBe(422);
+  });
+  it("resumes a ready payment account without creating another account or onboarding link", async () => {
+    const sellerToken = (
+      await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })
+    ).accessToken;
+    vi.spyOn(bachs, "account").mockResolvedValue({
+      id: `acct_${seller}`,
+      parent_organization_id: "org_fixture",
+      enabled_capabilities: ["transfers", "payouts"],
+    });
+    const write = vi
+      .spyOn(bachs, "call")
+      .mockRejectedValue(new Error("Unexpected account creation"));
+    const link = vi
+      .spyOn(bachs, "accountLink")
+      .mockRejectedValue(new Error("A ready account needs no link"));
+    const resumed = await request(app)
+      .post("/v1/financial/onboarding/link")
+      .set({ Authorization: `Bearer ${sellerToken}` })
+      .send({});
+    expect(resumed.status).toBe(200);
+    expect(resumed.body).toEqual({ ready: true, url: null });
+    const setup = await request(app)
+      .post("/v1/financial/onboarding")
+      .set({ Authorization: `Bearer ${sellerToken}` })
+      .send({
+        firstName: "Test",
+        lastName: "Farmer",
+        email: "farmer@example.test",
+        entityType: "individual",
+        displayName: "Test Farm",
+      });
+    expect(setup.status).toBe(200);
+    expect(setup.body).toEqual({ ready: true, url: null });
+    expect(write).not.toHaveBeenCalled();
+    expect(link).not.toHaveBeenCalled();
+    expect(
+      await prisma.financialAccount.count({ where: { userId: seller, mode: "sandbox" } }),
+    ).toBe(1);
   });
 });

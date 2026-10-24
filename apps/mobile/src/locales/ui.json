@@ -4114,5 +4114,320 @@
     "Dole a amince da bayanan mai sayarwarka kafin canza amfanin gonar da ake sayarwa.",
     "A ga-akwado profaịlụ gị tupu ịgbanwe ihe ubi ị na-ere.",
     "A gbọ́dọ̀ fọwọ́ sí àkọọ́lẹ̀ olùtà rẹ kí o tó yí ọjà padà."
+  ],
+  [
+    "Awaiting approval",
+    "Dey wait for approval",
+    "Ana jiran amincewa",
+    "Na-eche nkwado",
+    "Ń dúró de ìfọwọ́sí"
+  ],
+  [
+    "Application rejected",
+    "Dem no approve application",
+    "An ƙi aikace-aikacen",
+    "Ajụrụ akwụkwọ anamachọihe",
+    "A kọ ìbéèrè náà"
+  ],
+  [
+    "Changes needed",
+    "Some things need change",
+    "Ana buƙatar gyare-gyare",
+    "A chọrọ mgbanwe",
+    "A nílò àtúnṣe"
+  ],
+  [
+    "This draft is no longer available.",
+    "This draft no dey available again.",
+    "Wannan daftari ba ya nan kuma.",
+    "Ndepụta a adịkwaghị.",
+    "Àkọ́pamọ́ yìí kò sí mọ́."
+  ],
+  [
+    "You can save and review drafts while your seller application is in progress. Approval is required before submitting produce for sale.",
+    "You fit save and check drafts while your seller application dey process. You need approval before you submit produce for sale.",
+    "Za ka iya adana da duba daftari yayin da ake nazarin aikace-aikacenka. Ana buƙatar amincewa kafin miƙa amfanin gona don sayarwa.",
+    "Ị nwere ike ichekwa ma lelee ndepụta mgbe a na-enyocha akwụkwọ anamachọihe gị. A ga-akwado gị tupu itinye ihe ubi maka ire.",
+    "O lè fi àkọ́pamọ́ pamọ́ kí o sì ṣàyẹ̀wò rẹ̀ nígbà tí ìbéèrè olùtà rẹ ń lọ. O nílò ìfọwọ́sí kí o tó fi ọjà sílẹ̀ fún títà."
+  ],
+  [
+    "Your draft is saved. Complete seller approval before submitting it for sale.",
+    "Your draft don save. Finish seller approval before you submit am for sale.",
+    "An adana daftarinka. Kammala amincewar mai sayarwa kafin miƙa shi don sayarwa.",
+    "Echekwala ndepụta gị. Mezue nkwado onye na-ere ahịa tupu itinye ya maka ire.",
+    "A ti fi àkọ́pamọ́ rẹ pamọ́. Parí ìfọwọ́sí olùtà kí o tó fi í sílẹ̀ fún títà."
+  ],
+  [
+    "Bank accounts",
+    "Bank accounts",
+    "Asusun banki",
+    "Akaụntụ ụlọ akụ",
+    "Àwọn àkọọ́lẹ̀ banki"
+  ],
+  [
+    "Add bank account",
+    "Add bank account",
+    "Ƙara asusun banki",
+    "Tinye akaụntụ ụlọ akụ",
+    "Fi àkọọ́lẹ̀ banki kún un"
+  ],
+  [
+    "Manage bank accounts",
+    "Manage bank accounts",
+    "Sarrafa asusun banki",
+    "Hazie akaụntụ ụlọ akụ",
+    "Ṣàkóso àwọn àkọọ́lẹ̀ banki"
+  ],
+  [
+    "Manage bank accounts for your earnings",
+    "Manage bank accounts for your earnings",
+    "Sarrafa asusun banki don ribarka",
+    "Hazie akaụntụ ụlọ akụ maka ego ị rụtara",
+    "Ṣàkóso àwọn àkọọ́lẹ̀ banki fún èrè rẹ"
+  ],
+  [
+    "Add a verified Nigerian bank account to receive your earnings.",
+    "Add Nigerian bank account wey dem verify to collect your earnings.",
+    "Ƙara tabbataccen asusun banki na Najeriya don karɓar ribarka.",
+    "Tinye akaụntụ ụlọ akụ Naịjirịa enyochala ka ị nata ego ị rụtara.",
+    "Fi àkọọ́lẹ̀ banki Nàìjíríà tí a jẹ́rìí sí kún un láti gba èrè rẹ."
+  ],
+  [
+    "Complete payment setup",
+    "Finish payment setup",
+    "Kammala saitin biyan kuɗi",
+    "Mechaa nhazi ịkwụ ụgwọ",
+    "Parí ètò ìsanwó"
+  ],
+  [
+    "First connect your seller profile to Bachs. Then add the bank account where you want to receive your earnings.",
+    "First connect your seller profile to Bachs. Then add bank account wey you wan use collect your earnings.",
+    "Da farko haɗa bayanan mai sayarwarka da Bachs. Sannan ƙara asusun bankin da kake son karɓar ribarka.",
+    "Buru ụzọ jikọta profaịlụ onye na-ere ahịa gị na Bachs. Mgbe ahụ tinye akaụntụ ụlọ akụ ị chọrọ iji nata ego gị.",
+    "Kọ́kọ́ so àkọọ́lẹ̀ olùtà rẹ pọ̀ mọ́ Bachs. Lẹ́yìn náà, fi àkọọ́lẹ̀ banki tí o fẹ́ gba èrè rẹ sí kún un."
+  ],
+  [
+    "Complete the secure Bachs setup, then add your bank account to receive earnings.",
+    "Finish the secure Bachs setup, then add your bank account to collect earnings.",
+    "Kammala amintaccen saitin Bachs, sannan ƙara asusun bankinka don karɓar riba.",
+    "Mechaa nhazi nchekwa Bachs, tinyezie akaụntụ ụlọ akụ gị iji nata ego ị rụtara.",
+    "Parí ètò Bachs tó ní ààbò, kí o sì fi àkọọ́lẹ̀ banki rẹ kún un láti gba èrè."
+  ],
+  [
+    "Choose where your earnings are paid. Only verified bank accounts can receive payouts.",
+    "Choose where your earnings go enter. Na only bank accounts wey dem verify fit collect payouts.",
+    "Zaɓi inda za a biya ribarka. Tabbatattun asusun banki kaɗai za su iya karɓar kuɗi.",
+    "Họrọ ebe a ga-akwụ ego gị. Naanị akaụntụ ụlọ akụ enyochala nwere ike ịnata ego.",
+    "Yan ibi tí a ó ti san èrè rẹ. Àwọn àkọọ́lẹ̀ banki tí a jẹ́rìí sí nìkan ló lè gba ìsanwó."
+  ],
+  [
+    "You haven’t added a bank account yet.",
+    "You never add bank account.",
+    "Ba ka ƙara asusun banki ba tukuna.",
+    "Ị tinyebeghị akaụntụ ụlọ akụ.",
+    "O kò tíì fi àkọọ́lẹ̀ banki kún un."
+  ],
+  [
+    "Ready to receive earnings",
+    "Ready to collect earnings",
+    "A shirye don karɓar riba",
+    "Dị njikere ịnata ego",
+    "Ti ṣetán láti gba èrè"
+  ],
+  [
+    "Bank verification is under review.",
+    "Dem dey review the bank verification.",
+    "Ana nazarin tantance asusun banki.",
+    "A na-enyocha nkwenye akaụntụ ụlọ akụ.",
+    "Àyẹ̀wò ìjẹ́rìísí banki ń lọ lọ́wọ́."
+  ],
+  [
+    "Step 1 of 2 · Bank details",
+    "Step 1 of 2 · Bank details",
+    "Mataki 1 cikin 2 · Bayanan banki",
+    "Nzọụkwụ 1 n’ime 2 · Nkọwa ụlọ akụ",
+    "Ìgbésẹ̀ 1 nínú 2 · Àlàyé banki"
+  ],
+  [
+    "Review bank details",
+    "Check bank details",
+    "Duba bayanan banki",
+    "Lelee nkọwa ụlọ akụ",
+    "Ṣàyẹ̀wò àlàyé banki"
+  ],
+  [
+    "Step 2 of 2 · Review bank details",
+    "Step 2 of 2 · Check bank details",
+    "Mataki 2 cikin 2 · Duba bayanan banki",
+    "Nzọụkwụ 2 n’ime 2 · Lelee nkọwa ụlọ akụ",
+    "Ìgbésẹ̀ 2 nínú 2 · Ṣàyẹ̀wò àlàyé banki"
+  ],
+  [
+    "Check these details carefully. Bachs will verify the account and return its registered name.",
+    "Check these details well. Bachs go verify the account and show the registered name.",
+    "Duba waɗannan bayanai da kyau. Bachs zai tabbatar da asusun ya dawo da sunan da aka yi rajista.",
+    "Lelee nkọwa ndị a nke ọma. Bachs ga-enyocha akaụntụ ahụ wee weghachi aha edebanyere aha ya.",
+    "Ṣàyẹ̀wò àwọn àlàyé wọ̀nyí dáadáa. Bachs yóò jẹ́rìí sí àkọọ́lẹ̀ náà, yóò sì fi orúkọ tí a fi forúkọ sílẹ̀ hàn."
+  ],
+  [
+    "Verify and save bank account",
+    "Verify and save bank account",
+    "Tabbatar kuma adana asusun banki",
+    "Nyochaa ma chekwaa akaụntụ ụlọ akụ",
+    "Jẹ́rìí sí àkọọ́lẹ̀ banki kí o sì fi í pamọ́"
+  ],
+  [
+    "Edit bank details",
+    "Change bank details",
+    "Gyara bayanan banki",
+    "Dezie nkọwa ụlọ akụ",
+    "Ṣàtúnṣe àlàyé banki"
+  ],
+  [
+    "Bank account added",
+    "Bank account don add",
+    "An ƙara asusun banki",
+    "Etinyela akaụntụ ụlọ akụ",
+    "A ti fi àkọọ́lẹ̀ banki kún un"
+  ],
+  [
+    "Bank verification",
+    "Bank verification",
+    "Tantance asusun banki",
+    "Nkwenye akaụntụ ụlọ akụ",
+    "Ìjẹ́rìísí banki"
+  ],
+  [
+    "This bank account is ready to receive your earnings.",
+    "This bank account don ready to collect your earnings.",
+    "Wannan asusun banki yana shirye don karɓar ribarka.",
+    "Akaụntụ ụlọ akụ a dị njikere ịnata ego ị rụtara.",
+    "Àkọọ́lẹ̀ banki yìí ti ṣetán láti gba èrè rẹ."
+  ],
+  [
+    "Your bank details are being checked. You can leave this screen and return later.",
+    "Dem dey check your bank details. You fit leave this screen and come back later.",
+    "Ana duba bayanan bankinka. Za ka iya barin wannan shafi ka dawo daga baya.",
+    "A na-enyocha nkọwa ụlọ akụ gị. Ị nwere ike ịhapụ ihu a ma laghachi ma emechaa.",
+    "A ń ṣàyẹ̀wò àlàyé banki rẹ. O lè fi ojú ìwé yìí sílẹ̀ kí o sì padà lẹ́yìn náà."
+  ],
+  [
+    "We couldn’t verify this bank account. Contact support before trying again.",
+    "We no fit verify this bank account. Contact support before you try again.",
+    "Ba mu iya tabbatar da wannan asusun banki ba. Tuntuɓi taimako kafin sake gwadawa.",
+    "Anyị enweghị ike inyocha akaụntụ ụlọ akụ a. Kpọtụrụ ndị enyemaka tupu ịnwale ọzọ.",
+    "A kò lè jẹ́rìí sí àkọọ́lẹ̀ banki yìí. Kàn sí ìrànlọ́wọ́ kí o tó tún gbìyànjú."
+  ],
+  [
+    "Check bank verification",
+    "Check bank verification",
+    "Duba tantance asusun banki",
+    "Lelee nkwenye akaụntụ ụlọ akụ",
+    "Ṣàyẹ̀wò ìjẹ́rìísí banki"
+  ],
+  [
+    "Done",
+    "Done",
+    "An gama",
+    "Emechara",
+    "Ó ti parí"
+  ],
+  [
+    "Earnings come from your produce sales. Funds become available after an order is released and platform fees are deducted.",
+    "Your earnings na money from produce wey you sell. E go dey available after dem release the order and remove platform fees.",
+    "Riba tana fitowa daga sayar da amfanin gonarka. Kuɗin zai samu bayan an saki oda kuma an cire kuɗin dandalin.",
+    "Ego ị rụtara sitere n’ire ihe ubi gị. Ego ahụ ga-adị mgbe a tọhapụrụ oda ma wepụ ụgwọ ikpo okwu.",
+    "Èrè rẹ wá láti títà ohun ọ̀gbìn rẹ. Owó yóò wà lẹ́yìn tí a tú àṣẹ sílẹ̀ tí a sì yọ owó iṣẹ́ pẹpẹ kúrò."
+  ],
+  [
+    "Reserved for withdrawals and fees: {amount}",
+    "Money wey dem keep for withdrawals and fees: {amount}",
+    "An tanada don cire kuɗi da caji: {amount}",
+    "Edobere maka iwepụ ego na ụgwọ: {amount}",
+    "A yà sílẹ̀ fún yíyọ owó àti owó iṣẹ́: {amount}"
+  ],
+  [
+    "After order release and platform fees",
+    "After dem release order and remove platform fees",
+    "Bayan sakin oda da cire kuɗin dandali",
+    "Mgbe a tọhapụrụ oda ma wepụ ụgwọ ikpo okwu",
+    "Lẹ́yìn títú àṣẹ sílẹ̀ àti yíyọ owó iṣẹ́ pẹpẹ"
+  ],
+  [
+    "Awaiting release",
+    "Dey wait for release",
+    "Ana jiran sakin kuɗi",
+    "Na-eche ntọhapụ ego",
+    "Ń dúró de títú sílẹ̀"
+  ],
+  [
+    "Before platform fees",
+    "Before dem remove platform fees",
+    "Kafin cire kuɗin dandali",
+    "Tupu iwepụ ụgwọ ikpo okwu",
+    "Ṣáájú yíyọ owó iṣẹ́ pẹpẹ"
+  ],
+  [
+    "Pending withdrawals",
+    "Withdrawals wey never complete",
+    "Cire kuɗin da ake jira",
+    "Iwepụ ego na-eche",
+    "Yíyọ owó tí kò tíì parí"
+  ],
+  [
+    "Includes payout fees",
+    "Payout fees dey inside",
+    "Ya haɗa da cajin tura kuɗi",
+    "Gụnyere ụgwọ mbufe ego",
+    "Ó pẹ̀lú owó iṣẹ́ ìsanwó"
+  ],
+  [
+    "Bank account linked",
+    "Bank account don connect",
+    "An haɗa asusun banki",
+    "Ejikọtala akaụntụ ụlọ akụ",
+    "A ti so àkọọ́lẹ̀ banki pọ̀"
+  ],
+  [
+    "This bank verification could not be found.",
+    "We no find this bank verification.",
+    "Ba a sami wannan tantance asusun banki ba.",
+    "Ahụghị nkwenye akaụntụ ụlọ akụ a.",
+    "A kò rí ìjẹ́rìísí banki yìí."
+  ],
+  [
+    "Setting up payments…",
+    "Dey set up payments…",
+    "Ana saita biyan kuɗi…",
+    "A na-ahazi ịkwụ ụgwọ…",
+    "A ń ṣètò ìsanwó…"
+  ],
+  [
+    "Opening payment setup…",
+    "Dey open payment setup…",
+    "Ana buɗe saitin biyan kuɗi…",
+    "A na-emeghe nhazi ịkwụ ụgwọ…",
+    "A ń ṣí ètò ìsanwó…"
+  ],
+  [
+    "Checking payment setup…",
+    "Dey check payment setup…",
+    "Ana duba saitin biyan kuɗi…",
+    "A na-elele nhazi ịkwụ ụgwọ…",
+    "A ń ṣàyẹ̀wò ètò ìsanwó…"
+  ],
+  [
+    "Requesting withdrawal…",
+    "Dey request withdrawal…",
+    "Ana neman cire kuɗi…",
+    "A na-arịọ iwepụ ego…",
+    "A ń béèrè yíyọ owó…"
+  ],
+  [
+    "Your payment setup is being prepared. Check its status shortly.",
+    "Dem dey prepare your payment setup. Check the status soon.",
+    "Ana shirya saitin biyan kuɗinka. Duba matsayinsa nan ba da jimawa ba.",
+    "A na-akwadebe nhazi ịkwụ ụgwọ gị. Lelee ọnọdụ ya n’oge na-adịghị anya.",
+    "A ń pèsè ètò ìsanwó rẹ. Ṣàyẹ̀wò ipò rẹ̀ láìpẹ́."
   ]
 ]

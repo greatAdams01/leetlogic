@@ -8,6 +8,8 @@ import { changeState, localGovernments, nigeriaStates } from "../lib/locations";
 import { api } from "../lib/api";
 import { sellerMenuState } from "../lib/seller-menu";
 import { colors } from "../components/ui";
+import { whenIdle } from "../lib/idle";
+import { localizedError } from "../lib/localization";
 export function Profile() {
   const a = useApp(),
     [error, setError] = useState("");
@@ -24,22 +26,23 @@ export function Profile() {
         await a.loadUser();
         if (active) setError("");
       } catch (e) {
-        if (active) setError(a.error(e));
+        if (active) setError(localizedError(a.locale, e));
       } finally {
         running = false;
       }
     };
-    void refresh();
+    const cancelInitialRefresh = whenIdle(() => void refresh());
     const sub = AppState.addEventListener("change", (value) => {
       if (value === "active") void refresh();
     });
     const timer = state === "pending" ? setInterval(() => void refresh(), 30000) : undefined;
     return () => {
       active = false;
+      cancelInitialRefresh();
       sub.remove();
       if (timer) clearInterval(timer);
     };
-  }, [a.loadUser, state]);
+  }, [a.loadUser, state, a.locale]);
   const phoneVerified = !!a.user?.phoneVerifiedAt;
   const seller = state !== "buyer";
   return (
@@ -126,6 +129,7 @@ export function Profile() {
             sub: "Manage payments, bank accounts and withdrawals",
             route: "finance",
           },
+          { label: "Bank accounts", sub: "Manage bank accounts for your earnings", route: "banks" },
           { label: "Personal details", sub: "Name, display name and email", route: "details" },
           {
             label: seller ? "Farm and pickup locations" : "Delivery addresses",
@@ -142,7 +146,11 @@ export function Profile() {
           { label: "My listings", sub: "Produce and moderation status", route: "myListings" },
           { label: "Help and support", sub: "Frequently asked questions", route: "help" },
         ]
-          .filter((item) => item.route !== "myListings" || state === "approved")
+          .filter(
+            (item) =>
+              (item.route !== "myListings" || state === "approved") &&
+              (item.route !== "banks" || seller),
+          )
           .map((item) => (
             <Pressable
               key={item.label}

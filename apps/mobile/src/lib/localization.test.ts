@@ -111,6 +111,8 @@ describe("complete mobile interface localization", () => {
         .filter((f) => f.endsWith(".tsx"))
         .map((f) => resolve("src/screens", f)),
       resolve("src/components/order-payment.tsx"),
+      resolve("src/components/seller-listing-controls.tsx"),
+      resolve("src/components/navigation.tsx"),
     ];
     for (const file of files) {
       const tree = ts.createSourceFile(

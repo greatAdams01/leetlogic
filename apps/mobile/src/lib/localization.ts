@@ -104,6 +104,7 @@ export function localizedError(locale: Locale, value: unknown): string {
     CHECKOUT_ACTIVE: "Delivery details cannot be changed while a payment is being checked.",
     TOPUP_NOT_REQUIRED: "No additional payment is needed.",
     PAYOUT_FEE_CHANGED: "The withdrawal fee changed. Please review it again.",
+    PAYMENT_PROVIDER_RESPONSE: "We couldn’t open the secure payment page. Please try again.",
     PAYMENT_PROVIDER_REJECTED:
       "We couldn’t complete this payment action. Please try again or contact support.",
     PAYMENTS_UNAVAILABLE: "Payments are not available right now. Please try again later.",

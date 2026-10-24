@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, View } from "react-native";
+import {
+  AccessibilityInfo,
+  AppState,
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LocalizedText as Text } from "../localization";
 import { useApp, useResource } from "../state";
@@ -17,8 +25,14 @@ export function Navigation() {
   );
   const orders = useResource<{ items: Order[] }>(
     `/orders?view=${a.role === "SELLER" ? "seller" : "buyer"}`,
-    !!a.user,
+    !!a.user && a.role === "SELLER",
   );
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void orders.reload();
+    });
+    return () => subscription.remove();
+  }, [orders.reload]);
   const hasNewOrder =
     a.role === "SELLER" && !!orders.data && sellerSummary([], orders.data.items).toPack.length > 0;
   const [width, setWidth] = useState(0);
@@ -29,14 +43,13 @@ export function Navigation() {
     () => tabGeometry(width, tabs.length, selected, labelWidth),
     [width, tabs.length, selected, labelWidth],
   );
-  const coordinates = useRef(
+  const [coordinates] = useState(() =>
     tabs.map(() => ({
       left: new Animated.Value(0),
-      width: new Animated.Value(0),
       opacity: new Animated.Value(0),
     })),
-  ).current;
-  const pill = useRef({ left: new Animated.Value(0), width: new Animated.Value(0) }).current;
+  );
+  const [pill] = useState(() => ({ left: new Animated.Value(0), width: new Animated.Value(28) }));
   const laidOut = useRef(false);
 
   useEffect(() => {
@@ -61,11 +74,7 @@ export function Navigation() {
     ];
     coordinates.forEach((values, index) => {
       const item = geometry[index]!;
-      destinations.push(
-        [values.left, item.left],
-        [values.width, item.width],
-        [values.opacity, index === selected ? 1 : 0],
-      );
+      destinations.push([values.left, item.left], [values.opacity, index === selected ? 1 : 0]);
     });
     if (reduceMotion || !laidOut.current) {
       destinations.forEach(([value, to]) => {
@@ -75,14 +84,14 @@ export function Navigation() {
       laidOut.current = true;
       return;
     }
-    // Width and position change together so the larger selected tab never overlaps a neighbour.
+    // Animate transforms/opacity on the UI thread; never lay out every tab on every frame.
     const animation = Animated.parallel(
       destinations.map(([value, toValue]) =>
         Animated.timing(value, {
           toValue,
           duration: 260,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
+          useNativeDriver: true,
         }),
       ),
     );
@@ -104,7 +113,7 @@ export function Navigation() {
               style={styles.measureLabel}
               onLayout={(event) => {
                 const label = a.ui(tab.label),
-                  measured = event.nativeEvent.layout.width;
+                  measured = Math.ceil(event.nativeEvent.layout.width);
                 setLabelWidths((old) =>
                   old[label] === measured ? old : { ...old, [label]: measured },
                 );
@@ -115,10 +124,35 @@ export function Navigation() {
           ))}
         </View>
         {width > 0 && (
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.pill, { left: pill.left, width: pill.width }]}
-          />
+          <View pointerEvents="none" style={styles.indicator}>
+            <Animated.View style={[styles.pillCap, { transform: [{ translateX: pill.left }] }]} />
+            <Animated.View
+              style={[
+                styles.pillBridge,
+                {
+                  transform: [
+                    {
+                      translateX: Animated.add(
+                        pill.left,
+                        Animated.subtract(Animated.divide(pill.width, 2), 0.5),
+                      ),
+                    },
+                    { scaleX: Animated.subtract(pill.width, 28) },
+                  ],
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.pillCap,
+                {
+                  transform: [
+                    { translateX: Animated.add(pill.left, Animated.subtract(pill.width, 28)) },
+                  ],
+                },
+              ]}
+            />
+          </View>
         )}
         {tabs.map((tab, index) => {
           const values = coordinates[index]!;
@@ -126,7 +160,10 @@ export function Navigation() {
           return (
             <Animated.View
               key={tab.name}
-              style={[styles.slot, { left: values.left, width: values.width }]}
+              style={[
+                styles.slot,
+                { width: geometry[index]!.width, transform: [{ translateX: values.left }] },
+              ]}
             >
               <Pressable
                 accessibilityRole="tab"
@@ -187,15 +224,17 @@ export function Navigation() {
 const styles = StyleSheet.create({
   surface: { backgroundColor: colors.white },
   bar: { marginHorizontal: 20, height: 64 },
-  slot: { position: "absolute", top: 8, height: 48 },
+  slot: { position: "absolute", left: 0, top: 8, height: 48 },
   tab: { flex: 1, alignItems: "center", justifyContent: "center" },
-  pill: {
+  indicator: { position: "absolute", left: 0, top: 18, height: 28 },
+  pillCap: {
     position: "absolute",
+    width: 28,
     height: 28,
-    top: 18,
-    borderRadius: 999,
+    borderRadius: 14,
     backgroundColor: colors.green,
   },
+  pillBridge: { position: "absolute", width: 1, height: 28, backgroundColor: colors.green },
   activeContent: {
     position: "absolute",
     width: "100%",

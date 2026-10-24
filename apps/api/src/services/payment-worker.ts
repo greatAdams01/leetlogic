@@ -786,6 +786,7 @@ async function expireOrders() {
     where: {
       status: "AWAITING_PAYMENT",
       fundsProvider: "bachs",
+      financialHold: false,
       reservationExpiresAt: { lt: new Date() },
     },
     take: 20,

@@ -144,7 +144,7 @@ export function Sell() {
       footer={
         <Button
           title={busy ? "Saving…" : a.t("sell.review")}
-          disabled={busy || !ready || r.data?.verificationStatus !== "APPROVED"}
+          disabled={busy || !ready || r.loading || !!r.error}
           onPress={async () => {
             setBusy(true);
             setError("");
@@ -175,7 +175,7 @@ export function Sell() {
       <Label muted>Required fields are marked *. Review every detail before submitting.</Label>
       {r.data?.verificationStatus !== "APPROVED" && (
         <>
-          <Notice text="Farmer approval is required before submitting produce. Your typed draft can still be saved on this device." />
+          <Notice text="You can save and review drafts while your seller application is in progress. Approval is required before submitting produce for sale." />
           <Button title="Seller application" secondary onPress={() => a.go("seller")} />
         </>
       )}
@@ -292,6 +292,7 @@ export function Review() {
     [done, setDone] = useState(false),
     [error, setError] = useState("");
   const f = r.data?.fields;
+  const canPublish = a.user?.farmerProfile?.verificationStatus === "APPROVED";
   return (
     <Page
       title="Review listing"
@@ -303,7 +304,7 @@ export function Review() {
         ) : (
           <Button
             title={busy ? "Submitting…" : a.t("sell.submit")}
-            disabled={!confirmed || busy || !f}
+            disabled={!confirmed || busy || !f || !canPublish}
             onPress={async () => {
               setBusy(true);
               try {
@@ -323,6 +324,12 @@ export function Review() {
         )
       }
     >
+      {!canPublish && !done && (
+        <>
+          <Notice text="Your draft is saved. Complete seller approval before submitting it for sale." />
+          <Button title="Seller application" secondary onPress={() => a.go("seller")} />
+        </>
+      )}
       {done ? (
         <>
           <Heading>Submitted for review</Heading>
