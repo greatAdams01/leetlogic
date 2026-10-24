@@ -66,7 +66,8 @@ export type Order = {
   reference: string;
   status: string;
   totalMinor: string;
-  listing: { title: string };
+  quantity?: string;
+  listing: { title: string; unitCode?: string };
   delivery: { status: string; shippingMinor: string } | null;
 };
 export type Contact = {

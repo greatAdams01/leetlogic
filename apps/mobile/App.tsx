@@ -16,6 +16,8 @@ import { Sell, Review, MyListings } from "./src/screens/sell";
 import { Profile, Details, Addresses, Notifications, Help, Seller } from "./src/screens/account";
 import { colors } from "./src/components/ui";
 import { Navigation } from "./src/components/navigation";
+import { SellerHome } from "./src/screens/seller-home";
+import { showsBottomTabs } from "./src/lib/bottom-tabs";
 function Router() {
   const a = useApp();
   if (!a.ready) return <Startup />;
@@ -25,7 +27,7 @@ function Router() {
     role: Role,
     phone: Phone,
     otp: Otp,
-    home: Market,
+    home: a.role === "SELLER" && a.user ? SellerHome : Market,
     search: Market,
     product: Product,
     orders: Orders,
@@ -61,14 +63,17 @@ function Router() {
     <>
       <StatusBar
         style={
-          ["phone", "otp", "role", "language", "intro"].includes(a.route.name) ? "light" : "dark"
+          ["phone", "otp", "role", "language", "intro"].includes(a.route.name) ||
+          (a.route.name === "home" && a.role === "SELLER" && !!a.user)
+            ? "light"
+            : "dark"
         }
       />
       <View style={{ flex: 1 }}>
         <Screen key={`${a.route.name}:${a.route.id || ""}`} />
       </View>
-      {Screen !== Phone && ["home", "search", "orders", "profile"].includes(a.route.name) && (
-        <Navigation />
+      {Screen !== Phone && showsBottomTabs(a.role, a.route.name, !!a.user) && (
+        <Navigation key={a.role} />
       )}
     </>
   );

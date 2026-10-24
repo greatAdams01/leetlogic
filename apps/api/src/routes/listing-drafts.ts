@@ -48,6 +48,35 @@ listingDraftRouter.post("/", async (req, res) => {
   const draft = await prisma.listingDraft.create({ data: { userId: req.auth!.sub, fields } });
   res.status(201).json(draft);
 });
+listingDraftRouter.get("/", async (req, res) => {
+  const items = await prisma.listingDraft.findMany({
+    where: { userId: req.auth!.sub, listingId: null },
+    orderBy: { updatedAt: "desc" },
+    take: 50,
+  });
+  res.json({ items });
+});
+listingDraftRouter.delete("/:id", async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+  const result = await prisma.listingDraft.deleteMany({
+    where: { id, userId: req.auth!.sub, listingId: null },
+  });
+  if (!result.count)
+    throw new AppError(404, "DRAFT_NOT_FOUND", "This draft is no longer available.");
+  await audit(req, { action: "listing.draft.deleted", entityType: "listingDraft", entityId: id });
+  res.status(204).end();
+});
+listingDraftRouter.patch("/:id", async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+  const fields = draftSchema.parse(req.body);
+  const result = await prisma.listingDraft.updateMany({
+    where: { id, userId: req.auth!.sub, listingId: null },
+    data: { fields, confirmed: false },
+  });
+  if (!result.count)
+    throw new AppError(404, "DRAFT_NOT_FOUND", "This draft is no longer available.");
+  res.json({ id });
+});
 listingDraftRouter.get("/:id", async (req, res) => {
   const draft = await prisma.listingDraft.findFirst({
     where: { id: z.string().uuid().parse(req.params.id), userId: req.auth!.sub },

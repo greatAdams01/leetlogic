@@ -90,6 +90,92 @@ marketplaceRouter.get("/my-listings", async (req, res) =>
     }),
   ),
 );
+// Inventory controls apply only to already moderated listings owned by this farmer.
+marketplaceRouter.patch("/my-listings/:id/inventory", async (req, res) => {
+  const id = uuid.parse(req.params.id);
+  const body = z
+    .object({
+      availableQuantity: z
+        .string()
+        .regex(/^\d{1,9}(\.\d{1,3})?$/)
+        .optional(),
+      status: z.enum(["ACTIVE", "PAUSED"]).optional(),
+    })
+    .strict()
+    .refine((value) => value.availableQuantity !== undefined || value.status !== undefined)
+    .parse(req.body);
+  const item = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM listings WHERE id = ${id}::uuid FOR UPDATE`;
+    const current = await tx.listing.findFirst({
+      where: { id, farmerProfile: { userId: req.auth!.sub }, deletedAt: null },
+      include: { farmerProfile: true },
+    });
+    if (!current)
+      throw new AppError(404, "LISTING_NOT_FOUND", "This listing is no longer available.");
+    if (current.farmerProfile.verificationStatus !== "APPROVED")
+      throw new AppError(
+        403,
+        "VERIFIED_FARMER_REQUIRED",
+        "Your seller profile must be approved before changing produce for sale.",
+      );
+    if (!["ACTIVE", "PAUSED", "SOLD_OUT"].includes(current.status))
+      throw new AppError(
+        409,
+        "LISTING_NOT_EDITABLE",
+        "This listing must complete review before you can change its stock.",
+      );
+    const stock =
+      body.availableQuantity === undefined
+        ? current.availableQuantity
+        : new Prisma.Decimal(body.availableQuantity);
+    if (stock.lt(current.reservedQuantity))
+      throw new AppError(
+        409,
+        "STOCK_RESERVED",
+        "Stock cannot be less than the quantity already reserved for orders.",
+      );
+    if (body.status === "ACTIVE" && stock.lte(current.reservedQuantity))
+      throw new AppError(
+        409,
+        "STOCK_EMPTY",
+        "Add available stock before making this listing active.",
+      );
+    const difference = stock.minus(current.availableQuantity);
+    const status =
+      body.status ||
+      (current.status === "SOLD_OUT" && stock.gt(current.reservedQuantity)
+        ? "ACTIVE"
+        : current.status);
+    const updated = await tx.listing.update({
+      where: { id },
+      data: { availableQuantity: stock, status },
+      select: publicListing,
+    });
+    if (!difference.isZero())
+      await tx.inventoryMovement.create({
+        data: {
+          listingId: id,
+          type: "ADJUSTMENT",
+          quantity: difference,
+          referenceType: "seller",
+          referenceId: req.auth!.sub,
+        },
+      });
+    await audit(
+      req,
+      {
+        action: "listing.seller.inventory",
+        entityType: "listing",
+        entityId: id,
+        before: { status: current.status, availableQuantity: current.availableQuantity.toString() },
+        after: { status, availableQuantity: stock.toString() },
+      },
+      tx,
+    );
+    return updated;
+  });
+  res.json(serialize({ item }));
+});
 marketplaceRouter.post("/orders", async (req, res) => {
   const body = z
     .object({ listingId: uuid, quantity: z.string().regex(/^\d{1,9}(\.\d{1,3})?$/) })
@@ -142,7 +228,9 @@ marketplaceRouter.post("/orders", async (req, res) => {
         quantity,
         totalMinor: BigInt(total.toFixed(0)),
         feeBasisPoints: settings.platformFeeBasisPoints,
-        ...(getConfig().PAYMENTS_ENABLED ? {fundsProvider:"bachs",reservationExpiresAt:new Date(Date.now()+15*60000)} : {}),
+        ...(getConfig().PAYMENTS_ENABLED
+          ? { fundsProvider: "bachs", reservationExpiresAt: new Date(Date.now() + 15 * 60000) }
+          : {}),
       },
     });
     await tx.listing.update({
@@ -206,7 +294,14 @@ marketplaceRouter.post("/orders/:id/cancel", async (req, res) => {
     });
     if (order.delivery) {
       await tx.delivery.update({ where: { id: order.delivery.id }, data: { status: "CANCELLED" } });
-      await deliveryEvent(tx, order.delivery.id, "CANCELLED", "CUSTOMER", `${order.delivery.id}:customer-cancel`, req.auth!.sub);
+      await deliveryEvent(
+        tx,
+        order.delivery.id,
+        "CANCELLED",
+        "CUSTOMER",
+        `${order.delivery.id}:customer-cancel`,
+        req.auth!.sub,
+      );
     }
     const cancelled = await tx.tradeOrder.update({ where: { id }, data: { status: "CANCELLED" } });
     await audit(req, { action: "order.customer.cancelled", entityType: "order", entityId: id }, tx);

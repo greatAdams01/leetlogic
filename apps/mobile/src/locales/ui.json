@@ -3736,5 +3736,383 @@
     "Buɗe bayanan mai sayarwa don ganin matsayin yanzu.",
     "Mepee profaịlụ onye na-ere ihe gị iji lee ọnọdụ ya ugbu a.",
     "Ṣí àkọsílẹ̀ olùtajà rẹ láti wo ipò rẹ̀ lọ́wọ́lọ́wọ́."
+  ],
+  [
+    "Listings",
+    "Listings",
+    "Kayayyakin sayarwa",
+    "Ihe ndị a na-ere",
+    "Àwọn ọjà"
+  ],
+  [
+    "Sell",
+    "Sell",
+    "Sayar",
+    "Ree",
+    "Tà"
+  ],
+  [
+    "Good morning, {name}",
+    "Good morning, {name}",
+    "Ina kwana, {name}",
+    "Ụtụtụ ọma, {name}",
+    "Ẹ káàárọ̀, {name}"
+  ],
+  [
+    "Good afternoon, {name}",
+    "Good afternoon, {name}",
+    "Ina wuni, {name}",
+    "Ehihie ọma, {name}",
+    "Ẹ káàsán, {name}"
+  ],
+  [
+    "Good evening, {name}",
+    "Good evening, {name}",
+    "Barka da yamma, {name}",
+    "Mgbede ọma, {name}",
+    "Ẹ kú alẹ́, {name}"
+  ],
+  [
+    "Here is your daily farm trade summary.",
+    "Na your farm business summary for today be this.",
+    "Ga taƙaitaccen kasuwancin gonarka na yau.",
+    "Nke a bụ nchịkọta azụmahịa ubi gị taa.",
+    "Èyí ni àkótán òwò oko rẹ fún òní."
+  ],
+  [
+    "Available earnings",
+    "Money wey you fit collect",
+    "Kuɗin da za ka iya cirewa",
+    "Ego ị nwere ike iwepụ",
+    "Èrè tó wà fún yíyọ"
+  ],
+  [
+    "Withdraw",
+    "Collect money",
+    "Cire kuɗi",
+    "Wepụ ego",
+    "Yọ owó"
+  ],
+  [
+    "ready to withdraw",
+    "ready for you to collect",
+    "a shirye don cirewa",
+    "dị njikere ka ị wepụ ya",
+    "ti ṣetán fún yíyọ"
+  ],
+  [
+    "Active listings",
+    "Produce wey dey sell",
+    "Kayayyakin da ake sayarwa",
+    "Ihe ndị ị na-ere ugbu a",
+    "Àwọn ọjà tó ń tà"
+  ],
+  [
+    "Orders to pack",
+    "Orders wey you go pack",
+    "Ododin da za a shirya",
+    "Oda ndị a ga-akwakọba",
+    "Àwọn àṣẹ láti dì"
+  ],
+  [
+    "List produce",
+    "Put produce for sale",
+    "Saka amfanin gona a kasuwa",
+    "Depụta ihe ubi maka ire",
+    "Fi ohun ọ̀gbìn sílẹ̀ fún títà"
+  ],
+  [
+    "View all ({count})",
+    "See all ({count})",
+    "Duba duka ({count})",
+    "Lee ha niile ({count})",
+    "Wo gbogbo rẹ̀ ({count})"
+  ],
+  [
+    "{quantity} {unit} left · {location}",
+    "{quantity} {unit} remain · {location}",
+    "{quantity} {unit} suka rage · {location}",
+    "{quantity} {unit} fọdụrụ · {location}",
+    "{quantity} {unit} ló kù · {location}"
+  ],
+  [
+    "Verification status",
+    "Verification status",
+    "Matsayin tantancewa",
+    "Ọnọdụ nkwenye",
+    "Ipò ìjẹ́rìísí"
+  ],
+  [
+    "Verified seller",
+    "Seller wey we don verify",
+    "Tabbataccen mai sayarwa",
+    "Onye na-ere ahịa enyochala",
+    "Olùtà tí a ti jẹ́rìí sí"
+  ],
+  [
+    "Your profile is fully verified and ready for sales.",
+    "We don verify your profile finish. You fit sell now.",
+    "An tabbatar da bayananka gaba ɗaya kuma kana shirye don sayarwa.",
+    "Enyochala profaịlụ gị nke ọma, ị dị njikere ire ahịa.",
+    "A ti jẹ́rìí sí àkọọ́lẹ̀ rẹ pátápátá, o sì ti ṣetán láti tà."
+  ],
+  [
+    "Identity verified",
+    "We don verify your identity",
+    "An tabbatar da shaidar mutum",
+    "Ekwenyela njirimara gị",
+    "A ti jẹ́rìí sí ìdánimọ̀"
+  ],
+  [
+    "Farm location confirmed",
+    "We don confirm where your farm dey",
+    "An tabbatar da wurin gona",
+    "Ekwenyela ebe ubi dị",
+    "A ti fìdí ibi oko múlẹ̀"
+  ],
+  [
+    "Payment account linked",
+    "Payment account don connect",
+    "An haɗa asusun biyan kuɗi",
+    "Ejikọtala akaụntụ ịkwụ ụgwọ",
+    "A ti so àkọọ́lẹ̀ ìsanwó pọ̀"
+  ],
+  [
+    "Set up payment account",
+    "Set up payment account",
+    "Saita asusun biyan kuɗi",
+    "Hazie akaụntụ ịkwụ ụgwọ",
+    "Ṣètò àkọọ́lẹ̀ ìsanwó"
+  ],
+  [
+    "Complete payment setup to withdraw earnings.",
+    "Finish payment setup to collect your money.",
+    "Kammala saitin biyan kuɗi don cire ribarka.",
+    "Mechaa nhazi ịkwụ ụgwọ ka ị wepụ ego gị.",
+    "Parí ètò ìsanwó láti yọ èrè rẹ."
+  ],
+  [
+    "Review your seller profile for the next steps.",
+    "Check your seller profile for wetin remain.",
+    "Duba bayanan mai sayarwarka don matakai na gaba.",
+    "Lelee profaịlụ onye na-ere ahịa gị maka ihe na-esote.",
+    "Ṣàyẹ̀wò àkọọ́lẹ̀ olùtà rẹ fún ìgbésẹ̀ tó kàn."
+  ],
+  [
+    "Draft listings",
+    "Produce wey you never publish",
+    "Daftarin kayayyaki",
+    "Ndepụta ndị a ka na-ede",
+    "Àwọn àkọ́pamọ́ ọjà"
+  ],
+  [
+    "{count} drafts",
+    "{count} drafts",
+    "Daftari {count}",
+    "Ndepụta {count}",
+    "Àkọ́pamọ́ {count}"
+  ],
+  [
+    "No saved drafts yet.",
+    "You never save any draft.",
+    "Babu daftarin da aka adana tukuna.",
+    "Enweghị ndepụta echekwara ka ọ dị ugbu a.",
+    "Kò sí àkọ́pamọ́ kankan síbẹ̀."
+  ],
+  [
+    "Untitled produce",
+    "Produce wey no get name yet",
+    "Amfanin gona marar suna",
+    "Ihe ubi na-enweghị aha",
+    "Ohun ọ̀gbìn tí kò ní orúkọ"
+  ],
+  [
+    "Saved on this device",
+    "E save for this phone",
+    "An adana a wannan na'urar",
+    "Echekwara na ngwaọrụ a",
+    "A fi pamọ́ sórí ẹ̀rọ yìí"
+  ],
+  [
+    "Draft saved · review before publishing",
+    "Draft don save · check am before you publish",
+    "An adana daftari · duba kafin wallafawa",
+    "Echekwala ndepụta · lelee ya tupu ibipụta",
+    "A ti fi àkọ́pamọ́ pamọ́ · ṣàyẹ̀wò rẹ̀ kí o tó tẹ̀ ẹ́ jáde"
+  ],
+  [
+    "Draft saved · add a produce photo",
+    "Draft don save · add produce photo",
+    "An adana daftari · ƙara hoton amfanin gona",
+    "Echekwala ndepụta · tinye foto ihe ubi",
+    "A ti fi àkọ́pamọ́ pamọ́ · fi fọ́tò ọjà kún un"
+  ],
+  [
+    "Resume",
+    "Continue",
+    "Ci gaba",
+    "Gaa n'ihu",
+    "Tẹ̀síwájú"
+  ],
+  [
+    "Delete",
+    "Delete",
+    "Goge",
+    "Hichapụ",
+    "Pa rẹ́"
+  ],
+  [
+    "Delete draft?",
+    "Delete this draft?",
+    "A goge daftari?",
+    "Hichapụ ndepụta a?",
+    "Ṣé kí a pa àkọ́pamọ́ rẹ́?"
+  ],
+  [
+    "This removes the saved draft. Published listings will not be affected.",
+    "This go remove the draft wey you save. Produce wey you don publish no go change.",
+    "Wannan zai goge daftarin da aka adana. Ba zai shafi kayayyakin da aka wallafa ba.",
+    "Nke a ga-ehichapụ ndepụta echekwara. Ọ gaghị emetụta ndepụta ebipụtarala.",
+    "Èyí yóò pa àkọ́pamọ́ rẹ́. Kò ní kan àwọn ọjà tí a ti tẹ̀ jáde."
+  ],
+  [
+    "Low stock items",
+    "Produce wey remain small",
+    "Kayayyakin da suka kusa ƙarewa",
+    "Ihe ubi ndị fọdụrụ ntakịrị",
+    "Àwọn ọjà tó fẹ́rẹ̀ẹ́ tán"
+  ],
+  [
+    "{count} items",
+    "{count} items",
+    "Kayayyaki {count}",
+    "Ihe {count}",
+    "Ọjà {count}"
+  ],
+  [
+    "No low stock alerts right now.",
+    "No produce dey run low now.",
+    "Babu sanarwar ƙarancin kaya yanzu.",
+    "Enweghị ihe ubi na-achọ ịgwụ ugbu a.",
+    "Kò sí ìkìlọ̀ ọjà tó fẹ́ tán báyìí."
+  ],
+  [
+    "{quantity} {unit} remaining · restock recommended",
+    "{quantity} {unit} remain · add more stock",
+    "{quantity} {unit} suka rage · ƙara kaya",
+    "{quantity} {unit} fọdụrụ · tinyekwuo ihe ubi",
+    "{quantity} {unit} ló kù · tún ọjà kún un"
+  ],
+  [
+    "Restock",
+    "Add stock",
+    "Ƙara kaya",
+    "Tinyekwuo ngwaahịa",
+    "Tún ọjà kún un"
+  ],
+  [
+    "Pause",
+    "Pause sale",
+    "Dakatar",
+    "Kwụsịtụ ire",
+    "Dá títà dúró"
+  ],
+  [
+    "Update stock",
+    "Update your stock",
+    "Sabunta kaya",
+    "Melite ngwaahịa",
+    "Ṣàtúnṣe iye ọjà"
+  ],
+  [
+    "Enter the total stock you have, including quantities reserved for existing orders.",
+    "Enter all the stock wey you get, including the ones wey orders don reserve.",
+    "Shigar da jimillar kayanka, har da waɗanda aka tanada don ododin da ake da su.",
+    "Tinye ngwaahịa niile ị nwere, tinyere ndị edobere maka oda ndị dị ugbu a.",
+    "Tẹ gbogbo iye ọjà rẹ, pẹ̀lú àwọn tí a yà sọ́tọ̀ fún àṣẹ tó wà."
+  ],
+  [
+    "Total stock",
+    "All your stock",
+    "Jimillar kaya",
+    "Ngwaahịa niile",
+    "Gbogbo iye ọjà"
+  ],
+  [
+    "Reserved for orders: {quantity} {unit}",
+    "Orders don reserve: {quantity} {unit}",
+    "An tanada don oda: {quantity} {unit}",
+    "Edobere maka oda: {quantity} {unit}",
+    "A yà sílẹ̀ fún àṣẹ: {quantity} {unit}"
+  ],
+  [
+    "Save stock",
+    "Save stock",
+    "Adana kaya",
+    "Chekwaa ngwaahịa",
+    "Fi iye ọjà pamọ́"
+  ],
+  [
+    "New orders",
+    "New orders",
+    "Sabbin oda",
+    "Oda ọhụrụ",
+    "Àwọn àṣẹ tuntun"
+  ],
+  [
+    "{count} ready to pack",
+    "{count} ready for packing",
+    "{count} a shirye don shiryawa",
+    "{count} dị njikere ịkwakọba",
+    "{count} ti ṣetán fún dídì"
+  ],
+  [
+    "No paid orders waiting to be packed.",
+    "No paid order dey wait for packing.",
+    "Babu odar da aka biya da ke jiran shiryawa.",
+    "Enweghị oda a kwụrụ ụgwọ na-eche ịkwakọba.",
+    "Kò sí àṣẹ tí a ti sanwó tó ń dúró fún dídì."
+  ],
+  [
+    "Review order",
+    "Check order",
+    "Duba oda",
+    "Lelee oda",
+    "Ṣàyẹ̀wò àṣẹ"
+  ],
+  [
+    "This draft has already been submitted.",
+    "You don submit this draft already.",
+    "An riga an miƙa wannan daftari.",
+    "Etinyelarị ndepụta a.",
+    "A ti fi àkọ́pamọ́ yìí ránṣẹ́ tẹ́lẹ̀."
+  ],
+  [
+    "Stock cannot be less than the quantity already reserved for orders.",
+    "Stock no fit less than wetin orders don reserve.",
+    "Kaya ba zai iya kasa yawan da aka riga aka tanada don oda ba.",
+    "Ngwaahịa agaghị adị obere karịa nke edobere maka oda.",
+    "Iye ọjà kò lè kéré ju iye tí a ti yà fún àṣẹ lọ."
+  ],
+  [
+    "Add available stock before making this listing active.",
+    "Add stock before you start to sell this produce again.",
+    "Ƙara kaya kafin kunna wannan talla.",
+    "Tinyekwuo ngwaahịa tupu ịmalite ire ya ọzọ.",
+    "Fi ọjà kún un kí o tó tún bẹ̀rẹ̀ títà rẹ̀."
+  ],
+  [
+    "This listing must complete review before you can change its stock.",
+    "Make review finish before you change this produce stock.",
+    "Dole a kammala duba wannan talla kafin ka canza kayansa.",
+    "A ga-emecha nyocha ndepụta a tupu ịgbanwe ngwaahịa ya.",
+    "Àyẹ̀wò ọjà yìí gbọ́dọ̀ parí kí o tó yí iye rẹ̀ padà."
+  ],
+  [
+    "Your seller profile must be approved before changing produce for sale.",
+    "Dem must approve your seller profile before you change produce wey dey sell.",
+    "Dole a amince da bayanan mai sayarwarka kafin canza amfanin gonar da ake sayarwa.",
+    "A ga-akwado profaịlụ gị tupu ịgbanwe ihe ubi ị na-ere.",
+    "A gbọ́dọ̀ fọwọ́ sí àkọọ́lẹ̀ olùtà rẹ kí o tó yí ọjà padà."
   ]
 ]

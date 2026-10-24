@@ -187,12 +187,18 @@ export function useApp() {
     alert: (title: string, text: string, buttons?: AlertButton[]) => void;
   };
 }
-export function useResource<T>(path: string) {
+export function useResource<T>(path: string, enabled = true) {
   const { locale } = useApp();
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
   const reload = useCallback(async () => {
+    if (!enabled) {
+      setData(null);
+      setError("");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -202,7 +208,7 @@ export function useResource<T>(path: string) {
     } finally {
       setLoading(false);
     }
-  }, [path, locale]);
+  }, [path, locale, enabled]);
   useEffect(() => {
     void reload();
   }, [reload]);

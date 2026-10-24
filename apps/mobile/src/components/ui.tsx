@@ -203,6 +203,7 @@ export function Page({
   title,
   back,
   footer,
+  footerSafeArea = true,
   green = false,
   loading = false,
   brand = false,
@@ -212,6 +213,7 @@ export function Page({
   title?: string;
   back?: () => void;
   footer?: React.ReactNode;
+  footerSafeArea?: boolean;
   green?: boolean;
   loading?: boolean;
   brand?: boolean;
@@ -264,7 +266,10 @@ export function Page({
           {children}
         </ScrollView>
         {footer && (
-          <SafeAreaView edges={["bottom"]} style={[s.footer, { backgroundColor }]}>
+          <SafeAreaView
+            edges={footerSafeArea ? ["bottom"] : []}
+            style={[s.footer, { backgroundColor }]}
+          >
             {footer}
           </SafeAreaView>
         )}

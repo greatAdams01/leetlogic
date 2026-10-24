@@ -9,6 +9,7 @@ import { Page, Heading, Label, Field, Button, Card, Notice, s, colors } from "..
 import { api, API_URL, authHeaders } from "../lib/api";
 import { money, toMinor, quantity, type Listing, type Address } from "../lib/domain";
 import { ListingPhoto } from "./market";
+import { ListingControls } from "../components/seller-listing-controls";
 export async function choosePhoto(camera = false) {
   const permission = camera
     ? await ImagePicker.requestCameraPermissionsAsync()
@@ -69,18 +70,43 @@ export function Sell() {
     [ready, setReady] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const storage = `listing-draft:${a.user!.id}`;
+  const storage = `listing-draft:${a.user!.id}${a.route.id ? `:${a.route.id}` : ""}`;
   useEffect(() => {
-    AsyncStorage.getItem(storage).then((v) => {
-      if (v)
-        try {
-          setForm(JSON.parse(v));
-        } catch {
-          /* discard corrupt draft */
+    let active = true;
+    void (async () => {
+      try {
+        if (a.route.id) {
+          const draft = await api<{
+            fields: Omit<Form, "price"> & { unitPriceMinor: string };
+            listingId: string | null;
+          }>(`/listing-drafts/${a.route.id}`);
+          if (draft.listingId) throw new Error("This draft has already been submitted.");
+          const { unitPriceMinor, ...fields } = draft.fields;
+          const minor = BigInt(unitPriceMinor);
+          const cached = await AsyncStorage.getItem(storage);
+          if (active)
+            setForm(
+              cached
+                ? { ...initial, ...JSON.parse(cached) }
+                : {
+                    ...initial,
+                    ...fields,
+                    price: `${minor / 100n}.${(minor % 100n).toString().padStart(2, "0")}`,
+                  },
+            );
+        } else {
+          const saved = await AsyncStorage.getItem(storage);
+          if (saved && active) setForm({ ...initial, ...JSON.parse(saved) });
         }
-      setReady(true);
-    });
-  }, [storage]);
+        if (active) setReady(true);
+      } catch (e) {
+        if (active) setError(a.error(e));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [storage, a.route.id]);
   useEffect(() => {
     if (!ready) return;
     const timer = setTimeout(() => {
@@ -112,7 +138,8 @@ export function Sell() {
   return (
     <Page
       title="Create listing"
-      back={a.back}
+      back={a.canGoBack ? a.back : undefined}
+      footerSafeArea={a.role !== "SELLER"}
       loading={r.loading}
       footer={
         <Button
@@ -125,10 +152,14 @@ export function Sell() {
               quantity(form.quantity);
               const { photoUri, price, ...fields } = form;
               void photoUri;
-              const draft = await api<{ id: string }>("/listing-drafts", {
-                method: "POST",
-                body: { ...fields, sourceLocale: a.locale, unitPriceMinor: toMinor(price) },
-              });
+              const draft = await api<{ id: string }>(
+                a.route.id ? `/listing-drafts/${a.route.id}` : "/listing-drafts",
+                {
+                  method: a.route.id ? "PATCH" : "POST",
+                  body: { ...fields, sourceLocale: a.locale, unitPriceMinor: toMinor(price) },
+                },
+              );
+              await AsyncStorage.removeItem(storage);
               a.go("review", draft.id);
             } catch (e) {
               setError(a.error(e));
@@ -225,9 +256,13 @@ export function Sell() {
       <Button title="Add pickup address" secondary onPress={() => a.go("addresses")} />
       <Notice text="Delivery coverage and package eligibility are checked before payment. Bulk and cold-chain orders need staff review." />
       <Text style={s.sectionTitle}>{a.t("sell.photo")}</Text>
-      {form.photoUri && (
+      {(form.photoUri || form.photoId) && (
         <Image
-          source={{ uri: form.photoUri }}
+          source={
+            form.photoUri
+              ? { uri: form.photoUri }
+              : { uri: `${API_URL}/v1/listing-photos/${form.photoId}`, headers: authHeaders() }
+          }
           style={{ width: "100%", height: 200, borderRadius: 16 }}
         />
       )}
@@ -276,7 +311,7 @@ export function Review() {
                   method: "POST",
                   body: { confirmed: true },
                 });
-                await AsyncStorage.removeItem(`listing-draft:${a.user!.id}`);
+                await AsyncStorage.removeItem(`listing-draft:${a.user!.id}:${a.route.id}`);
                 setDone(true);
               } catch (e) {
                 setError(a.error(e));
@@ -349,9 +384,10 @@ export function MyListings() {
   return (
     <Page
       title="My listings"
-      back={a.back}
+      back={a.canGoBack ? a.back : undefined}
       loading={r.loading}
-      footer={<Button title="Create listing" onPress={() => a.go("sell")} />}
+      footerSafeArea={a.role !== "SELLER"}
+      footer={<Button title="Create listing" onPress={() => a.reset("sell")} />}
     >
       {r.error && <Notice text={r.error} error />}
       {!r.loading && !r.data?.items.length && <Notice text="You haven’t listed any produce yet." />}
@@ -363,6 +399,7 @@ export function MyListings() {
           <Label>
             {money(i.unitPriceMinor)} / {a.unit(i.unitCode)}
           </Label>
+          <ListingControls item={i} onUpdated={r.reload} />
         </Card>
       ))}
     </Page>

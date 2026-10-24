@@ -204,8 +204,8 @@ suite("delivery and language database workflows", () => {
   it("routes special handling to manual review and serves real quotes without provider tokens", async () => {
     const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
       {
-        courierId:"test-courier",
-        walletMinor:1000n,
+        courierId: "test-courier",
+        walletMinor: 1000n,
         requestToken: "provider-secret",
         serviceCode: "courier",
         courier: "Courier",
@@ -710,5 +710,191 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${outsider}` })
       ).body.items,
     ).toHaveLength(0);
+  });
+  it("keeps seller sales separate from the same user's purchases", async () => {
+    const sellerUserId = verifyAccessToken(seller, "customer").sub;
+    const buyerUserId = verifyAccessToken(buyer, "customer").sub;
+    const anotherFarm = await prisma.farmerProfile.create({
+      data: {
+        userId: buyerUserId,
+        farmName: "Other farm",
+        farmType: "CROP",
+        verificationStatus: "APPROVED",
+      },
+    });
+    const anotherListing = await prisma.listing.create({
+      data: {
+        farmerProfileId: anotherFarm.id,
+        categoryId,
+        unitCode: "KG",
+        locationAddressId: addressId,
+        title: "Other produce",
+        unitPriceMinor: 100n,
+        availableQuantity: "5",
+        shippingScope: "NATIONWIDE",
+        status: "ACTIVE",
+      },
+    });
+    const purchase = await prisma.tradeOrder.create({
+      data: {
+        reference: `PURCHASE-${randomUUID()}`,
+        buyerId: sellerUserId,
+        farmerProfileId: anotherFarm.id,
+        listingId: anotherListing.id,
+        quantity: "1",
+        totalMinor: 100n,
+      },
+    });
+    const sales = await request(app)
+      .get("/v1/orders?view=seller")
+      .set({ Authorization: `Bearer ${seller}` });
+    expect(sales.status).toBe(200);
+    expect(sales.body.items.length).toBeGreaterThan(0);
+    expect(sales.body.items.some((item: { id: string }) => item.id === purchase.id)).toBe(false);
+    const purchases = await request(app)
+      .get("/v1/orders?view=buyer")
+      .set({ Authorization: `Bearer ${seller}` });
+    expect(purchases.status).toBe(200);
+    expect(purchases.body.items.map((item: { id: string }) => item.id)).toContain(purchase.id);
+    expect(
+      (
+        await request(app)
+          .get("/v1/orders?view=seller")
+          .set({ Authorization: `Bearer ${outsider}` })
+      ).body.items,
+    ).toEqual([]);
+  });
+  it("lists, edits and deletes only owned unsubmitted drafts", async () => {
+    const fields = {
+      title: "Saved beans",
+      description: "",
+      sourceLocale: "en",
+      categoryId,
+      unitCode: "KG",
+      quantity: "2",
+      unitPriceMinor: "10000",
+      addressId,
+    };
+    const created = await request(app)
+      .post("/v1/listing-drafts")
+      .set({ Authorization: `Bearer ${seller}` })
+      .send(fields);
+    expect(created.status).toBe(201);
+    const path = `/v1/listing-drafts/${created.body.id}`;
+    expect(
+      (
+        await request(app)
+          .get("/v1/listing-drafts")
+          .set({ Authorization: `Bearer ${seller}` })
+      ).body.items.map((item: { id: string }) => item.id),
+    ).toContain(created.body.id);
+    expect(
+      (
+        await request(app)
+          .patch(path)
+          .set({ Authorization: `Bearer ${outsider}` })
+          .send(fields)
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .delete(path)
+          .set({ Authorization: `Bearer ${outsider}` })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .patch(path)
+          .set({ Authorization: `Bearer ${seller}` })
+          .send({ ...fields, title: "Updated beans" })
+      ).status,
+    ).toBe(200);
+    const submitted = await request(app)
+      .post(`${path}/submit`)
+      .set({ Authorization: `Bearer ${seller}` })
+      .send({ confirmed: true });
+    expect(submitted.status).toBe(201);
+    expect(
+      (
+        await request(app)
+          .delete(path)
+          .set({ Authorization: `Bearer ${seller}` })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .patch(path)
+          .set({ Authorization: `Bearer ${seller}` })
+          .send(fields)
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .get("/v1/listing-drafts")
+          .set({ Authorization: `Bearer ${seller}` })
+      ).body.items.map((item: { id: string }) => item.id),
+    ).not.toContain(created.body.id);
+    const another = await request(app)
+      .post("/v1/listing-drafts")
+      .set({ Authorization: `Bearer ${seller}` })
+      .send(fields);
+    expect(
+      (
+        await request(app)
+          .delete(`/v1/listing-drafts/${another.body.id}`)
+          .set({ Authorization: `Bearer ${seller}` })
+      ).status,
+    ).toBe(204);
+  });
+  it("protects reserved stock and moderation while allowing audited restock and pause", async () => {
+    const item = await prisma.listing.create({
+      data: {
+        farmerProfileId: farmerId,
+        categoryId,
+        unitCode: "KG",
+        locationAddressId: addressId,
+        title: "Stock controls",
+        unitPriceMinor: 100n,
+        availableQuantity: "5",
+        reservedQuantity: "3",
+        shippingScope: "NATIONWIDE",
+        status: "ACTIVE",
+      },
+    });
+    const path = `/v1/marketplace/my-listings/${item.id}/inventory`;
+    const change = (token: string, body: object) =>
+      request(app)
+        .patch(path)
+        .set({ Authorization: `Bearer ${token}` })
+        .send(body);
+    expect((await change(outsider, { availableQuantity: "10" })).status).toBe(404);
+    expect((await change(seller, { availableQuantity: "2" })).body.error.code).toBe(
+      "STOCK_RESERVED",
+    );
+    for (let attempt = 0; attempt < 2; attempt++)
+      expect((await change(seller, { availableQuantity: "10" })).status).toBe(200);
+    expect(
+      (
+        await prisma.listing.findUniqueOrThrow({ where: { id: item.id } })
+      ).availableQuantity.toString(),
+    ).toBe("10");
+    expect(await prisma.inventoryMovement.count({ where: { listingId: item.id } })).toBe(1);
+    expect((await change(seller, { status: "PAUSED" })).body.item.status).toBe("PAUSED");
+    expect(
+      (await change(seller, { availableQuantity: "3", status: "ACTIVE" })).body.error.code,
+    ).toBe("STOCK_EMPTY");
+    await prisma.listing.update({ where: { id: item.id }, data: { status: "PENDING_REVIEW" } });
+    expect((await change(seller, { status: "ACTIVE" })).body.error.code).toBe(
+      "LISTING_NOT_EDITABLE",
+    );
+    expect(
+      await prisma.auditLog.count({
+        where: { entityId: item.id, action: "listing.seller.inventory" },
+      }),
+    ).toBeGreaterThan(0);
   });
 });

@@ -74,14 +74,21 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
   res.json({ items });
 });
 customerDeliveryRouter.get("/", async (req, res) => {
+  const { view } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
   const items = await prisma.tradeOrder.findMany({
-    where: { OR: [{ buyerId: req.auth!.sub }, { farmerProfile: { userId: req.auth!.sub } }] },
+    where:
+      view === "seller"
+        ? { farmerProfile: { userId: req.auth!.sub } }
+        : view === "buyer"
+          ? { buyerId: req.auth!.sub }
+          : { OR: [{ buyerId: req.auth!.sub }, { farmerProfile: { userId: req.auth!.sub } }] },
     select: {
       id: true,
       reference: true,
       status: true,
       totalMinor: true,
-      listing: { select: { title: true } },
+      quantity: true,
+      listing: { select: { title: true, unitCode: true } },
       delivery: { select: { status: true, shippingMinor: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -433,7 +440,8 @@ export async function queueBooking(orderId: string) {
       ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } })
       : null;
     if (
-      order.status !== "FUNDED" || order.financialHold ||
+      order.status !== "FUNDED" ||
+      order.financialHold ||
       !quote ||
       quote.expiresAt <= new Date() ||
       d.paidMinor < quote.amountMinor
@@ -456,7 +464,12 @@ staffDeliveryRouter.post(
   requireRecentStepUp,
   async (req, res) => {
     const order = await orderAccess(req);
-    if(order.fundsProvider==="bachs")throw new AppError(409,"PROVIDER_PAYMENT_REQUIRED","Delivery payment is confirmed by the payment provider.");
+    if (order.fundsProvider === "bachs")
+      throw new AppError(
+        409,
+        "PROVIDER_PAYMENT_REQUIRED",
+        "Delivery payment is confirmed by the payment provider.",
+      );
     const body = z
       .object({
         amountMinor: z.string().regex(/^\d{1,12}$/),

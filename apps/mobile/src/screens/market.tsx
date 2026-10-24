@@ -270,7 +270,7 @@ export function Product() {
 }
 export function Orders() {
   const a = useApp(),
-    r = useResource<{ items: Order[] }>("/orders"),
+    r = useResource<{ items: Order[] }>(`/orders?view=${a.role === "SELLER" ? "seller" : "buyer"}`),
     [filter, setFilter] = useState("All");
   const items = r.data?.items.filter(
     (i) =>
