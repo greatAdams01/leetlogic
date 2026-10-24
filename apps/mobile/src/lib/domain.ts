@@ -55,6 +55,7 @@ export type Address = {
 export type Customer = {
   id: string;
   phoneE164: string;
+  phoneVerifiedAt?: string | null;
   preferredLocale: string;
   profile: { fullName?: string; displayName?: string; email?: string } | null;
   farmerProfile: { farmName: string; verificationStatus: string } | null;

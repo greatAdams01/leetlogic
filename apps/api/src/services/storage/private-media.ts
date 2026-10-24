@@ -1,3 +1,4 @@
+import { v2 as cloudinary } from "cloudinary";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { resolve, sep, dirname } from "node:path";
@@ -44,7 +45,9 @@ function failure(operation: MediaOperation, reason: string, providerStatus?: num
     : reason === "RATE_LIMITED"
       ? "MEDIA_RATE_LIMITED"
       : reason === "TIMEOUT"
-        ? "MEDIA_TIMEOUT"
+        ? operation === "download"
+          ? "MEDIA_DOWNLOAD_TIMEOUT"
+          : "MEDIA_TIMEOUT"
         : reason === "INVALID_FILE"
           ? "MEDIA_FORMAT_UNSUPPORTED"
           : "MEDIA_UNAVAILABLE";
@@ -53,7 +56,9 @@ function failure(operation: MediaOperation, reason: string, providerStatus?: num
     : reason === "RATE_LIMITED"
       ? "File uploads are busy. Please wait a moment and try again."
       : reason === "TIMEOUT"
-        ? "The file upload took too long. Check your connection and try again."
+        ? operation === "download"
+          ? "The private file took too long to open. Please retry."
+          : "The file upload took too long. Check your connection and try again."
         : reason === "INVALID_FILE"
           ? "This file could not be processed. Choose another JPEG, PNG, PDF or MP4 file."
           : operation === "download"
@@ -101,12 +106,14 @@ function providerFailure(operation: MediaOperation, status: number, payload: unk
 }
 async function sendCloud(url: string, operation: MediaOperation, options: RequestInit) {
   let response: Response;
+  const deadline = AbortSignal.timeout(operation === "download" ? 60000 : 20000);
   try {
-    response = await fetch(url, { ...options, signal: AbortSignal.timeout(20000) });
+    response = await fetch(url, { ...options, signal: deadline });
   } catch (error) {
     throw failure(
       operation,
-      error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)
+      deadline.aborted ||
+        (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name))
         ? "TIMEOUT"
         : "NETWORK_ERROR",
     );
@@ -196,29 +203,30 @@ export async function readMedia(key: string): Promise<Buffer> {
       JSON.parse(Buffer.from(key.slice(prefix.length), "base64url").toString()),
     );
     const c = credentials("download");
-    const params = {
-      public_id: asset.id,
-      format: asset.format,
+    // Keep the signed delivery URL on the server. Browsers receive only the
+    // authenticated app response, never a reusable Cloudinary capability URL.
+    const url = cloudinary.url(asset.id, {
+      cloud_name: c.cloud,
+      api_secret: c.secret,
+      secure: true,
+      sign_url: true,
+      analytics: false,
+      resource_type: asset.resource,
       type: "authenticated",
-      timestamp: String(Math.floor(Date.now() / 1000)),
-      expires_at: String(Math.floor(Date.now() / 1000) + 60),
-    };
-    const query = new URLSearchParams({
-      ...params,
-      api_key: c.key,
-      signature: sign(params, c.secret),
+      ...(asset.resource === "raw" ? {} : { format: asset.format }),
     });
-    const response = await sendCloud(
-      `https://api.cloudinary.com/v1_1/${encodeURIComponent(c.cloud)}/${asset.resource}/download?${query}`,
-      "download",
-      {},
-    );
+    const response = await sendCloud(url, "download", {});
     if (!response.ok)
       throw providerFailure("download", response.status, await response.json().catch(() => null));
     try {
       return Buffer.from(await response.arrayBuffer());
-    } catch {
-      throw failure("download", "NETWORK_ERROR");
+    } catch (error) {
+      throw failure(
+        "download",
+        error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)
+          ? "TIMEOUT"
+          : "NETWORK_ERROR",
+      );
     }
   }
   if (

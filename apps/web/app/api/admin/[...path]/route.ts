@@ -20,8 +20,8 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
   const privateMedia =
     route.startsWith("verifications/documents/") || route.startsWith("produce-photos/");
   const requestId = randomUUID();
-  // The API's storage request can take 20s; allow it to return its precise error.
-  const deadline = AbortSignal.timeout(privateMedia ? 35000 : 15000);
+  // The API's private download can take 60s; allow it to return its precise error.
+  const deadline = AbortSignal.timeout(privateMedia ? 75000 : 15000);
   const deviceId = req.cookies.get("ll_admin_device")?.value || randomUUID();
   const access = req.cookies.get("ll_admin_access")?.value;
   let body: Record<string, unknown> | undefined;

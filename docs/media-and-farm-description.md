@@ -17,7 +17,7 @@ Keep all credentials server-side. Restart the API after configuration. No unsign
 
 Apply the additive migration with `pnpm --filter @leetlogic/database exec prisma migrate deploy` and generate/build the database package if setting up a new checkout.
 
-All assets are uploaded with Cloudinary `authenticated` delivery. The server signs short-lived download requests only after the existing owner/public-listing or staff authorization checks. No reusable Cloudinary signed URL or API secret is returned to the app. Existing local references remain readable even after switching providers. A Cloudinary upload is deleted if saving its database reference fails. Listing photos retain checksums; private identity documents retain checksums and audit logging. Farm evidence remains private to the verification review.
+All assets are uploaded with Cloudinary `authenticated` delivery. The server fetches signed authenticated Cloudinary delivery URLs only after the existing owner/public-listing or staff authorization checks. Those provider URLs stay server-side; the browser receives bytes through the authenticated app endpoint. Admin document links still expire and require an authorized staff session. No reusable Cloudinary signed URL or API secret is returned to the app. Existing local references remain readable even after switching providers. A Cloudinary upload is deleted if saving its database reference fails. Listing photos retain checksums; private identity documents retain checksums and audit logging. Farm evidence remains private to the verification review.
 
 Farm evidence requires at least one successfully uploaded JPEG/PNG photo or MP4/MOV video before continuing or submitting. Supporting notes and PDFs do not satisfy this requirement. The mobile app restores progress from saved media, and the server rejects note-only and caller-supplied object-key bypasses. Identity documents may still use PDF.
 
@@ -48,3 +48,9 @@ Before enabling recording, obtain a free hosted service with explicit commercial
 ## Checks
 
 Storage protocol tests mock Cloudinary, verifying authenticated uploads, signed expiry, deletion, backward-compatible reads, traversal rejection, and no local fallback. Admin integration checks private image/PDF/video access, identity-video rejection, voice gating, description authentication, submission, and review. Test scripts force local media storage to avoid uploading fixtures to real Cloudinary accounts.
+
+## Private file viewing
+
+Private originals are read through Cloudinary's signed authenticated delivery path using its official server SDK. The Upload API `/download` path was observed accepting an image request but stalling while transferring its body; it is no longer used for viewing. The existing 3.3 MB farm JPEG was successfully retrieved through signed delivery in approximately five seconds during investigation. Images, videos and raw PDFs retain their original format. Provider URLs and signing secrets are never exposed to the browser.
+
+Storage downloads have a 60-second deadline; the admin proxy allows 75 seconds so it can preserve precise backend errors. Other admin requests retain their 15-second deadline. Proxy timeouts, connection failures and malformed responses have distinct error codes and request IDs. Logs omit signed query strings, cookies, tokens and upstream response bodies.

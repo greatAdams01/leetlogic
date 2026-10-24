@@ -275,7 +275,6 @@ export function Otp() {
       await AsyncStorage.setItem(accountRoleKey(user.id), a.role);
       await a.changeLocale(a.locale);
       a.reset(a.role === "SELLER" ? "seller" : "home");
-      a.notify("Phone verified");
     } catch (e) {
       setError(a.error(e));
     } finally {

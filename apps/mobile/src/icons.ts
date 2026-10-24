@@ -1,4 +1,5 @@
 export const icons = {
+  searchActive: require("../assets/figma/search-active.svg"),
   phoneBack: require("../assets/figma/58d8f.svg"),
   otpBack: require("../assets/figma/3b9d9.svg"),
   nigeriaFlag: require("../assets/figma/b355f.svg"),

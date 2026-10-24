@@ -25,7 +25,7 @@ describe("admin private media proxy", () => {
       );
     vi.stubGlobal("fetch", fetcher);
     const response = await get();
-    expect(timeout).toHaveBeenCalledWith(35000);
+    expect(timeout).toHaveBeenCalledWith(75000);
     expect(fetcher.mock.calls[0]![1].headers.Authorization).toBe("Bearer private-session");
     expect(response.headers.get("content-type")).toBe("image/jpeg");
     expect(response.headers.get("cache-control")).toBe("private, no-store");

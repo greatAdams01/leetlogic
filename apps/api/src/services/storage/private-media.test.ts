@@ -44,7 +44,7 @@ describe("private Cloudinary media", () => {
     }
     expect(fetcher.mock.calls[1]![0]).toContain("/video/upload");
   });
-  it("retrieves private media through a short-lived signed download and supports cleanup", async () => {
+  it("retrieves authenticated originals through server-only signed delivery and supports cleanup", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(
@@ -56,12 +56,54 @@ describe("private Cloudinary media", () => {
     const key = await storeMedia(Buffer.from("original"), "image/png", "unused");
     expect((await readMedia(key)).toString()).toBe("original");
     const url = new URL(fetcher.mock.calls[1]![0]);
-    expect(url.searchParams.get("type")).toBe("authenticated");
-    expect(
-      Number(url.searchParams.get("expires_at")) - Number(url.searchParams.get("timestamp")),
-    ).toBe(60);
+    expect(url.origin).toBe("https://res.cloudinary.com");
+    expect(url.pathname).toMatch(
+      /^\/test-cloud\/image\/authenticated\/s--[A-Za-z0-9_-]+--\/v1\/leetlogic\/photo.png$/,
+    );
+    expect(url.search).toBe("");
+    expect(url.toString()).not.toContain("test-key");
+    expect(url.toString()).not.toContain("test-secret");
     await deleteMedia(key);
     expect(fetcher.mock.calls[2]![0]).toContain("/image/destroy");
+  });
+  it("signs video and raw document delivery without changing formats or exposing provider URLs", async () => {
+    const fetcher = vi.fn().mockImplementation(async () => new Response("private bytes"));
+    vi.stubGlobal("fetch", fetcher);
+    for (const asset of [
+      { id: "leetlogic/video", resource: "video", format: "mp4" },
+      { id: "leetlogic/document.pdf", resource: "raw", format: "pdf" },
+    ]) {
+      const key = "cloudinary:" + Buffer.from(JSON.stringify(asset)).toString("base64url");
+      await readMedia(key);
+      const url = new URL(fetcher.mock.calls.at(-1)![0]);
+      expect(url.origin).toBe("https://res.cloudinary.com");
+      expect(url.pathname).toContain(`/${asset.resource}/authenticated/s--`);
+      expect(url.pathname).toContain(
+        asset.resource === "raw" ? "/leetlogic/document.pdf" : "/leetlogic/video.mp4",
+      );
+      expect(url.pathname).not.toContain(".pdf.pdf");
+      expect(url.search).toBe("");
+    }
+  });
+  it("reports interrupted private downloads as file timeouts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => {
+          throw new DOMException("Aborted", "AbortError");
+        },
+      }),
+    );
+    const key =
+      "cloudinary:" +
+      Buffer.from(
+        JSON.stringify({ id: "leetlogic/photo", resource: "image", format: "jpg" }),
+      ).toString("base64url");
+    await expect(readMedia(key)).rejects.toMatchObject({
+      code: "MEDIA_DOWNLOAD_TIMEOUT",
+      diagnostics: { operation: "download", reason: "TIMEOUT" },
+    });
   });
   it("identifies rejected API keys without exposing the provider response", async () => {
     vi.stubGlobal(

@@ -3603,5 +3603,138 @@
     "Je shafin gida",
     "Gaa na ibe mbụ",
     "Lọ sí ojú ìwé àkọ́kọ́"
+  ],
+  [
+    "Menu",
+    "Menu",
+    "Zaɓuɓɓuka",
+    "Nchịkọta",
+    "Àkójọ aṣàyàn"
+  ],
+  [
+    "Verified",
+    "Verified",
+    "An tabbatar",
+    "E nyochala",
+    "A ti jẹ́rìí"
+  ],
+  [
+    "Not verified",
+    "Never verify",
+    "Ba a tabbatar ba",
+    "A nyochabeghị",
+    "A kò tíì jẹ́rìí"
+  ],
+  [
+    "Phone number verified",
+    "Phone number don verify",
+    "An tabbatar da lambar waya",
+    "E nyochala nọmba ekwentị",
+    "A ti jẹ́rìí nọ́mbà fóònù"
+  ],
+  [
+    "Phone number not verified",
+    "Phone number never verify",
+    "Ba a tabbatar da lambar waya ba",
+    "A nyochabeghị nọmba ekwentị",
+    "A kò tíì jẹ́rìí nọ́mbà fóònù"
+  ],
+  [
+    "Manage your produce, listings and earnings.",
+    "Manage your produce, listings and money wey you earn.",
+    "Sarrafa amfanin gonarka, tallace-tallace da kuɗin shiga.",
+    "Jikwaa ihe ubi gị, ihe ị depụtara na ego ị nwetara.",
+    "Ṣàkóso ohun ọ̀gbìn rẹ, àwọn ohun tí o tà àti owó tí o rí gbà."
+  ],
+  [
+    "Application under review",
+    "Dem dey review your application",
+    "Ana duba aikace-aikacen",
+    "A na-enyocha arịrịọ gị",
+    "A ń ṣàyẹ̀wò ìbéèrè"
+  ],
+  [
+    "Your seller application is awaiting approval. You can keep shopping while we review it.",
+    "Your seller application dey wait for approval. You fit continue to shop as we dey review am.",
+    "Aikace-aikacen mai sayarwa yana jiran amincewa. Za ka iya ci gaba da sayayya yayin da muke dubawa.",
+    "Arịrịọ gị ịbụ onye na-ere ihe na-echere nkwenye. Ị nwere ike ịga n'ihu ịzụ ihe ka anyị na-enyocha ya.",
+    "Ìbéèrè rẹ láti jẹ́ olùtajà ń dúró de ìfọwọ́sí. O lè máa rajà bí a ṣe ń ṣàyẹ̀wò rẹ̀."
+  ],
+  [
+    "View application",
+    "See application",
+    "Duba aikace-aikace",
+    "Lee arịrịọ",
+    "Wo ìbéèrè"
+  ],
+  [
+    "Application not approved",
+    "Dem no approve application",
+    "Ba a amince da aikace-aikacen ba",
+    "A kwadoghị arịrịọ",
+    "A kò fọwọ́ sí ìbéèrè"
+  ],
+  [
+    "Review the decision and contact support for help with your application.",
+    "Check the decision and contact support for help with your application.",
+    "Duba hukuncin sannan tuntuɓi tallafi don taimako kan aikace-aikacenka.",
+    "Lelee mkpebi ahụ ma kpọtụrụ ndị enyemaka maka arịrịọ gị.",
+    "Ṣàyẹ̀wò ìpinnu náà kí o sì kàn sí ìrànlọ́wọ́ nípa ìbéèrè rẹ."
+  ],
+  [
+    "View decision",
+    "See decision",
+    "Duba hukunci",
+    "Lee mkpebi",
+    "Wo ìpinnu"
+  ],
+  [
+    "Changes requested",
+    "Dem request changes",
+    "An nemi gyare-gyare",
+    "A rịọrọ mgbanwe",
+    "A béèrè àtúnṣe"
+  ],
+  [
+    "Update your application using the review feedback, then submit it again.",
+    "Use the review feedback update your application, then submit am again.",
+    "Sabunta aikace-aikacenka bisa bayanin dubawa, sannan sake miƙawa.",
+    "Jiri nzaghachi nyocha melite arịrịọ gị, wee ziga ya ọzọ.",
+    "Ṣe àtúnṣe ìbéèrè rẹ pẹ̀lú àbá àyẹ̀wò náà, kí o sì fi ránṣẹ́ lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "Update application",
+    "Update application",
+    "Sabunta aikace-aikace",
+    "Melite arịrịọ",
+    "Ṣe àtúnṣe ìbéèrè"
+  ],
+  [
+    "Complete your seller profile",
+    "Complete your seller profile",
+    "Kammala bayanan mai sayarwa",
+    "Mechaa profaịlụ onye na-ere ihe gị",
+    "Parí àkọsílẹ̀ olùtajà rẹ"
+  ],
+  [
+    "Add your farm details, verify your identity and upload farm evidence to finish your application.",
+    "Add your farm details, verify who you be and upload farm proof to finish your application.",
+    "Ƙara bayanan gonarka, tabbatar da shaidarka kuma loda hujjar gona don kammala aikace-aikacenka.",
+    "Tinye nkọwa ugbo gị, nyochaa njirimara gị ma bulite ihe akaebe ugbo iji mechaa arịrịọ gị.",
+    "Fi àlàyé oko rẹ kún un, jẹ́rìí ìdánimọ̀ rẹ kí o sì gbé ẹ̀rí oko sókè láti parí ìbéèrè rẹ."
+  ],
+  [
+    "Continue application",
+    "Continue application",
+    "Ci gaba da aikace-aikace",
+    "Gaa n'ihu n'arịrịọ",
+    "Tẹ̀síwájú nínú ìbéèrè"
+  ],
+  [
+    "Open your seller profile to view its current status.",
+    "Open your seller profile to see the current status.",
+    "Buɗe bayanan mai sayarwa don ganin matsayin yanzu.",
+    "Mepee profaịlụ onye na-ere ihe gị iji lee ọnọdụ ya ugbu a.",
+    "Ṣí àkọsílẹ̀ olùtajà rẹ láti wo ipò rẹ̀ lọ́wọ́lọ́wọ́."
   ]
 ]

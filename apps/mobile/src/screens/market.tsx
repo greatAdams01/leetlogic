@@ -42,36 +42,6 @@ export function ListingPhoto({ item, height = 200 }: { item: Listing; height?: n
     </View>
   );
 }
-export function Navigation() {
-  const a = useApp();
-  const tabs = [
-    { name: "home", label: "Home", icon: "home", active: "homeActive" },
-    { name: "search", label: "Search", icon: "search", active: "search" },
-    { name: "orders", label: "Orders", icon: "orders", active: "ordersActive" },
-    { name: "profile", label: "Profile", icon: "profile", active: "profileActive" },
-  ] as const;
-  return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 10 }}>
-      {tabs.map((t) => (
-        <Pressable
-          key={t.name}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: a.route.name === t.name }}
-          onPress={() => a.reset(t.name)}
-          style={[
-            { alignItems: "center", gap: 4, padding: 8, borderRadius: 20 },
-            a.route.name === t.name && { backgroundColor: colors.green, flexDirection: "row" },
-          ]}
-        >
-          <Icon name={a.route.name === t.name ? t.active : t.icon} size={20} />
-          <Label style={{ fontSize: 13, color: a.route.name === t.name ? "white" : colors.muted }}>
-            {t.label}
-          </Label>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
 export function Market() {
   const a = useApp(),
     [search, setSearch] = useState(""),
@@ -84,7 +54,7 @@ export function Market() {
       items: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
     }>("/marketplace/categories");
   return (
-    <Page footer={<Navigation />} loading={r.loading}>
+    <Page loading={r.loading}>
       <View style={s.between}>
         <View style={s.row}>
           <Icon name="leaf" size={32} />
@@ -310,7 +280,7 @@ export function Orders() {
         : !["DELIVERED", "COMPLETED", "CANCELLED", "REFUNDED"].includes(i.status)),
   );
   return (
-    <Page footer={<Navigation />} loading={r.loading}>
+    <Page loading={r.loading}>
       <Label muted>{a.role === "SELLER" ? "SELLER PORTAL" : "BUYER PORTAL"}</Label>
       <Heading>{a.t("orders.title")}</Heading>
       <View style={s.row}>

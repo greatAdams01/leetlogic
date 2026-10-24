@@ -1,4 +1,5 @@
 "use client";
+import { VerificationReview, verificationLabel } from "./verification-review";
 import { MoneyOperations } from "./money-operations";
 import { CustomerDelivery } from "../customer-delivery";
 import Link from "next/link";
@@ -797,7 +798,9 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   >
                     <option value="ALL">All statuses</option>
                     {statuses[resource]!.map((value) => (
-                      <option key={value}>{value}</option>
+                      <option key={value} value={value}>
+                        {resource === "verification" ? verificationLabel(value) : value}
+                      </option>
                     ))}
                   </select>
                 )}
@@ -807,10 +810,12 @@ function Workspace({ route, title }: { route: string; title: string }) {
                 <table>
                   <thead>
                     <tr>
-                      <th>Record</th>
-                      <th>Status / action</th>
-                      <th>Details</th>
-                      <th>Created</th>
+                      <th>{resource === "verification" ? "Farm / applicant" : "Record"}</th>
+                      <th>
+                        {resource === "verification" ? "Application status" : "Status / action"}
+                      </th>
+                      <th>{resource === "verification" ? "Farm details" : "Details"}</th>
+                      <th>{resource === "verification" ? "Submitted" : "Created"}</th>
                       <th>Review</th>
                     </tr>
                   </thead>
@@ -819,11 +824,23 @@ function Workspace({ route, title }: { route: string; title: string }) {
                       <tr key={row.id}>
                         <td>
                           <strong>{rowLabel(row)}</strong>
-                          <small>{row.email || row.phoneE164 || row.id}</small>
+                          <small>
+                            {resource === "verification"
+                              ? [
+                                  row.farmerProfile?.user?.profile?.fullName ||
+                                    row.farmerProfile?.user?.profile?.displayName,
+                                  row.farmerProfile?.user?.phoneE164,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ") || "Applicant details not provided"
+                              : row.email || row.phoneE164 || row.id}
+                          </small>
                         </td>
                         <td>
                           <span className="live-badge">
-                            {row.status ||
+                            {(resource === "verification"
+                              ? verificationLabel(row.status)
+                              : row.status) ||
                               row.action ||
                               (row.balanced === undefined
                                 ? "—"
@@ -833,18 +850,36 @@ function Workspace({ route, title }: { route: string; title: string }) {
                           </span>
                         </td>
                         <td>
-                          {row.totalMinor
-                            ? money(row.totalMinor)
-                            : row.amountMinor
-                              ? money(row.amountMinor)
-                              : row.locale ||
-                                row.priority ||
-                                row.severity ||
-                                row.roleCode ||
-                                row.farmerProfile?.user?.profile?.fullName ||
-                                "—"}
+                          {resource === "verification" ? (
+                            <>
+                              {row.farmerProfile?.farmType || "Farmer type not provided"}
+                              <small>
+                                {row._count?.documents || 0} documents · {row._count?.evidence || 0}{" "}
+                                evidence entries
+                              </small>
+                            </>
+                          ) : row.totalMinor ? (
+                            money(row.totalMinor)
+                          ) : row.amountMinor ? (
+                            money(row.amountMinor)
+                          ) : (
+                            row.locale ||
+                            row.priority ||
+                            row.severity ||
+                            row.roleCode ||
+                            row.farmerProfile?.user?.profile?.fullName ||
+                            "—"
+                          )}
                         </td>
-                        <td>{row.createdAt ? new Date(row.createdAt).toLocaleString() : "—"}</td>
+                        <td>
+                          {resource === "verification"
+                            ? row.submittedAt
+                              ? new Date(row.submittedAt).toLocaleString()
+                              : "Not submitted"
+                            : row.createdAt
+                              ? new Date(row.createdAt).toLocaleString()
+                              : "—"}
+                        </td>
                         <td>
                           <button className="secondary" onClick={() => void review(row)}>
                             Review →
@@ -889,22 +924,44 @@ function Workspace({ route, title }: { route: string; title: string }) {
           {selected && (
             <section className="live-card live-detail">
               <div className="live-page-heading">
-                <h2>{rowLabel(selected)}</h2>
+                <div>
+                  <h2>{rowLabel(selected)}</h2>
+                  {resource === "verification" && (
+                    <p>Review the applicant, farm details and supporting evidence.</p>
+                  )}
+                </div>
                 <button className="secondary" onClick={() => setSelected(undefined)}>
                   Close review
                 </button>
               </div>
-              <dl>
-                {Object.entries(selected)
-                  .filter(([, value]) => value !== null && typeof value !== "object")
-                  .map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{key.replace(/([A-Z])/g, " $1")}</dt>
-                      <dd>{String(value)}</dd>
-                    </div>
-                  ))}
-              </dl>
-              {selected.farmerProfile && (
+              {resource === "verification" ? (
+                <VerificationReview
+                  record={selected}
+                  busy={busy}
+                  canDecide={!!can("verification.decide")}
+                  reviewerName={staff?.fullName}
+                  onRefresh={() => review(selected)}
+                  onDecision={(decision) =>
+                    open(
+                      `${decision === "approve" ? "Approve" : "Reject"} verification`,
+                      `verifications/${selected.id}/${decision}`,
+                      [reason],
+                    )
+                  }
+                />
+              ) : (
+                <dl>
+                  {Object.entries(selected)
+                    .filter(([, value]) => value !== null && typeof value !== "object")
+                    .map(([key, value]) => (
+                      <div key={key}>
+                        <dt>{key.replace(/([A-Z])/g, " $1")}</dt>
+                        <dd>{String(value)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              )}
+              {resource !== "verification" && selected.farmerProfile && (
                 <div className="live-record-context">
                   <h3>{selected.farmerProfile.farmName}</h3>
                   <p>
@@ -923,23 +980,25 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   {selected.roles.map((assignment: Row) => assignment.role?.name).join(", ")}
                 </p>
               )}
-              {selected.reviews?.map((review: Row) => (
-                <article key={review.id}>
-                  <strong>{review.decision}</strong>
-                  <p>{review.reason}</p>
-                  {review.internalNotes && <p>Internal note: {review.internalNotes}</p>}
-                </article>
-              ))}
-              {selected.evidence?.map((evidence: Row) => (
-                <div key={evidence.id}>
-                  {evidence.note && <p>Farm evidence: {evidence.note}</p>}
-                  {evidence.readUrl && (
-                    <a href={evidence.readUrl} target="_blank" rel="noreferrer">
-                      Open private farm evidence
-                    </a>
-                  )}
-                </div>
-              ))}
+              {resource !== "verification" &&
+                selected.reviews?.map((review: Row) => (
+                  <article key={review.id}>
+                    <strong>{review.decision}</strong>
+                    <p>{review.reason}</p>
+                    {review.internalNotes && <p>Internal note: {review.internalNotes}</p>}
+                  </article>
+                ))}
+              {resource !== "verification" &&
+                selected.evidence?.map((evidence: Row) => (
+                  <div key={evidence.id}>
+                    {evidence.note && <p>Farm evidence: {evidence.note}</p>}
+                    {evidence.readUrl && (
+                      <a href={evidence.readUrl} target="_blank" rel="noreferrer">
+                        Open private farm evidence
+                      </a>
+                    )}
+                  </div>
+                ))}
               {resource === "listings" &&
                 selected.media?.map(
                   (media: Row) =>
@@ -961,28 +1020,15 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   )}
                 </pre>
               )}
-              {resource === "verification" && selected.identityRequired && (
-                <section aria-label="Identity verification">
-                  <h3>Dojah identity verification</h3>
-                  <p>
-                    {selected.identity
-                      ? `${selected.identity.status} · ${selected.identity.mode}`
-                      : "Not started"}
+              {resource !== "verification" &&
+                selected.documents?.map((document: Row) => (
+                  <p key={document.id}>
+                    <a href={document.readUrl} target="_blank" rel="noreferrer">
+                      Open {document.documentType || "verification document"} (link expires in 5
+                      minutes)
+                    </a>
                   </p>
-                  <p>Identity checks are separate from approval of the farm and its evidence.</p>
-                  {selected.identity?.mode === "sandbox" && (
-                    <p>Sandbox result: this is not a real identity check.</p>
-                  )}
-                </section>
-              )}
-              {selected.documents?.map((document: Row) => (
-                <p key={document.id}>
-                  <a href={document.readUrl} target="_blank" rel="noreferrer">
-                    Open {document.documentType || "verification document"} (link expires in 5
-                    minutes)
-                  </a>
-                </p>
-              ))}
+                ))}
               {selected.messages && (
                 <div className="live-messages">
                   <h3>Conversation</h3>
@@ -1002,31 +1048,6 @@ function Workspace({ route, title }: { route: string; title: string }) {
                 </div>
               )}
               <div className="live-actions">
-                {resource === "verification" &&
-                  can("verification.decide") &&
-                  ["SUBMITTED", "UNDER_REVIEW"].includes(selected.status) && (
-                    <>
-                      {["approve", "reject"].map((decision) => (
-                        <button
-                          key={decision}
-                          disabled={
-                            decision === "approve" &&
-                            selected.identityRequired &&
-                            !selected.identityPassed
-                          }
-                          onClick={() =>
-                            open(
-                              `${decision === "approve" ? "Approve" : "Reject"} verification`,
-                              `verifications/${selected.id}/${decision}`,
-                              [reason],
-                            )
-                          }
-                        >
-                          {decision === "approve" ? "Approve" : "Reject"}
-                        </button>
-                      ))}
-                    </>
-                  )}
                 {resource === "users" && can("users.manage") && (
                   <button
                     onClick={() =>

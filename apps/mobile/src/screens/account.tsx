@@ -1,31 +1,122 @@
 import { LocalizedText as Text } from "../localization";
-import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Pressable, AppState } from "react-native";
 import { useApp, useResource } from "../state";
 import { Page, Heading, Label, Field, Button, Card, Notice, Icon, s } from "../components/ui";
 import { Select } from "../components/Select";
 import { changeState, localGovernments, nigeriaStates } from "../lib/locations";
 import { api } from "../lib/api";
-import { Navigation } from "./market";
+import { sellerMenuState } from "../lib/seller-menu";
+import { colors } from "../components/ui";
 export function Profile() {
   const a = useApp(),
     [error, setError] = useState("");
+  const state = sellerMenuState(a.user?.farmerProfile, a.role);
+  // Refresh on entering Menu, returning to the foreground and while approval is pending.
+  // Keep the current account visible during refresh; never display a guessed status.
+  useEffect(() => {
+    let active = true,
+      running = false;
+    const refresh = async () => {
+      if (!active || running || AppState.currentState !== "active") return;
+      running = true;
+      try {
+        await a.loadUser();
+        if (active) setError("");
+      } catch (e) {
+        if (active) setError(a.error(e));
+      } finally {
+        running = false;
+      }
+    };
+    void refresh();
+    const sub = AppState.addEventListener("change", (value) => {
+      if (value === "active") void refresh();
+    });
+    const timer = state === "pending" ? setInterval(() => void refresh(), 30000) : undefined;
+    return () => {
+      active = false;
+      sub.remove();
+      if (timer) clearInterval(timer);
+    };
+  }, [a.loadUser, state]);
+  const phoneVerified = !!a.user?.phoneVerifiedAt;
+  const seller = state !== "buyer";
   return (
-    <Page title="My account" footer={<Navigation />}>
-      <Notice text="Phone verified" success />
+    <Page title="Menu">
       <Heading>
         {a.user?.profile?.fullName || a.user?.profile?.displayName || "Your account"}
       </Heading>
-      <Label muted>{a.user?.phoneE164}</Label>
+      <View style={[s.row, { flexWrap: "wrap", gap: 8 }]}>
+        <Label muted>{a.user?.phoneE164}</Label>
+        <View
+          accessible
+          accessibilityLabel={a.ui(
+            phoneVerified ? "Phone number verified" : "Phone number not verified",
+          )}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+        >
+          {phoneVerified && <Text style={{ color: colors.green, fontFamily: "NotoBold" }}>✓</Text>}
+          <Label style={{ fontSize: 12, color: phoneVerified ? colors.green : colors.muted }}>
+            {phoneVerified ? "Verified" : "Not verified"}
+          </Label>
+        </View>
+      </View>
       <Card>
-        <Heading>Start selling</Heading>
-        <Label>
-          Use the same account to sell produce. Your farmer profile must be approved before listing.
-        </Label>
-        <Button
-          title={a.user?.farmerProfile ? "Seller profile" : "Start selling"}
-          onPress={() => a.go("seller")}
-        />
+        {state === "approved" ? (
+          <>
+            <Label style={{ color: colors.green, fontFamily: "NotoBold" }}>Verified farmer</Label>
+            <Heading>{a.user?.farmerProfile?.farmName}</Heading>
+            <Label>Manage your produce, listings and earnings.</Label>
+            <Button title="Create listing" onPress={() => a.go("sell")} />
+          </>
+        ) : state === "pending" ? (
+          <>
+            <Heading>Application under review</Heading>
+            <Label>
+              Your seller application is awaiting approval. You can keep shopping while we review
+              it.
+            </Label>
+            <Button title="View application" secondary onPress={() => a.go("seller")} />
+          </>
+        ) : state === "rejected" ? (
+          <>
+            <Heading>Application not approved</Heading>
+            <Label>Review the decision and contact support for help with your application.</Label>
+            <Button title="View decision" secondary onPress={() => a.go("seller")} />
+            <Button title="Help and support" secondary onPress={() => a.go("help")} />
+          </>
+        ) : state === "changes" ? (
+          <>
+            <Heading>Changes requested</Heading>
+            <Label>Update your application using the review feedback, then submit it again.</Label>
+            <Button title="Update application" onPress={() => a.go("seller")} />
+          </>
+        ) : state === "incomplete" ? (
+          <>
+            <Heading>Complete your seller profile</Heading>
+            <Label>
+              Add your farm details, verify your identity and upload farm evidence to finish your
+              application.
+            </Label>
+            <Button title="Continue application" onPress={() => a.go("seller")} />
+          </>
+        ) : state === "buyer" ? (
+          <>
+            <Heading>Start selling</Heading>
+            <Label>
+              Use the same account to sell produce. Your farmer profile must be approved before
+              listing.
+            </Label>
+            <Button title="Start selling" onPress={() => a.go("seller")} />
+          </>
+        ) : (
+          <>
+            <Heading>Seller profile</Heading>
+            <Label>Open your seller profile to view its current status.</Label>
+            <Button title="Seller profile" secondary onPress={() => a.go("seller")} />
+          </>
+        )}
       </Card>
       <Text style={s.sectionTitle}>Settings</Text>
       <Card>
@@ -37,11 +128,10 @@ export function Profile() {
           },
           { label: "Personal details", sub: "Name, display name and email", route: "details" },
           {
-            label: a.role === "SELLER" ? "Farm and pickup locations" : "Delivery addresses",
-            sub:
-              a.role === "SELLER"
-                ? "Manage where you farm and where produce is collected"
-                : "Manage where your orders are delivered",
+            label: seller ? "Farm and pickup locations" : "Delivery addresses",
+            sub: seller
+              ? "Manage where you farm and where produce is collected"
+              : "Manage where your orders are delivered",
             route: "addresses",
           },
           {
@@ -51,22 +141,26 @@ export function Profile() {
           },
           { label: "My listings", sub: "Produce and moderation status", route: "myListings" },
           { label: "Help and support", sub: "Frequently asked questions", route: "help" },
-        ].map((item) => (
-          <Pressable
-            key={item.label}
-            accessibilityRole="button"
-            onPress={() => (item.route === "language" ? a.openLanguage() : a.go(item.route as any))}
-            style={[s.between, { paddingVertical: 10 }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Label style={{ fontFamily: "NotoBold" }}>{item.label}</Label>
-              <Label muted style={s.small}>
-                {item.sub}
-              </Label>
-            </View>
-            <Icon name="chevron" size={20} />
-          </Pressable>
-        ))}
+        ]
+          .filter((item) => item.route !== "myListings" || state === "approved")
+          .map((item) => (
+            <Pressable
+              key={item.label}
+              accessibilityRole="button"
+              onPress={() =>
+                item.route === "language" ? a.openLanguage() : a.go(item.route as any)
+              }
+              style={[s.between, { paddingVertical: 10 }]}
+            >
+              <View style={{ flex: 1 }}>
+                <Label style={{ fontFamily: "NotoBold" }}>{item.label}</Label>
+                <Label muted style={s.small}>
+                  {item.sub}
+                </Label>
+              </View>
+              <Icon name="chevron" size={20} />
+            </Pressable>
+          ))}
       </Card>
       <Button
         title={a.t("auth.signout")}
@@ -146,7 +240,7 @@ export function Addresses() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [saved, setSaved] = useState(false);
-  const seller = a.role === "SELLER";
+  const seller = a.role === "SELLER" || !!a.user?.farmerProfile;
   return (
     <Page title={seller ? "Farm and pickup locations" : "Saved addresses"} back={a.back}>
       <Heading>

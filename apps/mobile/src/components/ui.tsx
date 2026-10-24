@@ -67,12 +67,24 @@ export function Label({
   children,
   muted = false,
   style,
+  numberOfLines,
+  adjustsFontSizeToFit,
 }: {
   children: React.ReactNode;
   muted?: boolean;
   style?: any;
+  numberOfLines?: number;
+  adjustsFontSizeToFit?: boolean;
 }) {
-  return <Text style={[s.text, muted && { color: colors.muted }, style]}>{children}</Text>;
+  return (
+    <Text
+      numberOfLines={numberOfLines}
+      adjustsFontSizeToFit={adjustsFontSizeToFit}
+      style={[s.text, muted && { color: colors.muted }, style]}
+    >
+      {children}
+    </Text>
+  );
 }
 export function Heading({ children }: { children: React.ReactNode }) {
   return (

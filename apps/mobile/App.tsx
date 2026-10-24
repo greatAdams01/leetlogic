@@ -15,6 +15,7 @@ import { Delivery, Quotes } from "./src/screens/delivery";
 import { Sell, Review, MyListings } from "./src/screens/sell";
 import { Profile, Details, Addresses, Notifications, Help, Seller } from "./src/screens/account";
 import { colors } from "./src/components/ui";
+import { Navigation } from "./src/components/navigation";
 function Router() {
   const a = useApp();
   if (!a.ready) return <Startup />;
@@ -63,7 +64,12 @@ function Router() {
           ["phone", "otp", "role", "language", "intro"].includes(a.route.name) ? "light" : "dark"
         }
       />
-      <Screen key={`${a.route.name}:${a.route.id || ""}`} />
+      <View style={{ flex: 1 }}>
+        <Screen key={`${a.route.name}:${a.route.id || ""}`} />
+      </View>
+      {Screen !== Phone && ["home", "search", "orders", "profile"].includes(a.route.name) && (
+        <Navigation />
+      )}
     </>
   );
 }

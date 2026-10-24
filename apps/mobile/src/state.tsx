@@ -34,7 +34,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const back = useCallback(() => setStack((v) => (v.length > 1 ? v.slice(0, -1) : v)), []);
   const loadUser = useCallback(async () => {
     const r = await api<{ user: Customer }>("/me");
-    setUser(r.user);
+    if (authHeaders().Authorization) setUser(r.user);
     return r.user;
   }, []);
   useEffect(() => {

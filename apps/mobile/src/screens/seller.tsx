@@ -402,6 +402,9 @@ export function Seller() {
           ) : status === "REJECTED" ? (
             <>
               <Heading>Your application was not approved.</Heading>
+              {!!verification?.reviews.at(-1)?.reason && (
+                <Label>{verification.reviews.at(-1)!.reason}</Label>
+              )}
               <Label>Please contact support about your application.</Label>
               <Button title="Help and support" secondary onPress={() => a.go("help")} />
             </>
