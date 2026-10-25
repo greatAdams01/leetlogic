@@ -20,6 +20,12 @@ export const draftSchema = z.object({
   unitPriceMinor: z.string().regex(/^[1-9]\d{0,11}$/),
   addressId: z.string().uuid(),
   photoId: z.string().uuid().optional(),
+  photoIds: z
+    .array(z.string().uuid())
+    .max(4)
+    .refine((ids) => new Set(ids).size === ids.length, "Choose each photo only once")
+    .optional(),
+  shippingScope: z.enum(["LOCAL", "NATIONWIDE"]).default("NATIONWIDE"),
 });
 listingDraftRouter.get("/capabilities", (_req, res) =>
   res.json({
@@ -34,14 +40,29 @@ listingDraftRouter.get("/capabilities", (_req, res) =>
 );
 listingDraftRouter.get("/catalogue", async (req, res) => {
   const [categories, units, addresses, farmer] = await Promise.all([
-    prisma.category.findMany({ include: { translations: true } }),
+    prisma.category.findMany({ include: { translations: true }, orderBy: { sortOrder: "asc" } }),
     prisma.unit.findMany(),
     prisma.address.findMany({ where: { userId: req.auth!.sub, deletedAt: null } }),
     prisma.farmerProfile.findUnique({ where: { userId: req.auth!.sub } }),
   ]);
+  const legacy: Record<string, string> = {
+    tomatoes: "vegetables",
+    pepper: "vegetables",
+    yam: "roots-tubers",
+    garri: "processed-produce",
+    plantain: "fruits",
+    "palm-oil": "oils",
+  };
+  const categoryAliases = Object.fromEntries(
+    categories.flatMap((old) => {
+      const target = categories.find((item) => item.slug === legacy[old.slug] && item.isActive);
+      return !old.isActive && target ? [[old.id, target.id]] : [];
+    }),
+  );
   res.json(
     serialize({
-      categories,
+      categories: categories.filter((item) => item.isActive),
+      categoryAliases,
       units,
       addresses,
       primaryAddressId: farmer?.primaryAddressId,
@@ -118,15 +139,26 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
     if (!address) throw new AppError(422, "INVALID_ADDRESS", "Choose your saved farm address");
     const category = await tx.category.findUnique({ where: { id: body.categoryId } });
     const unit = await tx.unit.findUnique({ where: { code: body.unitCode } });
-    if (!category || !unit)
+    if (!category?.isActive || !unit)
       throw new AppError(422, "INVALID_CATALOGUE", "Choose a valid category and unit");
-    const photo = body.photoId
-      ? await tx.producePhoto.findFirst({
-          where: { id: body.photoId, userId: req.auth!.sub, listingId: null },
-        })
-      : null;
-    if (body.photoId && !photo)
-      throw new AppError(422, "INVALID_PHOTO", "Choose your uploaded produce photo");
+    if (!unit.allowsDecimal && !/^\d+$/.test(body.quantity))
+      throw new AppError(
+        422,
+        "WHOLE_UNIT_REQUIRED",
+        "Enter a whole quantity for this selling unit.",
+      );
+    const photoIds = body.photoIds ?? (body.photoId ? [body.photoId] : []);
+    if (!photoIds.length)
+      throw new AppError(
+        422,
+        "LISTING_PHOTO_REQUIRED",
+        "Add at least one photo of your produce before submitting.",
+      );
+    const photos = await tx.producePhoto.findMany({
+      where: { id: { in: photoIds }, userId: req.auth!.sub, listingId: null },
+    });
+    if (photos.length !== photoIds.length)
+      throw new AppError(422, "INVALID_PHOTO", "Choose your own uploaded produce photos.");
     const item = await tx.listing.create({
       data: {
         farmerProfileId: farmer.id,
@@ -138,13 +170,14 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         sourceLocale: body.sourceLocale,
         unitPriceMinor: BigInt(body.unitPriceMinor),
         availableQuantity: body.quantity,
-        shippingScope: "NATIONWIDE",
+        shippingScope: body.shippingScope,
         status: "PENDING_REVIEW",
       },
     });
-    if (photo) {
+    for (const [displayOrder, photoId] of photoIds.entries()) {
+      const photo = photos.find((row) => row.id === photoId)!;
       const attached = await tx.producePhoto.updateMany({
-        where: { id: photo.id, listingId: null },
+        where: { id: photo.id, listingId: null, userId: req.auth!.sub },
         data: { listingId: item.id },
       });
       if (!attached.count)
@@ -156,6 +189,7 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
           objectKey: `produce/${photo.id}`,
           mimeType: photo.mimeType,
           status: "READY",
+          displayOrder,
         },
       });
     }

@@ -4835,5 +4835,453 @@
     "Adadin da za ka karɓa: {amount}",
     "Ego ị ga-anata: {amount}",
     "Iye tí o máa gbà: {amount}"
+  ],
+  [
+    "Add at least one photo of your produce before submitting.",
+    "Add at least one produce photo before you submit.",
+    "Ƙara hoton amfanin gona aƙalla ɗaya kafin aikawa.",
+    "Tinye opekata mpe otu foto ihe ubi gị tupu izipu.",
+    "Fi ó kéré tán fọ́tò ọjà kan kún un kí o tó fi ránṣẹ́."
+  ],
+  [
+    "Add photo",
+    "Add photo",
+    "Ƙara hoto",
+    "Tinye foto",
+    "Fi fọ́tò kún un"
+  ],
+  [
+    "Another angle or pack size",
+    "Another side or pack size",
+    "Wani gefe ko girman kunshi",
+    "Akụkụ ọzọ ma ọ bụ nha ngwugwu",
+    "Ìhà mìíràn tàbí ìwọ̀n àpò"
+  ],
+  [
+    "Available quantity",
+    "Quantity wey dey",
+    "Adadin da ake da shi",
+    "Ọnụọgụ dị",
+    "Iye tó wà"
+  ],
+  [
+    "Buyers trust listings with 3 or more photos showing different angles and real harvest quality.",
+    "Buyers trust listing wey get 3 photos or more showing different sides and real quality.",
+    "Hotuna uku ko fiye daga ɓangarori daban-daban suna ƙara amincewar masu saye.",
+    "Foto atọ ma ọ bụ karịa na-egosi akụkụ dị iche iche na-eme ka ndị na-azụ ahịa nwee ntụkwasị obi.",
+    "Fọ́tò mẹ́ta tàbí jù bẹ́ẹ̀ lọ láti onírúurú ìhà ń jẹ́ kí olùrà ní ìgbẹ́kẹ̀lé."
+  ],
+  [
+    "Category: {category}. Required fields are marked *.",
+    "Category: {category}. You must fill fields wey get *.",
+    "Rukuni: {category}. Filayen da ake buƙata suna da *.",
+    "Ụdị: {category}. Akara * dị n'ebe ị ga-edejupụta.",
+    "Ẹ̀ka: {category}. Àwọn ààyè tí ó pọndandan ní àmì *."
+  ],
+  [
+    "Classification",
+    "Produce type",
+    "Rarrabawa",
+    "Ụdị ihe ubi",
+    "Ẹ̀ka ọjà"
+  ],
+  [
+    "Cover",
+    "Main photo",
+    "Babban hoto",
+    "Isi foto",
+    "Fọ́tò àkọ́kọ́"
+  ],
+  [
+    "Create another listing",
+    "Create another listing",
+    "Ƙirƙiri wata talla",
+    "Mepụta ndepụta ọzọ",
+    "Ṣẹ̀dá àkọsílẹ̀ ọjà mìíràn"
+  ],
+  [
+    "Delivery scope",
+    "Where you fit deliver",
+    "Yankin isarwa",
+    "Ebe a na-ebuga",
+    "Àgbègbè ìfijiṣẹ́"
+  ],
+  [
+    "Describe freshness, variety and package size.",
+    "Talk about freshness, type and pack size.",
+    "Bayyana sabo, nau'i da girman kunshi.",
+    "Kọwaa ịdị ọhụrụ, ụdị na nha ngwugwu.",
+    "Ṣàlàyé bí ó ṣe tutù, irú rẹ̀ àti ìwọ̀n àpò."
+  ],
+  [
+    "Edit photo {number}",
+    "Edit photo {number}",
+    "Gyara hoto {number}",
+    "Dezie foto {number}",
+    "Ṣàtúnṣe fọ́tò {number}"
+  ],
+  [
+    "Listing photo",
+    "Produce photo",
+    "Hoton talla",
+    "Foto ndepụta",
+    "Fọ́tò ọjà"
+  ],
+  [
+    "Local",
+    "Nearby",
+    "Na kusa",
+    "N'ime steeti",
+    "Nítòsí"
+  ],
+  [
+    "Make cover photo",
+    "Make am main photo",
+    "Sanya babban hoto",
+    "Mee ya isi foto",
+    "Ṣe é ní fọ́tò àkọ́kọ́"
+  ],
+  [
+    "Nigeria",
+    "Nigeria",
+    "Najeriya",
+    "Naịjirịa",
+    "Nàìjíríà"
+  ],
+  [
+    "No produce categories are available yet. Please try again later.",
+    "Produce categories never dey available. Try again later.",
+    "Babu rukunin amfanin gona tukuna. A sake gwadawa daga baya.",
+    "Ụdị ihe ubi adịghị ugbu a. Nwaa ọzọ ma emechaa.",
+    "Ẹ̀ka ọjà kò tíì sí. Gbìyànjú lẹ́ẹ̀kan sí i láìpẹ́."
+  ],
+  [
+    "Photo {number}",
+    "Photo {number}",
+    "Hoto {number}",
+    "Foto {number}",
+    "Fọ́tò {number}"
+  ],
+  [
+    "Price per {unit} · NGN",
+    "Price for each {unit} · NGN",
+    "Farashin kowane {unit} · NGN",
+    "Ọnụahịa kwa {unit} · NGN",
+    "Iye owó fún {unit} · NGN"
+  ],
+  [
+    "Product title",
+    "Produce name",
+    "Sunan kaya",
+    "Aha ihe ubi",
+    "Orúkọ ọjà"
+  ],
+  [
+    "Remove photo {number}",
+    "Remove photo {number}",
+    "Cire hoto {number}",
+    "Wepụ foto {number}",
+    "Yọ fọ́tò {number} kúrò"
+  ],
+  [
+    "Review your photos",
+    "Check your photos",
+    "Duba hotunanka",
+    "Lelee foto gị",
+    "Ṣàyẹ̀wò àwọn fọ́tò rẹ"
+  ],
+  [
+    "Save draft",
+    "Save draft",
+    "Ajiye daftari",
+    "Chekwaa ihe odide",
+    "Fi àkọ́pamọ́ pamọ́"
+  ],
+  [
+    "Select the produce category",
+    "Choose produce type",
+    "Zaɓi rukunin amfanin gona",
+    "Họrọ ụdị ihe ubi",
+    "Yan ẹ̀ka ọjà"
+  ],
+  [
+    "Selected: {category}",
+    "You choose: {category}",
+    "An zaɓa: {category}",
+    "Ahọpụtara: {category}",
+    "O yàn: {category}"
+  ],
+  [
+    "Selling unit",
+    "Unit wey you sell with",
+    "Ma'aunin sayarwa",
+    "Ntụ eji ere",
+    "Ẹyọ títà"
+  ],
+  [
+    "Show your produce clearly",
+    "Show your produce well",
+    "Nuna amfanin gonarka a fili",
+    "Gosi ihe ubi gị nke ọma",
+    "Fi ọjà rẹ hàn kedere"
+  ],
+  [
+    "Step 3 of 4",
+    "Step 3 of 4",
+    "Mataki 3 cikin 4",
+    "Nzọụkwụ 3 n'ime 4",
+    "Ìgbésẹ̀ 3 nínú 4"
+  ],
+  [
+    "Tap to snap or upload",
+    "Tap to snap or upload",
+    "Danna don ɗauka ko loda hoto",
+    "Pịa ka ị see ma ọ bụ bulite foto",
+    "Tẹ̀ láti ya tàbí gbé fọ́tò sókè"
+  ],
+  [
+    "Use a photo of your actual produce. JPEG or PNG, up to 10 MB.",
+    "Use your real produce photo. JPEG or PNG, no pass 10 MB.",
+    "Yi amfani da hoton kayanka na gaske. JPEG ko PNG, har zuwa 10 MB.",
+    "Jiri foto ihe ubi gị n'ezie. JPEG ma ọ bụ PNG, ruo 10 MB.",
+    "Lo fọ́tò ọjà rẹ gan-an. JPEG tàbí PNG, tí kò ju 10 MB lọ."
+  ],
+  [
+    "Use good lighting and show the produce you are selling. Choose your clearest photo as the cover.",
+    "Use good light show your produce. Choose your clearest photo as main photo.",
+    "Yi amfani da haske mai kyau. Zaɓi hoto mafi bayyana a matsayin babban hoto.",
+    "Jiri ìhè ọma gosi ihe ubi gị. Họrọ foto kacha doo anya ka ọ bụrụ isi foto.",
+    "Lo ìmọ́lẹ̀ tó dára. Yan fọ́tò tó ṣe kedere jù lọ gẹ́gẹ́ bí àkọ́kọ́."
+  ],
+  [
+    "What is it?",
+    "Wetin you dey sell?",
+    "Me kake sayarwa?",
+    "Gịnị ka ị na-ere?",
+    "Kí ni o ń tà?"
+  ],
+  [
+    "Your listing is submitted.",
+    "Your listing don submit.",
+    "An aika tallarka.",
+    "Ezipụla ndepụta gị.",
+    "A ti fi àkọsílẹ̀ ọjà rẹ ránṣẹ́."
+  ],
+  [
+    "Your listing will be reviewed before buyers can see it.",
+    "We go review your listing before buyers fit see am.",
+    "Za a duba tallarka kafin masu saye su gan ta.",
+    "A ga-enyocha ndepụta gị tupu ndị na-azụ ahịa ahụ ya.",
+    "A ó ṣàyẹ̀wò àkọsílẹ̀ rẹ kí àwọn olùrà tó rí i."
+  ],
+  [
+    "{count} of 4 photos",
+    "{count} of 4 photos",
+    "Hotuna {count} cikin 4",
+    "Foto {count} n'ime 4",
+    "Fọ́tò {count} nínú 4"
+  ],
+  [
+    "Step {step} of 4",
+    "Step {step} of 4",
+    "Mataki {step} cikin 4",
+    "Nzọụkwụ {step} n'ime 4",
+    "Ìgbésẹ̀ {step} nínú 4"
+  ],
+  [
+    "Close listing",
+    "Close listing",
+    "Rufe talla",
+    "Mechie ndepụta",
+    "Pa àkọsílẹ̀ ọjà dé"
+  ],
+  [
+    "Save and close listing",
+    "Save and close listing",
+    "Ajiye ka rufe talla",
+    "Chekwaa ma mechie ndepụta",
+    "Fi pamọ́ kí o sì pa á dé"
+  ],
+  [
+    "Continue to photos",
+    "Continue go photos",
+    "Ci gaba zuwa hotuna",
+    "Gaa na foto",
+    "Tẹ̀síwájú sí fọ́tò"
+  ],
+  [
+    "Plum",
+    "Plum",
+    "Plum",
+    "Plum",
+    "Plum"
+  ],
+  [
+    "Tubers",
+    "Tubers",
+    "Tubers",
+    "Ji",
+    "Iṣu"
+  ],
+  [
+    "Processed",
+    "Processed",
+    "An sarrafa",
+    "Emebere",
+    "Tí a ti ṣe"
+  ],
+  [
+    "Hot",
+    "Peppery",
+    "Mai yaji",
+    "Na-afụ ọkụ",
+    "Tó ta"
+  ],
+  [
+    "Liquid",
+    "Liquid",
+    "Ruwa",
+    "Mmiri",
+    "Olómi"
+  ],
+  [
+    "Enter a product title with at least two characters.",
+    "Enter produce name wey get at least two letters.",
+    "Shigar da sunan kaya mai haruffa aƙalla biyu.",
+    "Tinye aha ihe ubi nwere opekata mpe mkpụrụedemede abụọ.",
+    "Tẹ orúkọ ọjà tí ó ní ó kéré tán lẹ́tà méjì."
+  ],
+  [
+    "Describe your produce before continuing.",
+    "Describe your produce before you continue.",
+    "Bayyana amfanin gonarka kafin ci gaba.",
+    "Kọwaa ihe ubi gị tupu ịga n'ihu.",
+    "Ṣàlàyé ọjà rẹ kí o tó tẹ̀síwájú."
+  ],
+  [
+    "Keep the description within 5,000 characters.",
+    "Description no fit pass 5,000 characters.",
+    "Kada bayanin ya wuce haruffa 5,000.",
+    "Nkọwa agaghị agafe mkpụrụedemede 5,000.",
+    "Àlàyé kò gbọdọ̀ ju lẹ́tà 5,000 lọ."
+  ],
+  [
+    "Choose a selling unit.",
+    "Choose unit wey you sell with.",
+    "Zaɓi ma'aunin sayarwa.",
+    "Họrọ ntụ eji ere.",
+    "Yan ẹyọ títà."
+  ],
+  [
+    "Enter a whole quantity for this selling unit.",
+    "Enter whole number for this unit.",
+    "Shigar da cikakken adadi ga wannan ma'auni.",
+    "Tinye ọnụọgụ zuru ezu maka ntụ a.",
+    "Tẹ odidi iye fún ẹyọ yìí."
+  ],
+  [
+    "Decimals are allowed for this unit.",
+    "You fit use decimal for this unit.",
+    "Ana yarda da adadi mai digo ga wannan ma'auni.",
+    "Ị nwere ike iji ọnụọgụ nwere ntụpọ maka ntụ a.",
+    "O lè lo nọ́ńbà eléélà fún ẹyọ yìí."
+  ],
+  [
+    "Whole units only. Enter the number of complete packs or pieces.",
+    "Whole units only. Enter complete packs or pieces.",
+    "Cikakkun raka'a kawai. Shigar da adadin kunshe ko guda cikakke.",
+    "Ntụ zuru ezu naanị. Tinye ọnụọgụ ngwugwu ma ọ bụ iberibe zuru ezu.",
+    "Odidi ẹyọ nìkan. Tẹ iye àpò tàbí ẹyọ pípé."
+  ],
+  [
+    "Within your farm’s state",
+    "Inside your farm state",
+    "A cikin jihar gonarka",
+    "N'ime steeti ugbo gị",
+    "Láàárín ìpínlẹ̀ oko rẹ"
+  ],
+  [
+    "Offer delivery to supported areas in Nigeria",
+    "Deliver to areas wey we support for Nigeria",
+    "Isarwa zuwa wuraren da ake tallafawa a Najeriya",
+    "Buga na mpaghara akwadoro na Naịjirịa",
+    "Fijiṣẹ́ sí àwọn agbègbè tí a ń ṣiṣẹ́ ní Nàìjíríà"
+  ],
+  [
+    "Sells in Nigeria",
+    "Sells for Nigeria",
+    "Ana sayarwa a Najeriya",
+    "A na-ere na Naịjirịa",
+    "Títà ní Nàìjíríà"
+  ],
+  [
+    "Choose your own uploaded produce photos.",
+    "Choose produce photos wey you upload yourself.",
+    "Zaɓi hotunan kayanka da ka loda da kanka.",
+    "Họrọ foto ihe ubi nke gị ị bulitere.",
+    "Yan fọ́tò ọjà tìrẹ tí o gbé sókè."
+  ],
+  [
+    "This farmer offers delivery within their state. Choose a delivery address in the same state.",
+    "This farmer dey deliver inside their state. Choose address for the same state.",
+    "Wannan manomi yana isarwa a jiharsa. Zaɓi adireshi a wannan jihar.",
+    "Onye ọrụ ugbo a na-ebuga n'ime steeti ya. Họrọ adreesị dị n'otu steeti ahụ.",
+    "Àgbẹ̀ yìí ń fi ọjà ránṣẹ́ láàárín ìpínlẹ̀ rẹ̀. Yan àdírẹ́sì ní ìpínlẹ̀ náà."
+  ],
+  [
+    "Choose a category",
+    "Choose category",
+    "Zaɓi rukuni",
+    "Họrọ ụdị",
+    "Yan ẹ̀ka"
+  ],
+  [
+    "Tomatoes, peppers and leafy greens",
+    "Tomatoes, pepper and green leaves",
+    "Tumatir, barkono da ganyayyaki",
+    "Tomato, ose na akwụkwọ nri",
+    "Tòmátì, ata àti ẹfọ́"
+  ],
+  [
+    "Plantain, bananas and other fruits",
+    "Plantain, banana and other fruits",
+    "Ayaba babba, ayaba da sauran 'ya'yan itace",
+    "Unere na mkpụrụ osisi ndị ọzọ",
+    "Ọ̀gẹ̀dẹ̀ àgbàgbà, ọ̀gẹ̀dẹ̀ àti èso mìíràn"
+  ],
+  [
+    "Rice, maize and millet",
+    "Rice, maize and millet",
+    "Shinkafa, masara da gero",
+    "Osikapa, ọka na millet",
+    "Ìrẹsì, àgbàdo àti jéró"
+  ],
+  [
+    "Yam, cassava and potatoes",
+    "Yam, cassava and potatoes",
+    "Doya, rogo da dankali",
+    "Ji, akpụ na nduku",
+    "Iṣu, ẹ̀gẹ́ àti ọ̀dùnkún"
+  ],
+  [
+    "Beans, peas and groundnuts",
+    "Beans, peas and groundnut",
+    "Wake da gyada",
+    "Agwa na ahụekere",
+    "Ẹ̀wà àti ẹ̀pà"
+  ],
+  [
+    "Palm oil and other edible oils",
+    "Palm oil and other cooking oils",
+    "Man ja da sauran man abinci",
+    "Mmanụ nkwụ na mmanụ nri ndị ọzọ",
+    "Epo pupa àti epo jíjẹ mìíràn"
+  ],
+  [
+    "Garri, flour and dried produce",
+    "Garri, flour and dry produce",
+    "Garri, gari da busasshen amfanin gona",
+    "Garị, ntụ ọka na ihe ubi a mịrị amị",
+    "Gàrí, ìyẹ̀fun àti ọjà gbígbẹ"
   ]
 ]

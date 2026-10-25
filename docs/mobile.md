@@ -169,3 +169,41 @@ For Expo Go testing, restart Metro after installing dependencies. Set a simulate
 The map picker is a bottom sheet with a top-right close button, backdrop dismissal and fixed footer controls. The map is outside any ScrollView; its centre pin follows completed pan/zoom gestures. GPS recentres an open map. Closing discards an unconfirmed point and ignores any late GPS result. The initial regional map centre is never treated as a selected pickup point.
 
 All custom mobile modals use `AppSheet`: a rounded bottom sheet, top-right close control, backdrop/Android-back dismissal, safe-area spacing, and fixed footer actions. Forms scroll with keyboard avoidance; maps and option lists keep their own gestures. Saving blocks dismissal. Adding a bank uses details → review → verification within a single sheet; closing a pending verification preserves the operation and exposes View bank verification rather than submitting again. Withdrawal details and review stay in one sheet and submit only after explicit confirmation.
+
+### Seller listing flow
+
+The Sell tab opens a focused four-step flow based on Figma `2575:22177`:
+category, produce details, photos, and review. Back preserves entered details;
+closing saves a device draft. Saved server drafts reopen for editing. The farm
+address is the default pickup address; order delivery can use a separate pickup
+address when necessary. Local delivery means within the farm's state; nationwide
+delivery still requires an eligible route and parcel quote.
+
+Provide at least one real produce photo (maximum four JPEG/PNG images, 10 MB each).
+The farmer can replace/remove photos and choose the cover. Photos remain private
+until listing approval. Quantities follow the selected unit's decimal rules and
+prices are stored as exact NGN minor amounts. Explicit review is required before
+submission. Submitted listings are **pending review**, not immediately live.
+AI grading, voice playback, automatic image identification, and sharing an
+unapproved listing are not part of this flow.
+
+For a new database, add the seven produce categories and selling units without
+creating demo users/listings or overwriting staff-managed translations:
+
+```sh
+pnpm --filter @leetlogic/database seed:catalogue
+```
+
+Simulator checklist: select a category, go forward/back, close and recover a
+draft, change unit, try a fractional whole-unit quantity, upload/replace/reorder
+photos, verify the cover on review, then confirm submission. Check the pending
+status in My listings and approve through the existing admin moderation flow.
+Repeat with each language and a narrow screen. Camera/library denial and failed
+uploads should leave the draft editable with a visible error.
+
+Listing categories are Vegetables, Fruits, Grains, Roots & Tubers, Legumes, Oils,
+and Processed Produce. The actual product name is entered in step two. Re-running
+`seed:catalogue` moves existing product categories and saved server drafts to these
+groups, retains old records for history, and hides them from selection. Device
+drafts recover through catalogue aliases. This does not enable new delivery
+commodities: provider eligibility still requires explicitly configured category IDs.

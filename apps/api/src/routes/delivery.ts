@@ -238,6 +238,15 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       body.pickup.latitude = Number(confirmed.latitude);
       body.pickup.longitude = Number(confirmed.longitude);
     }
+    if (
+      order.listing.shippingScope === "LOCAL" &&
+      body.pickup.state.toLowerCase() !== body.destination.state.toLowerCase()
+    )
+      throw new AppError(
+        422,
+        "DELIVERY_SCOPE_UNSUPPORTED",
+        "This farmer offers delivery within their state. Choose a delivery address in the same state.",
+      );
     const categories = c.DELIVERY_ALLOWED_CATEGORIES.split(",");
     const states = c.DELIVERY_ALLOWED_STATES.toLowerCase()
       .split(",")

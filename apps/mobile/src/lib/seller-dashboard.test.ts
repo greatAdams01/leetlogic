@@ -21,7 +21,7 @@ describe("seller dashboard and navigation", () => {
       "orders",
       "profile",
     ]);
-    expect(showsBottomTabs("SELLER", "sell", true)).toBe(true);
+    expect(showsBottomTabs("SELLER", "sell", true)).toBe(false);
     expect(showsBottomTabs("SELLER", "review", true)).toBe(false);
     expect(showsBottomTabs("SELLER", "seller", true)).toBe(false);
     expect(showsBottomTabs("SELLER", "profile", false)).toBe(false);

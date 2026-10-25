@@ -144,6 +144,7 @@ export function ProduceListing() {
                 {t("sell.photo")}
                 <input
                   type="file"
+                  required
                   accept="image/jpeg,image/png"
                   capture="environment"
                   onChange={(e) => {
@@ -153,7 +154,7 @@ export function ProduceListing() {
                 />
               </label>
               {photo && <img src={photo.url} alt={t("sell.photo")} width={240} />}
-              <button disabled={busy || catalogue.verificationStatus !== "APPROVED"}>
+              <button disabled={busy || !photo || catalogue.verificationStatus !== "APPROVED"}>
                 {t("sell.review")}
               </button>
             </form>
@@ -200,7 +201,7 @@ export function ProduceListing() {
                 />
                 {t("sell.confirm")}
               </label>
-              <button disabled={!confirmed || busy} onClick={submit}>
+              <button disabled={!confirmed || busy || !photo} onClick={submit}>
                 {t("sell.submit")}
               </button>
               <button onClick={() => setDraft(null)}>{t("common.cancel")}</button>

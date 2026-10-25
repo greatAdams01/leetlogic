@@ -33,8 +33,9 @@ const publicListing = {
 marketplaceRouter.get("/categories", async (_req, res) =>
   res.json({
     items: await prisma.category.findMany({
+      where: { isActive: true },
       include: { translations: true },
-      orderBy: { slug: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { slug: "asc" }],
     }),
   }),
 );

@@ -19,6 +19,7 @@ export const showsBottomTabs = (
   route: Route["name"],
   signedIn: boolean,
 ) =>
+  route !== "sell" &&
   (signedIn || route === "home" || route === "search") &&
   bottomTabs(role).some((tab) => tab.name === route);
 

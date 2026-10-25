@@ -1,3 +1,4 @@
+import { seedCatalogue } from "./seed-catalogue.js";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -68,6 +69,8 @@ async function main() {
       create: language,
       update: language,
     });
+
+  await seedCatalogue(prisma);
 
   for (const unit of [
     { code: "KG", name: "Kilogram", allowsDecimal: true },

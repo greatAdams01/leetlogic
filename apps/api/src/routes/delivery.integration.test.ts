@@ -693,6 +693,50 @@ suite("delivery and language database workflows", () => {
     cancel.mockRestore();
     track.mockRestore();
   });
+  it("moves legacy product categories into broad groups without losing listings or drafts", async () => {
+    const { seedCatalogue } = await import(
+      new URL("../../../../packages/database/prisma/seed-catalogue.ts", import.meta.url).href
+    );
+    const old = await prisma.category.upsert({
+      where: { slug: "tomatoes" },
+      create: { slug: "tomatoes" },
+      update: { isActive: true },
+    });
+    const draft = await prisma.listingDraft.create({
+      data: {
+        userId: verifyAccessToken(seller, "customer").sub,
+        fields: { categoryId: old.id, title: "My tomatoes", quantity: "3" },
+      },
+    });
+    await prisma.listing.update({ where: { id: listingId }, data: { categoryId: old.id } });
+    try {
+      await seedCatalogue(prisma);
+      await seedCatalogue(prisma);
+      const target = await prisma.category.findUniqueOrThrow({ where: { slug: "vegetables" } });
+      expect(
+        (await prisma.listing.findUniqueOrThrow({ where: { id: listingId } })).categoryId,
+      ).toBe(target.id);
+      expect(
+        (await prisma.listingDraft.findUniqueOrThrow({ where: { id: draft.id } })).fields,
+      ).toEqual({ categoryId: target.id, title: "My tomatoes", quantity: "3" });
+      const catalogue = await request(app)
+        .get("/v1/listing-drafts/catalogue")
+        .set({ Authorization: `Bearer ${seller}` });
+      expect(catalogue.body.categoryAliases[old.id]).toBe(target.id);
+      expect(
+        catalogue.body.categories.some((item: { slug: string }) => item.slug === "tomatoes"),
+      ).toBe(false);
+      expect(
+        catalogue.body.categories.filter((item: { slug: string }) => item.slug === "vegetables"),
+      ).toHaveLength(1);
+      const publicCategories = await request(app).get("/v1/marketplace/categories");
+      expect(publicCategories.body.items.some((item: { id: string }) => item.id === old.id)).toBe(
+        false,
+      );
+    } finally {
+      await prisma.listing.update({ where: { id: listingId }, data: { categoryId } });
+    }
+  });
   it("keeps voice gated and requires explicit confirmation for owned typed drafts", async () => {
     expect(
       (
@@ -701,6 +745,14 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${seller}` })
       ).body.voice.enabled,
     ).toBe(false);
+    const photo = await prisma.producePhoto.create({
+      data: {
+        userId: verifyAccessToken(seller, "customer").sub,
+        mimeType: "image/jpeg",
+        checksum: "a".repeat(64),
+        storageKey: `test/${randomUUID()}`,
+      },
+    });
     const result = await request(app)
       .post("/v1/listing-drafts")
       .set({ Authorization: `Bearer ${seller}` })
@@ -713,6 +765,7 @@ suite("delivery and language database workflows", () => {
         categoryId,
         addressId,
         sourceLocale: "ig",
+        photoId: photo.id,
       });
     expect(result.status).toBe(201);
     expect(
@@ -745,6 +798,119 @@ suite("delivery and language database workflows", () => {
           .send({ confirmed: true })
       ).body.listing.id,
     ).toBe(submit.body.listing.id);
+  });
+  it("keeps photo ownership, cover order, whole-unit quantities and moderation authoritative", async () => {
+    const sellerAuth = { Authorization: `Bearer ${seller}` };
+    await prisma.unit.upsert({
+      where: { code: "BASKET" },
+      create: { code: "BASKET", name: "Basket", allowsDecimal: false },
+      update: { allowsDecimal: false },
+    });
+    const photos = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        prisma.producePhoto.create({
+          data: {
+            userId: verifyAccessToken(seller, "customer").sub,
+            mimeType: "image/jpeg",
+            checksum: "c".repeat(64),
+            storageKey: `test/${randomUUID()}`,
+          },
+        }),
+      ),
+    );
+    const foreign = await prisma.producePhoto.create({
+      data: {
+        userId: verifyAccessToken(outsider, "customer").sub,
+        mimeType: "image/jpeg",
+        checksum: "d".repeat(64),
+        storageKey: `test/${randomUUID()}`,
+      },
+    });
+    const fields = {
+      title: "Fresh tomatoes",
+      description: "Harvested this morning",
+      sourceLocale: "en",
+      categoryId,
+      unitCode: "BASKET",
+      quantity: "1.5",
+      unitPriceMinor: "800000",
+      addressId,
+      shippingScope: "LOCAL",
+      photoIds: photos.map((photo) => photo.id).reverse(),
+    };
+    const draft = await request(app).post("/v1/listing-drafts").set(sellerAuth).send(fields);
+    const path = `/v1/listing-drafts/${draft.body.id}`;
+    const submit = () =>
+      request(app).post(`${path}/submit`).set(sellerAuth).send({ confirmed: true });
+    expect((await submit()).body.error.code).toBe("WHOLE_UNIT_REQUIRED");
+    await request(app)
+      .patch(path)
+      .set(sellerAuth)
+      .send({ ...fields, quantity: "2", photoIds: [] });
+    expect((await submit()).body.error.code).toBe("LISTING_PHOTO_REQUIRED");
+    await request(app)
+      .patch(path)
+      .set(sellerAuth)
+      .send({ ...fields, quantity: "2", photoIds: [foreign.id] });
+    expect((await submit()).body.error.code).toBe("INVALID_PHOTO");
+    expect(
+      (
+        await request(app)
+          .patch(path)
+          .set(sellerAuth)
+          .send({ ...fields, photoIds: [...fields.photoIds, foreign.id] })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await request(app)
+          .patch(path)
+          .set(sellerAuth)
+          .send({ ...fields, photoIds: [photos[0]!.id, photos[0]!.id] })
+      ).status,
+    ).toBe(422);
+    await request(app)
+      .patch(path)
+      .set(sellerAuth)
+      .send({ ...fields, quantity: "2" });
+    const result = await submit();
+    expect(result.status).toBe(201);
+    expect(result.body.listing.status).toBe("PENDING_REVIEW");
+    expect(result.body.listing.shippingScope).toBe("LOCAL");
+    const media = await prisma.listingMedia.findMany({
+      where: { listingId: result.body.listing.id },
+      orderBy: { displayOrder: "asc" },
+    });
+    expect(media.map((item) => item.objectKey)).toEqual(
+      fields.photoIds.map((id) => `produce/${id}`),
+    );
+    expect((await submit()).body.listing.id).toBe(result.body.listing.id);
+    expect(await prisma.listingMedia.count({ where: { listingId: result.body.listing.id } })).toBe(
+      4,
+    );
+  });
+  it("does not quote cross-state delivery for a local-only listing", async () => {
+    await prisma.listing.update({ where: { id: listingId }, data: { shippingScope: "LOCAL" } });
+    const order = await prisma.tradeOrder.create({
+      data: {
+        reference: `LOCAL-${randomUUID()}`,
+        buyerId: verifyAccessToken(buyer, "customer").sub,
+        farmerProfileId: farmerId,
+        listingId,
+        quantity: "1",
+        totalMinor: 10000n,
+      },
+    });
+    const result = await request(app)
+      .post(`/v1/orders/${order.id}/delivery/quotes`)
+      .set(customer())
+      .send({ ...input, destination: { ...input.destination, state: "Ebonyi" } });
+    expect(result.status).toBe(422);
+    expect(result.body.error.code).toBe("DELIVERY_SCOPE_UNSUPPORTED");
+    await prisma.listing.update({
+      where: { id: listingId },
+      data: { shippingScope: "NATIONWIDE" },
+    });
   });
   it("exposes only public listing fields and requires customer authentication to order", async () => {
     const listing = await request(app).get(`/v1/marketplace/listings/${listingId}`);
@@ -901,7 +1067,16 @@ suite("delivery and language database workflows", () => {
     ).toEqual([]);
   });
   it("lists, edits and deletes only owned unsubmitted drafts", async () => {
+    const photo = await prisma.producePhoto.create({
+      data: {
+        userId: verifyAccessToken(seller, "customer").sub,
+        mimeType: "image/jpeg",
+        checksum: "b".repeat(64),
+        storageKey: `test/${randomUUID()}`,
+      },
+    });
     const fields = {
+      photoIds: [photo.id],
       title: "Saved beans",
       description: "",
       sourceLocale: "en",

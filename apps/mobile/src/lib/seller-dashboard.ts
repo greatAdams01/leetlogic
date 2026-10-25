@@ -37,7 +37,7 @@ export type SavedListingDraft = {
 export function hasDeviceDraft(value: unknown): value is { title?: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const form = value as Record<string, unknown>;
-  return ["title", "description", "quantity", "price", "photoId"].some(
+  return ["title", "description", "quantity", "price", "photoId", "categoryId"].some(
     (key) => typeof form[key] === "string" && form[key].trim().length > 0,
   );
 }

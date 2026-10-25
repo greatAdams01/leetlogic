@@ -115,6 +115,8 @@ export function Button({
   secondary,
   testID,
   loading = false,
+  icon = "arrow",
+  iconNativeSize,
 }: {
   title: string;
   onPress: () => void;
@@ -122,6 +124,8 @@ export function Button({
   secondary?: boolean;
   testID?: string;
   loading?: boolean;
+  icon?: keyof typeof icons | false;
+  iconNativeSize?: { width: number; height: number };
 }) {
   const tr = useUI();
   return (
@@ -143,7 +147,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={secondary ? colors.green : colors.white} />
       ) : (
-        !secondary && <Icon name="arrow" size={20} />
+        !secondary && icon && <Icon name={icon} size={20} nativeSize={iconNativeSize} />
       )}
     </Pressable>
   );
@@ -231,6 +235,9 @@ export function Page({
   back,
   footer,
   footerSafeArea = true,
+  header,
+  contentKey,
+  contentStyle,
   scrollRef,
   green = false,
   loading = false,
@@ -242,6 +249,9 @@ export function Page({
   back?: () => void;
   footer?: React.ReactNode;
   footerSafeArea?: boolean;
+  header?: React.ReactNode;
+  contentKey?: string;
+  contentStyle?: ViewStyle;
   scrollRef?: React.Ref<ScrollView>;
   green?: boolean;
   loading?: boolean;
@@ -258,6 +268,7 @@ export function Page({
         style={{ flex: 1, backgroundColor }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
+        {header}
         {title && (
           <View style={[s.header, green && { backgroundColor: colors.green }]}>
             {back && (
@@ -288,9 +299,10 @@ export function Page({
           </View>
         )}
         <ScrollView
+          key={contentKey}
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[s.body, brand && { gap: 16 }]}
+          contentContainerStyle={[s.body, brand && { gap: 16 }, contentStyle]}
         >
           {loading && <ActivityIndicator color={colors.green} />}
           {children}
