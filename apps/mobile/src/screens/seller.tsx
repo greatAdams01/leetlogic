@@ -1,3 +1,4 @@
+import { File } from "expo-file-system";
 import { FarmPin } from "../components/farm-pin";
 import { savedFarmPoint } from "../lib/farm-location";
 import { DojahIdentity } from "../components/dojah-identity";
@@ -24,7 +25,7 @@ import {
   type FarmForm,
   type VerificationStep,
 } from "../lib/verification";
-import { choosePhoto, photoBlob } from "./sell";
+import { choosePhoto, photoBody } from "../lib/produce-photo";
 
 type Verification = {
   id: string;
@@ -297,7 +298,7 @@ export function Seller() {
               if (photo) {
                 await api(`/seller/verification/uploads?documentType=${documentType}`, {
                   method: "POST",
-                  blob: await photoBlob(photo.uri, photo.mimeType),
+                  binary: await photoBody(photo.uri, photo.mimeType),
                 });
                 await refresh();
                 setPhoto(null);
@@ -693,7 +694,7 @@ export function Seller() {
                     if (!chosen) return;
                     await api("/seller/verification/uploads?kind=evidence", {
                       method: "POST",
-                      blob: await photoBlob(chosen.uri, chosen.mimeType),
+                      binary: await photoBody(chosen.uri, chosen.mimeType),
                     });
                     setEvidencePhotos((photos) => [...photos, chosen.uri]);
                     await refresh();
@@ -724,12 +725,12 @@ export function Seller() {
                       (video.uri.toLowerCase().endsWith(".mov") ? "video/quicktime" : "video/mp4");
                     if (!["video/mp4", "video/quicktime"].includes(mime))
                       throw new Error("Choose an MP4 or MOV video.");
-                    const blob = await (await fetch(video.uri)).blob();
-                    if (!blob.size || blob.size > 25 * 1024 * 1024)
+                    const file = new File(video.uri);
+                    if (!file.exists || !file.size || file.size > 25 * 1024 * 1024)
                       throw new Error("Choose a video smaller than 25 MB.");
                     await api("/seller/verification/uploads?kind=evidence", {
                       method: "POST",
-                      blob: new Blob([blob], { type: mime }),
+                      binary: { bytes: await file.bytes(), contentType: mime },
                     });
                     await refresh();
                   })

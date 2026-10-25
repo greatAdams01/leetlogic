@@ -44,6 +44,10 @@ export function localizedError(locale: Locale, value: unknown): string {
       },
     );
   const codes: Record<string, string> = {
+    INVALID_PHOTO: "We couldn’t prepare this photo. Choose another image and try again.",
+    PHOTO_LIMIT:
+      "You have too many unused photos. Submit your saved listings before uploading more.",
+    MEDIA_NETWORK_ERROR: "The upload service could not be reached. Please try again.",
     MEDIA_CONFIGURATION_ERROR:
       "File uploads are temporarily unavailable. Please contact support if this continues.",
     MEDIA_RATE_LIMITED: "File uploads are busy. Please wait a moment and try again.",

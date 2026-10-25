@@ -36,4 +36,25 @@ describe("account refresh session identity", () => {
     expect(sessionVersion()).not.toBe(oldVersion);
     expect(authHeaders().Authorization).toBe("Bearer user-b");
   });
+  it("uploads raw bytes unchanged and replays the same bytes after session refresh", async () => {
+    await saveSession({ accessToken: "expired", refreshToken: "old-refresh" });
+    const bytes = new Uint8Array([255, 216, 255, 224, 0, 1]);
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ error: { code: "SESSION_EXPIRED" } }, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ accessToken: "renewed", refreshToken: "new-refresh" }))
+      .mockResolvedValueOnce(Response.json({ id: "uploaded" }, { status: 201 }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(
+      api("/listing-photos", { method: "POST", binary: { bytes, contentType: "image/jpeg" } }),
+    ).resolves.toEqual({ id: "uploaded" });
+    for (const index of [0, 2]) {
+      const [url, init] = fetcher.mock.calls[index]!;
+      expect(url).toContain("/v1/listing-photos");
+      expect(init.headers["Content-Type"]).toBe("image/jpeg");
+      expect(init.body).toBeInstanceOf(Uint8Array);
+      expect([...init.body]).toEqual([...bytes]);
+    }
+    expect(fetcher.mock.calls[2]![1].headers.Authorization).toBe("Bearer renewed");
+  });
 });

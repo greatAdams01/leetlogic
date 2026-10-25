@@ -3,6 +3,8 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   api: vi.fn(),
+  choose: vi.fn(),
+  photoBody: vi.fn(),
   get: vi.fn(),
   set: vi.fn(),
   remove: vi.fn(),
@@ -38,7 +40,7 @@ vi.mock("react-native", () => ({
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: h.get, setItem: h.set, removeItem: h.remove },
 }));
-vi.mock("expo-image-picker", () => ({}));
+vi.mock("./produce-photo", () => ({ choosePhoto: h.choose, photoBody: h.photoBody }));
 vi.mock("../state", () => ({
   useApp: () => ({
     user: {
@@ -70,7 +72,13 @@ vi.mock("../screens/market", () => ({ ListingPhoto: "ListingPhoto" }));
 vi.mock("../components/seller-listing-controls", () => ({ ListingControls: "ListingControls" }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
 vi.mock("../components/feedback", () => ({ Confirmation: "Confirmation" }));
-vi.mock("../components/app-sheet", () => ({ AppSheet: () => null }));
+vi.mock("../components/app-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    AppSheet: ({ visible, children, footer, ...props }: any) =>
+      visible ? createElement("AppSheet", props, children, footer) : null,
+  };
+});
 vi.mock("../components/listing-layout", async () => {
   const { createElement } = await import("react");
   return {
@@ -182,6 +190,30 @@ describe("seller listing wizard", () => {
     );
     expect(JSON.stringify(h.api.mock.calls)).not.toContain("file://");
     expect(h.go).toHaveBeenCalledWith("review", "draft");
+  });
+  it("adds the uploaded photo only after the binary request succeeds and allows retry after failure", async () => {
+    h.get.mockResolvedValue(JSON.stringify({ ...valid, photoIds: [], photos: [], step: 3 }));
+    const binary = { bytes: new Uint8Array([255, 216, 255]), contentType: "image/jpeg" };
+    h.choose.mockResolvedValue({ uri: "file:///cache/photo.jpg", mimeType: "image/jpeg" });
+    h.photoBody.mockResolvedValue(binary);
+    h.api.mockRejectedValueOnce(new Error("Upload failed"));
+    await act(async () => {
+      renderer = create(<Sell />);
+    });
+    await act(async () =>
+      nodes("Pressable")
+        .find((n) => n.props.accessibilityLabel === "Add photo")!
+        .props.onPress(),
+    );
+    await act(async () => button("Choose from library").props.onPress());
+    expect(button("Review listing").props.disabled).toBe(true);
+    expect(nodes("Notice").some((n) => n.props.text === "Upload failed")).toBe(true);
+    h.api.mockResolvedValueOnce({ id: "new-photo" });
+    await act(async () => button("Choose from library").props.onPress());
+    expect(h.api).toHaveBeenLastCalledWith("/listing-photos", { method: "POST", binary });
+    expect(nodes("AppSheet")).toHaveLength(0);
+    expect(button("Review listing").props.disabled).toBe(false);
+    expect(nodes("Image").some((n) => n.props.source.uri === "file:///cache/photo.jpg")).toBe(true);
   });
   it("requires explicit confirmation and displays moderation status after submitting", async () => {
     h.route = { id: "draft" };

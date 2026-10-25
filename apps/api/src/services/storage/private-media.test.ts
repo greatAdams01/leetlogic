@@ -153,6 +153,47 @@ describe("private Cloudinary media", () => {
       diagnostics: { reason: "TIMEOUT" },
     });
   });
+  it("recovers transient upload connection failures using one asset ID and no overwrite", async () => {
+    const network = new TypeError("fetch failed", { cause: { code: "EAI_AGAIN" } });
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(network)
+      .mockImplementationOnce(async (_url: string, init: RequestInit) => {
+        const form = init.body as FormData;
+        return Response.json({
+          public_id: form.get("public_id"),
+          resource_type: "image",
+          existing: true,
+        });
+      });
+    vi.stubGlobal("fetch", fetcher);
+    const key = await storeMedia(Buffer.from("test"), "image/jpeg", "unused");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0]![1].body).toBe(fetcher.mock.calls[1]![1].body);
+    expect((fetcher.mock.calls[1]![1].body as FormData).get("overwrite")).toBe("false");
+    const asset = JSON.parse(Buffer.from(key.slice("cloudinary:".length), "base64url").toString());
+    expect(asset.format).toBe("jpg");
+    expect(asset.id).toBe((fetcher.mock.calls[0]![1].body as FormData).get("public_id"));
+  });
+  it("stops after two failed connections and reports a safe actionable network cause", async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValue(
+        new TypeError("https://secret.example/private?key=secret", {
+          cause: { code: "UND_ERR_CONNECT_TIMEOUT" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const error = await storeMedia(Buffer.from("test"), "image/jpeg", "unused").catch(
+      (error) => error,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(error.code).toBe("MEDIA_NETWORK_ERROR");
+    expect(error.diagnostics.reason).toBe("NETWORK_ERROR");
+    expect(error.diagnostics.hint).toContain("UND_ERR_CONNECT_TIMEOUT");
+    expect(JSON.stringify(error)).not.toContain("secret.example");
+    expect(error.message).not.toContain("secret");
+  });
   it("checks credentials without uploading a file", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "ok" }));
     vi.stubGlobal("fetch", fetcher);
@@ -174,7 +215,7 @@ describe("private Cloudinary media", () => {
   it("does not fall back to local storage or leak provider errors after a cloud failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("private credential details")));
     await expect(storeMedia(Buffer.from("test"), "image/png", "never-saved")).rejects.toMatchObject(
-      { code: "MEDIA_UNAVAILABLE" },
+      { code: "MEDIA_NETWORK_ERROR" },
     );
     config.MEDIA_STORAGE = "local";
     await expect(readMedia("never-saved")).rejects.toThrow();

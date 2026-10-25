@@ -87,24 +87,29 @@ async function rotate() {
 }
 export async function api<T = any>(
   path: string,
-  options: { method?: string; body?: unknown; key?: string; blob?: Blob } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    key?: string;
+    binary?: { bytes: Uint8Array; contentType: string };
+  } = {},
 ): Promise<T> {
   const send = () =>
     fetch(`${API_URL}/v1${path}`, {
       method: options.method || "GET",
       headers: {
         ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
-        ...(options.blob
-          ? { "Content-Type": options.blob.type }
+        ...(options.binary
+          ? { "Content-Type": options.binary.contentType }
           : { "Content-Type": "application/json" }),
         ...(options.key ? { "Idempotency-Key": options.key } : {}),
       },
       ...(options.body !== undefined
         ? { body: JSON.stringify(options.body) }
-        : options.blob
-          ? { body: options.blob }
+        : options.binary
+          ? { body: new Uint8Array(options.binary.bytes) }
           : {}),
-      signal: AbortSignal.timeout(options.blob ? 60000 : 25000),
+      signal: AbortSignal.timeout(options.binary ? 60000 : 25000),
     });
   let response: Response;
   try {
@@ -136,7 +141,16 @@ export async function api<T = any>(
       "We couldn’t complete this action. Please try again or contact support if it continues.",
     );
   }
-  if (!response.ok)
+  if (!response.ok) {
+    if (typeof __DEV__ !== "undefined" && __DEV__ && options.binary)
+      console.warn("[LeetLogic upload failed]", {
+        path,
+        status: response.status,
+        code: data?.error?.code,
+        requestId: data?.error?.requestId || response.headers.get("x-request-id"),
+        contentType: options.binary.contentType,
+        bytes: options.binary.bytes.byteLength,
+      });
     throw new ApiError(
       response.status,
       data?.error?.code || "REQUEST_FAILED",
@@ -150,6 +164,7 @@ export async function api<T = any>(
             : undefined),
       },
     );
+  }
   return data;
 }
 

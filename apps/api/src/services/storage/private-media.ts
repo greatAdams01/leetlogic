@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { v2 as cloudinary } from "cloudinary";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
@@ -32,7 +33,12 @@ function sign(params: Record<string, string>, secret: string) {
     .digest("hex");
 }
 type MediaOperation = "upload" | "download" | "destroy" | "ping";
-function failure(operation: MediaOperation, reason: string, providerStatus?: number) {
+function failure(
+  operation: MediaOperation,
+  reason: string,
+  providerStatus?: number,
+  networkCode?: string,
+) {
   const configuration = [
     "INVALID_API_KEY",
     "INVALID_SIGNATURE",
@@ -42,28 +48,32 @@ function failure(operation: MediaOperation, reason: string, providerStatus?: num
   ].includes(reason);
   const code = configuration
     ? "MEDIA_CONFIGURATION_ERROR"
-    : reason === "RATE_LIMITED"
-      ? "MEDIA_RATE_LIMITED"
-      : reason === "TIMEOUT"
-        ? operation === "download"
-          ? "MEDIA_DOWNLOAD_TIMEOUT"
-          : "MEDIA_TIMEOUT"
-        : reason === "INVALID_FILE"
-          ? "MEDIA_FORMAT_UNSUPPORTED"
-          : "MEDIA_UNAVAILABLE";
+    : reason === "NETWORK_ERROR"
+      ? "MEDIA_NETWORK_ERROR"
+      : reason === "RATE_LIMITED"
+        ? "MEDIA_RATE_LIMITED"
+        : reason === "TIMEOUT"
+          ? operation === "download"
+            ? "MEDIA_DOWNLOAD_TIMEOUT"
+            : "MEDIA_TIMEOUT"
+          : reason === "INVALID_FILE"
+            ? "MEDIA_FORMAT_UNSUPPORTED"
+            : "MEDIA_UNAVAILABLE";
   const message = configuration
     ? "File uploads are temporarily unavailable. Please contact support if this continues."
-    : reason === "RATE_LIMITED"
-      ? "File uploads are busy. Please wait a moment and try again."
-      : reason === "TIMEOUT"
-        ? operation === "download"
-          ? "The private file took too long to open. Please retry."
-          : "The file upload took too long. Check your connection and try again."
-        : reason === "INVALID_FILE"
-          ? "This file could not be processed. Choose another JPEG, PNG, PDF or MP4 file."
-          : operation === "download"
-            ? "We couldn’t open this file. Please try again."
-            : "We couldn’t upload your file. Please try again.";
+    : reason === "NETWORK_ERROR"
+      ? "The upload service could not be reached. Please try again."
+      : reason === "RATE_LIMITED"
+        ? "File uploads are busy. Please wait a moment and try again."
+        : reason === "TIMEOUT"
+          ? operation === "download"
+            ? "The private file took too long to open. Please retry."
+            : "The file upload took too long. Check your connection and try again."
+          : reason === "INVALID_FILE"
+            ? "This file could not be processed. Choose another JPEG, PNG, PDF or MP4 file."
+            : operation === "download"
+              ? "We couldn’t open this file. Please try again."
+              : "We couldn’t upload your file. Please try again.";
   const error = new AppError(reason === "INVALID_FILE" ? 422 : 503, code, message);
   error.diagnostics = {
     provider: "cloudinary",
@@ -73,7 +83,7 @@ function failure(operation: MediaOperation, reason: string, providerStatus?: num
     hint: configuration
       ? "Check the cloud name and API key/secret from the same Cloudinary product environment in root .env, then restart the API. Check that the key is enabled."
       : reason === "NETWORK_ERROR"
-        ? "Check API server DNS, internet connectivity and outbound HTTPS to api.cloudinary.com."
+        ? `Check API server DNS, internet connectivity and outbound HTTPS to api.cloudinary.com.${networkCode ? ` Network code: ${networkCode}.` : ""}`
         : reason === "TIMEOUT"
           ? "Cloudinary did not respond before the upload deadline. Check connectivity and retry."
           : reason === "RATE_LIMITED"
@@ -104,21 +114,42 @@ function providerFailure(operation: MediaOperation, status: number, payload: unk
               : "PROVIDER_REJECTED";
   return failure(operation, reason, status);
 }
+function safeNetworkCode(error: unknown): string | undefined {
+  const item = error as { code?: string; cause?: unknown; errors?: unknown[] } | null;
+  if (!item || typeof item !== "object") return;
+  if (
+    typeof item.code === "string" &&
+    /^(?:E[A-Z0-9_]{1,40}|UND_ERR_[A-Z0-9_]{1,40})$/.test(item.code)
+  )
+    return item.code;
+  if (item.cause && item.cause !== error) return safeNetworkCode(item.cause);
+  return item.errors?.map(safeNetworkCode).find(Boolean);
+}
 async function sendCloud(url: string, operation: MediaOperation, options: RequestInit) {
-  let response: Response;
-  const deadline = AbortSignal.timeout(operation === "download" ? 60000 : 20000);
-  try {
-    response = await fetch(url, { ...options, signal: deadline });
-  } catch (error) {
-    throw failure(
-      operation,
-      deadline.aborted ||
-        (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name))
-        ? "TIMEOUT"
-        : "NETWORK_ERROR",
-    );
+  // Upload retries reuse the exact public_id, signature and overwrite=false form.
+  // An accepted request with a lost response cannot create a second asset.
+  const attempts = operation === "upload" ? 2 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const deadline = AbortSignal.timeout(operation === "download" ? 60000 : 20000);
+    try {
+      return await fetch(url, { ...options, signal: deadline });
+    } catch (error) {
+      if (attempt + 1 < attempts) {
+        await delay(500);
+        continue;
+      }
+      throw failure(
+        operation,
+        deadline.aborted ||
+          (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name))
+          ? "TIMEOUT"
+          : "NETWORK_ERROR",
+        undefined,
+        safeNetworkCode(error),
+      );
+    }
   }
-  return response;
+  throw failure(operation, "NETWORK_ERROR");
 }
 async function cloudRequest(
   resource: string,
@@ -192,7 +223,17 @@ export async function storeMedia(bytes: Buffer, mime: string, localKey: string) 
       JSON.stringify({
         id: parsed.public_id,
         resource: parsed.resource_type,
-        format: parsed.format || "pdf",
+        format:
+          parsed.format ||
+          (mime === "image/jpeg"
+            ? "jpg"
+            : mime === "image/png"
+              ? "png"
+              : mime === "video/quicktime"
+                ? "mov"
+                : mime === "video/mp4"
+                  ? "mp4"
+                  : "pdf"),
       }),
     ).toString("base64url")
   );

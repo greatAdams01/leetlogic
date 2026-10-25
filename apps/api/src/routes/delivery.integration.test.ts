@@ -1,3 +1,6 @@
+import { once } from "node:events";
+import { readFile } from "node:fs/promises";
+import { deleteMedia } from "../services/storage/private-media.js";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
@@ -735,6 +738,58 @@ suite("delivery and language database workflows", () => {
       );
     } finally {
       await prisma.listing.update({ where: { id: listingId }, data: { categoryId } });
+    }
+  });
+  it("uploads a listing photo as binary and serves it privately only to its owner", async () => {
+    const config = getConfig();
+    const previousStorage = config.MEDIA_STORAGE;
+    config.MEDIA_STORAGE = "local";
+    let photoId: string | undefined;
+    const uploadServer = app.listen(0, "127.0.0.1");
+    await once(uploadServer, "listening");
+    try {
+      const bytes = await readFile(
+        new URL("../../../mobile/assets/figma/listing-tomatoes.png", import.meta.url),
+      );
+      const bound = uploadServer.address();
+      if (!bound || typeof bound === "string") throw new Error("Test listener unavailable");
+      const response = await fetch(`http://127.0.0.1:${bound.port}/v1/listing-photos`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${seller}`, "Content-Type": "image/jpeg" },
+        body: new Uint8Array(bytes),
+      });
+      const result = await response.json();
+      expect(response.status, JSON.stringify(result)).toBe(201);
+      photoId = result.id;
+      const photo = await prisma.producePhoto.findUniqueOrThrow({ where: { id: photoId } });
+      expect(photo.userId).toBe(verifyAccessToken(seller, "customer").sub);
+      const own = await request(app)
+        .get(`/v1/listing-photos/${photoId}`)
+        .set({ Authorization: `Bearer ${seller}` });
+      expect(own.status).toBe(200);
+      expect(own.body).toEqual(bytes);
+      expect(
+        (
+          await request(app)
+            .get(`/v1/listing-photos/${photoId}`)
+            .set({ Authorization: `Bearer ${outsider}` })
+        ).status,
+      ).toBe(404);
+      const invalid = await request(app)
+        .post("/v1/listing-photos")
+        .set({ Authorization: `Bearer ${seller}`, "Content-Type": "image/png" })
+        .send(bytes);
+      expect(invalid.status).toBe(422);
+      expect(invalid.body.error.code).toBe("INVALID_PHOTO");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        uploadServer.close((error) => (error ? reject(error) : resolve())),
+      );
+      config.MEDIA_STORAGE = previousStorage;
+      if (photoId) {
+        const photo = await prisma.producePhoto.delete({ where: { id: photoId } });
+        await deleteMedia(photo.storageKey!);
+      }
     }
   });
   it("keeps voice gated and requires explicit confirmation for owned typed drafts", async () => {

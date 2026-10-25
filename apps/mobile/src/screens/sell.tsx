@@ -17,41 +17,14 @@ import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect, useRef } from "react";
 import { View, Pressable, Image, StyleSheet, BackHandler } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
+import { choosePhoto, photoBody } from "../lib/produce-photo";
 import { useApp, useResource } from "../state";
 import { Page, Label, Field, Button, Card, Icon, Notice, s, colors } from "../components/ui";
 import { api, API_URL, authHeaders } from "../lib/api";
 import { money, toMinor, type Listing, type Address } from "../lib/domain";
 import { ListingPhoto } from "./market";
 import { ListingControls } from "../components/seller-listing-controls";
-export async function choosePhoto(camera = false) {
-  const permission = camera
-    ? await ImagePicker.requestCameraPermissionsAsync()
-    : await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted)
-    throw new Error(
-      camera
-        ? "Camera permission was denied. Choose a photo from your library or enable camera access in Settings."
-        : "Photo access was denied. Enable it in Settings to attach produce.",
-    );
-  const result = await (
-    camera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync
-  )({ mediaTypes: ["images"], quality: 0.8, allowsEditing: false });
-  if (result.canceled) return null;
-  const photo = result.assets[0]!;
-  if (photo.fileSize && photo.fileSize > 10 * 1024 * 1024)
-    throw new Error("Choose a photo smaller than 10 MB.");
-  if (photo.mimeType && !["image/jpeg", "image/png"].includes(photo.mimeType))
-    throw new Error("Choose a JPEG or PNG image.");
-  return photo;
-}
-export async function photoBlob(uri: string, mime?: string) {
-  const response = await fetch(uri);
-  const data = await response.blob();
-  if (!data.size || data.size > 10 * 1024 * 1024)
-    throw new Error("Choose a photo smaller than 10 MB.");
-  return new Blob([data], { type: mime || data.type || "image/jpeg" });
-}
+export { choosePhoto, photoBody } from "../lib/produce-photo";
 type Category = { id: string; slug: string; translations: { locale: string; name: string }[] };
 type Catalogue = {
   categories: Category[];
@@ -185,7 +158,7 @@ export function Sell() {
       if (!photo) return;
       const result = await api<{ id: string }>("/listing-photos", {
         method: "POST",
-        blob: await photoBlob(photo.uri, photo.mimeType),
+        binary: await photoBody(photo.uri, photo.mimeType),
       });
       setForm((current) => {
         const photos = [...current.photos];
