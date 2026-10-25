@@ -1,10 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Modal, View } from "react-native";
-import MapView, { Marker, type MapPressEvent } from "react-native-maps";
+import { StyleSheet, View } from "react-native";
+import { AppSheet } from "./app-sheet";
+import MapView, { type Region } from "react-native-maps";
 import { useApp } from "../state";
-import { Button, Card, Heading, Label, Notice, Page } from "./ui";
+import { Button, Card, Heading, Label, Notice, colors } from "./ui";
 import { captureFarmPosition, type FarmPoint } from "../lib/device-location";
 
+const regionFor = (point: FarmPoint): Region => ({
+  ...point,
+  latitudeDelta: 0.006,
+  longitudeDelta: 0.006,
+});
 export function FarmPin({
   value,
   onConfirm,
@@ -21,42 +27,82 @@ export function FarmPin({
     [error, setError] = useState("");
   const [candidate, setCandidate] = useState<FarmPoint | undefined>(value);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [moving, setMoving] = useState(false);
+  const map = useRef<MapView>(null);
+  const mapReady = useRef(false),
+    pendingRegion = useRef<Region | null>(null);
   const active = useRef(true),
     running = useRef(false),
     confirming = useRef(false);
+  const generation = useRef(0),
+    gesture = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
+      generation.current++;
     };
   }, []);
+  const centreOn = (point: FarmPoint, precision: number | null = null) => {
+    gesture.current = false;
+    setMoving(false);
+    setCandidate(point);
+    setAccuracy(precision);
+    pendingRegion.current = regionFor(point);
+    if (mapReady.current) {
+      map.current?.animateToRegion(pendingRegion.current, 350);
+      pendingRegion.current = null;
+    }
+  };
   const locate = async () => {
-    if (running.current) return;
+    if (running.current || confirming.current) return;
+    const request = ++generation.current;
     running.current = true;
     setBusy(true);
     setError("");
     try {
       const captured = await captureFarmPosition();
-      if (active.current) {
-        setCandidate(captured.point);
-        setAccuracy(captured.accuracy);
+      if (active.current && request === generation.current) {
+        centreOn(captured.point, captured.accuracy);
         setOpen(true);
       }
     } catch (e) {
-      if (active.current) setError(a.error(e));
+      if (active.current && request === generation.current) setError(a.error(e));
     } finally {
       running.current = false;
       if (active.current) setBusy(false);
     }
   };
-  const select = (point: FarmPoint) => {
-    setCandidate(point);
-    setAccuracy(null);
-  };
   const close = () => {
-    if (!saving) {
-      setOpen(false);
-      setError("");
+    if (confirming.current) return;
+    generation.current++;
+    mapReady.current = false;
+    pendingRegion.current = null;
+    setOpen(false);
+    setError("");
+    setMoving(false);
+    gesture.current = false;
+  };
+  const confirm = async () => {
+    if (!candidate || busy || moving || confirming.current) return;
+    confirming.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      await onConfirm({
+        latitude: Number(candidate.latitude.toFixed(6)),
+        longitude: Number(candidate.longitude.toFixed(6)),
+      });
+      if (active.current) {
+        mapReady.current = false;
+        pendingRegion.current = null;
+        setOpen(false);
+      }
+    } catch (e) {
+      if (active.current) setError(a.error(e));
+    } finally {
+      confirming.current = false;
+      if (active.current) setSaving(false);
     }
   };
   return (
@@ -78,47 +124,30 @@ export function FarmPin({
         secondary
         disabled={disabled || busy}
         onPress={() => {
+          mapReady.current = false;
+          pendingRegion.current = null;
           setError("");
           setCandidate(value);
           setAccuracy(null);
+          setMoving(false);
+          gesture.current = false;
           setOpen(true);
         }}
       />
       {error && !open && <Notice text={error} error />}
-      {open && (
-        <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
-          <Page
-            title="Confirm map location"
-            back={saving ? undefined : close}
-            footer={
-              <Button
-                title={saving ? "Saving…" : "Confirm location pin"}
-                loading={saving}
-                disabled={!candidate || saving}
-                onPress={async () => {
-                  if (!candidate || confirming.current) return;
-                  confirming.current = true;
-                  setSaving(true);
-                  setError("");
-                  try {
-                    await onConfirm({
-                      latitude: Number(candidate.latitude.toFixed(6)),
-                      longitude: Number(candidate.longitude.toFixed(6)),
-                    });
-                    if (active.current) setOpen(false);
-                  } catch (e) {
-                    if (active.current) setError(a.error(e));
-                  } finally {
-                    confirming.current = false;
-                    if (active.current) setSaving(false);
-                  }
-                }}
-              />
-            }
-          >
-            <Label>Tap the map or drag the pin to the collection point.</Label>
+      <AppSheet
+        visible={open}
+        title="Confirm map location"
+        subtitle="Move the map to place the pin on your pickup point."
+        onClose={close}
+        busy={saving}
+        scroll={false}
+        testID="farm-pin"
+        closeLabel="Close map"
+        footer={
+          <>
             {accuracy !== null && (
-              <Label>
+              <Label muted>
                 {a.ui("Location accuracy: about {meters} metres", {
                   meters: String(Math.ceil(accuracy)),
                 })}
@@ -127,33 +156,116 @@ export function FarmPin({
             {accuracy !== null && accuracy > 100 && (
               <Notice text="This location is approximate. Move outdoors and retry, or adjust the pin before confirming." />
             )}
-            <View style={{ height: 360, borderRadius: 16, overflow: "hidden" }}>
-              <MapView
-                style={{ flex: 1 }}
-                initialRegion={{
-                  latitude: candidate?.latitude ?? 9.08,
-                  longitude: candidate?.longitude ?? 8.67,
-                  latitudeDelta: candidate ? 0.006 : 10,
-                  longitudeDelta: candidate ? 0.006 : 10,
-                }}
-                onPress={(event: MapPressEvent) => {
-                  if (!saving) select(event.nativeEvent.coordinate);
-                }}
-              >
-                {candidate && (
-                  <Marker
-                    coordinate={candidate}
-                    draggable={!saving}
-                    onDragEnd={(event) => select(event.nativeEvent.coordinate)}
-                  />
-                )}
-              </MapView>
-            </View>
             {error && <Notice text={error} error />}
-            <Button title="Cancel" secondary disabled={saving} onPress={close} />
-          </Page>
-        </Modal>
-      )}
+            <Button
+              title={busy ? "Finding your location…" : "Use my current location"}
+              secondary
+              loading={busy}
+              disabled={busy || saving}
+              onPress={() => void locate()}
+            />
+            <Button
+              title={saving ? "Saving…" : "Confirm location pin"}
+              loading={saving}
+              disabled={!candidate || saving || busy || moving}
+              onPress={() => void confirm()}
+            />
+          </>
+        }
+      >
+        <View style={styles.map}>
+          <MapView
+            ref={map}
+            style={StyleSheet.absoluteFill}
+            loadingEnabled
+            onMapReady={() => {
+              mapReady.current = true;
+              if (pendingRegion.current) {
+                map.current?.animateToRegion(pendingRegion.current, 350);
+                pendingRegion.current = null;
+              }
+            }}
+            initialRegion={
+              candidate
+                ? regionFor(candidate)
+                : { latitude: 9.08, longitude: 8.67, latitudeDelta: 10, longitudeDelta: 10 }
+            }
+            scrollEnabled={!saving && !busy}
+            zoomEnabled={!saving && !busy}
+            rotateEnabled={false}
+            pitchEnabled={false}
+            onTouchStart={() => {
+              if (!saving && !busy) gesture.current = true;
+            }}
+            onPanDrag={() => {
+              if (!saving && !busy) {
+                gesture.current = true;
+                setMoving(true);
+              }
+            }}
+            onRegionChange={(_region, details) => {
+              if (gesture.current || details?.isGesture) {
+                gesture.current = true;
+                setMoving(true);
+              }
+            }}
+            onRegionChangeComplete={(region, details) => {
+              if (!saving && !busy && (gesture.current || details?.isGesture)) {
+                setCandidate({ latitude: region.latitude, longitude: region.longitude });
+                setAccuracy(null);
+              }
+              gesture.current = false;
+              setMoving(false);
+            }}
+            onPress={(event) => {
+              if (!saving && !busy) centreOn(event.nativeEvent.coordinate);
+            }}
+            onPoiClick={(event) => {
+              if (!saving && !busy) centreOn(event.nativeEvent.coordinate);
+            }}
+          />
+          <View pointerEvents="none" style={styles.pinAnchor}>
+            <View style={[styles.pinHead, !candidate && { backgroundColor: colors.muted }]}>
+              <View style={styles.pinDot} />
+            </View>
+            <View style={[styles.pinTip, !candidate && { borderTopColor: colors.muted }]} />
+          </View>
+        </View>
+      </AppSheet>
     </Card>
   );
 }
+const styles = StyleSheet.create({
+  map: { flex: 1, minHeight: 80 },
+  pinAnchor: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 34,
+    height: 44,
+    marginLeft: -17,
+    marginTop: -44,
+    alignItems: "center",
+  },
+  pinHead: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.green,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.white,
+    zIndex: 1,
+  },
+  pinDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.white },
+  pinTip: {
+    marginTop: -3,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 13,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: colors.green,
+  },
+});

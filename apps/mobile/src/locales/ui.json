@@ -4786,5 +4786,54 @@
     "Ba a sami adireshin gonarka ba.",
     "Enweghị ike ịchọta adreesị ugbo gị.",
     "A kò rí àdírẹ́sì oko rẹ."
+  ],
+  [
+    "Close map",
+    "Close map",
+    "Rufe taswira",
+    "Mechie maapụ",
+    "Pa máàpù dé"
+  ],
+  [
+    "Move the map to place the pin on your pickup point.",
+    "Move the map make the pin reach your pickup point.",
+    "Motsa taswira don sanya alamar a wurin ɗaukar kayanka.",
+    "Bugharịa maapụ ka akara ahụ dị n’ebe mbuli ihe ubi gị.",
+    "Gbé máàpù láti fi àmì sí ibi gbígbé ẹrù rẹ."
+  ],
+  [
+    "Close dialog",
+    "Close this window",
+    "Rufe wannan taga",
+    "Mechie windo a",
+    "Pa fèrèsé yìí dé"
+  ],
+  [
+    "View bank verification",
+    "View bank verification",
+    "Duba tabbatar da banki",
+    "Lee nkwenye ụlọ akụ",
+    "Wo ìjẹ́rìí banki"
+  ],
+  [
+    "Review withdrawal",
+    "Check withdrawal details",
+    "Duba bayanan cire kuɗi",
+    "Nyochaa mwepụ ego",
+    "Ṣàyẹ̀wò yíyọ owó"
+  ],
+  [
+    "Edit withdrawal",
+    "Edit withdrawal",
+    "Gyara cire kuɗi",
+    "Dezie mwepụ ego",
+    "Ṣàtúnṣe yíyọ owó"
+  ],
+  [
+    "Amount to receive: {amount}",
+    "Amount wey you go receive: {amount}",
+    "Adadin da za ka karɓa: {amount}",
+    "Ego ị ga-anata: {amount}",
+    "Iye tí o máa gbà: {amount}"
   ]
 ]

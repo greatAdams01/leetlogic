@@ -1,5 +1,6 @@
+import { AppSheet } from "../components/app-sheet";
 import React, { useState, useRef, useEffect } from "react";
-import { Linking, AppState, ScrollView, AccessibilityInfo, Modal } from "react-native";
+import { Linking, AppState, ScrollView, AccessibilityInfo } from "react-native";
 import * as Crypto from "expo-crypto";
 import { Page, Card, Heading, Label, Field, Button, Notice } from "../components/ui";
 import { Select } from "../components/Select";
@@ -16,7 +17,8 @@ export function Finance() {
     [errorScope, setErrorScope] = useState<"setup" | "withdraw">("setup"),
     [task, setTask] = useState<"setup" | "check" | "withdraw" | null>(null),
     [setupNotice, setSetupNotice] = useState(""),
-    [showWithdrawal, setShowWithdrawal] = useState(false);
+    [showWithdrawal, setShowWithdrawal] = useState(false),
+    [reviewWithdrawal, setReviewWithdrawal] = useState(false);
   const [firstName, setFirst] = useState(""),
     [lastName, setLast] = useState(""),
     [email, setEmail] = useState(a.user?.profile?.email || ""),
@@ -74,6 +76,7 @@ export function Finance() {
     else setSetupNotice("Your payment setup is being prepared. Check its status shortly.");
   };
   const data = r.data;
+  const selectedBank = data?.destinations.find((bank) => bank.id === destination);
   const withdrawal = withdrawalAmounts(
     data?.earnings.availableMinor || "0",
     data?.payoutFeeMinor ?? null,
@@ -84,6 +87,28 @@ export function Finance() {
       setShowWithdrawal(false);
       setError("");
     }
+  };
+  const submitWithdrawal = () => {
+    if (!data || !withdrawal.valid || !selectedBank?.usable) return;
+    void run(async () => {
+      const inputKey = JSON.stringify([destination, toMinor(amount), data.payoutFeeMinor]);
+      if (withdrawalKey.current.input !== inputKey)
+        withdrawalKey.current = { input: inputKey, key: Crypto.randomUUID() };
+      await api("/financial/withdrawals", {
+        method: "POST",
+        body: {
+          destinationId: destination,
+          amountMinor: toMinor(amount),
+          feeMinor: data.payoutFeeMinor,
+          mutationKey: withdrawalKey.current.key,
+        },
+      });
+      setAmount("");
+      setShowWithdrawal(false);
+      setReviewWithdrawal(false);
+      setSetupNotice("Withdrawal requested. You can follow its progress in payment history.");
+      withdrawalKey.current = { input: "", key: "" };
+    }, "withdraw");
   };
   useEffect(() => {
     if (!data?.enabled || !data.account || data.account.ready) return;
@@ -127,6 +152,7 @@ export function Finance() {
                       ? data.destinations.find((bank) => bank.usable)!.id
                       : "",
                   );
+                  setReviewWithdrawal(false);
                   setShowWithdrawal(true);
                 }}
               />
@@ -243,24 +269,71 @@ export function Finance() {
           {showWithdrawal &&
             data.account?.ready &&
             data.destinations.some((bank) => bank.usable) && (
-              <Modal
+              <AppSheet
                 visible
-                animationType="slide"
-                presentationStyle="pageSheet"
-                onRequestClose={closeWithdrawal}
+                title={reviewWithdrawal ? "Confirm withdrawal" : "Withdraw earnings"}
+                onClose={closeWithdrawal}
+                busy={busy}
+                contentKey={reviewWithdrawal ? "review" : "details"}
+                testID="withdrawal-sheet"
+                footer={
+                  <>
+                    {reviewWithdrawal && (
+                      <Button
+                        title="Edit withdrawal"
+                        secondary
+                        disabled={busy}
+                        onPress={() => setReviewWithdrawal(false)}
+                      />
+                    )}
+                    <Button
+                      title={
+                        task === "withdraw"
+                          ? "Requesting withdrawal…"
+                          : reviewWithdrawal
+                            ? "Confirm withdrawal"
+                            : "Review withdrawal"
+                      }
+                      loading={task === "withdraw"}
+                      disabled={busy || !selectedBank?.usable || !withdrawal.valid}
+                      onPress={() =>
+                        reviewWithdrawal ? submitWithdrawal() : setReviewWithdrawal(true)
+                      }
+                    />
+                  </>
+                }
               >
-                <Page title="Withdraw earnings" back={busy ? undefined : closeWithdrawal}>
+                {error && errorScope === "withdraw" && <Notice text={error} error />}
+                <Card>
+                  <Label>Available to withdraw</Label>
+                  <Heading>{money(data.earnings.availableMinor)}</Heading>
+                  <Label>
+                    {a.ui("Maximum you can receive: {amount}", {
+                      amount: money(withdrawal.maximum),
+                    })}
+                  </Label>
+                </Card>
+                {reviewWithdrawal ? (
                   <Card>
-                    <Label>Available to withdraw</Label>
-                    <Heading>{money(data.earnings.availableMinor)}</Heading>
+                    <Heading>{selectedBank?.bankName}</Heading>
                     <Label>
-                      {a.ui("Maximum you can receive: {amount}", {
-                        amount: money(withdrawal.maximum),
+                      {selectedBank?.accountName} · ****
+                      {selectedBank?.accountLastFour}
+                    </Label>
+                    <Label>
+                      {a.ui("Amount to receive: {amount}", { amount: money(toMinor(amount)) })}
+                    </Label>
+                    <Label>
+                      {a.ui("Withdrawal fee: {amount}", {
+                        amount: money(data.payoutFeeMinor || "0"),
                       })}
                     </Label>
+                    <Label>
+                      {a.ui("Total deducted: {amount}", { amount: money(withdrawal.total) })}
+                    </Label>
                   </Card>
+                ) : (
                   <Card>
-                    {error && errorScope === "withdraw" && <Notice text={error} error />}
                     <Select
                       label="Bank account"
                       value={destination}
@@ -308,55 +381,9 @@ export function Finance() {
                         {a.ui("Total deducted: {amount}", { amount: money(withdrawal.total) })}
                       </Label>
                     )}
-                    <Button
-                      title={task === "withdraw" ? "Requesting withdrawal…" : "Request withdrawal"}
-                      loading={task === "withdraw"}
-                      disabled={busy || !destination || !withdrawal.valid}
-                      onPress={() =>
-                        a.alert(
-                          "Confirm withdrawal",
-                          "The amount and withdrawal fee will be deducted from your available earnings.",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Confirm",
-                              onPress: () =>
-                                void run(async () => {
-                                  const inputKey = JSON.stringify([
-                                    destination,
-                                    toMinor(amount),
-                                    data.payoutFeeMinor,
-                                  ]);
-                                  if (withdrawalKey.current.input !== inputKey)
-                                    withdrawalKey.current = {
-                                      input: inputKey,
-                                      key: Crypto.randomUUID(),
-                                    };
-                                  await api("/financial/withdrawals", {
-                                    method: "POST",
-                                    body: {
-                                      destinationId: destination,
-                                      amountMinor: toMinor(amount),
-                                      feeMinor: data.payoutFeeMinor,
-                                      mutationKey: withdrawalKey.current.key,
-                                    },
-                                  });
-                                  setAmount("");
-                                  setShowWithdrawal(false);
-                                  setSetupNotice(
-                                    "Withdrawal requested. You can follow its progress in payment history.",
-                                  );
-                                  withdrawalKey.current = { input: "", key: "" };
-                                }, "withdraw"),
-                            },
-                          ],
-                        )
-                      }
-                    />
                   </Card>
-                  <Button title="Cancel" secondary disabled={busy} onPress={closeWithdrawal} />
-                </Page>
-              </Modal>
+                )}
+              </AppSheet>
             )}
           {setupNotice && data.account?.ready && <Notice text={setupNotice} success />}
           <Card>

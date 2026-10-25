@@ -46,6 +46,21 @@ vi.mock("../state", () => ({
 }));
 vi.mock("./api", () => ({ api: h.api }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
+vi.mock("../components/app-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    AppSheet: ({
+      children,
+      footer,
+      visible,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      footer?: React.ReactNode;
+      visible: boolean;
+    }) => (visible ? createElement("AppSheet", props, children, footer) : null),
+  };
+});
 vi.mock("../components/ui", async () => {
   const { createElement } = await import("react");
   const host =
@@ -154,9 +169,9 @@ describe("payment setup feedback", () => {
         .findAllByType("Field" as never)
         .some((field) => field.props.label === "Amount to receive (NGN)"),
     ).toBe(true);
-    expect(renderer!.root.findAllByType("Modal" as never)).toHaveLength(1);
-    expect(button("Request withdrawal").props.disabled).toBe(true);
-    await act(async () => renderer!.root.findAllByType("Page" as never)[1]!.props.back());
+    expect(renderer!.root.findAllByType("AppSheet" as never)).toHaveLength(1);
+    expect(button("Review withdrawal").props.disabled).toBe(true);
+    await act(async () => renderer!.root.findByType("AppSheet" as never).props.onClose());
     expect(renderer!.root.findAllByType("Field" as never)).toHaveLength(0);
     await act(async () => button("Manage bank accounts").props.onPress());
     expect(h.go).toHaveBeenCalledWith("banks");
@@ -172,9 +187,11 @@ describe("payment setup feedback", () => {
     await act(async () => button("Withdraw earnings").props.onPress());
     await act(async () => button("Use full amount").props.onPress());
     expect(renderer!.root.findAllByType("Field" as never)[0]!.props.value).toBe("99.00");
-    expect(button("Request withdrawal").props.disabled).toBe(false);
-    await act(async () => button("Request withdrawal").props.onPress());
-    await act(async () => h.alert.mock.calls[0]![2][1].onPress());
+    expect(button("Review withdrawal").props.disabled).toBe(false);
+    await act(async () => button("Review withdrawal").props.onPress());
+    expect(h.api).not.toHaveBeenCalled();
+    await act(async () => button("Confirm withdrawal").props.onPress());
+    expect(h.alert).not.toHaveBeenCalled();
     expect(h.api).toHaveBeenCalledWith(
       "/financial/withdrawals",
       expect.objectContaining({
@@ -185,7 +202,7 @@ describe("payment setup feedback", () => {
         }),
       }),
     );
-    expect(renderer!.root.findAllByType("Modal" as never)).toHaveLength(0);
+    expect(renderer!.root.findAllByType("AppSheet" as never)).toHaveLength(0);
   });
   it("opens the exact verified sandbox onboarding host", async () => {
     h.data.account = { ready: false, status: "ONBOARDING" };

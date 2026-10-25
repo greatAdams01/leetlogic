@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { FlatList, Modal, Pressable, TextInput, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { FlatList, Pressable, TextInput, View } from "react-native";
+import { AppSheet } from "./app-sheet";
 import { LocalizedText as Text, useUI } from "../localization";
-import { Button, colors, Icon, s } from "./ui";
+import { colors, Icon, s } from "./ui";
 
 export function Select({
   label,
@@ -54,11 +54,8 @@ export function Select({
           <Icon name="chevron" size={18} />
         </View>
       </Pressable>
-      <Modal visible={open} animationType="slide" onRequestClose={close}>
-        <SafeAreaView style={{ flex: 1, padding: 20, backgroundColor: colors.paper, gap: 16 }}>
-          <Text accessibilityRole="header" style={s.sectionTitle}>
-            {label}
-          </Text>
+      <AppSheet visible={open} title={label} onClose={close} scroll={false}>
+        <View style={{ flex: 1, paddingHorizontal: 20, paddingBottom: 16, gap: 16 }}>
           <TextInput
             value={search}
             onChangeText={setSearch}
@@ -86,9 +83,8 @@ export function Select({
               </Pressable>
             )}
           />
-          <Button title="Cancel" secondary onPress={close} />
-        </SafeAreaView>
-      </Modal>
+        </View>
+      </AppSheet>
     </View>
   );
 }

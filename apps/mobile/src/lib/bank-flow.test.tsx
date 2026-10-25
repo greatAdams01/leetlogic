@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
     enabled: true,
     account: { ready: true, status: "READY" },
     destinations: [],
-    operations: [],
+    operations: [] as { id: string; kind: string; status: string }[],
   },
   result: {
     status: "QUEUED",
@@ -40,6 +40,21 @@ vi.mock("../state", () => ({
 }));
 vi.mock("./api", () => ({ api: h.api }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
+vi.mock("../components/app-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    AppSheet: ({
+      children,
+      footer,
+      visible,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      footer?: React.ReactNode;
+      visible: boolean;
+    }) => (visible ? createElement("AppSheet", props, children, footer) : null),
+  };
+});
 vi.mock("../components/ui", async () => {
   const { createElement } = await import("react");
   const host =
@@ -62,6 +77,7 @@ const button = (title: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.finance.account.ready = true;
+  h.finance.operations = [];
   h.result.status = "QUEUED";
   h.result.destination = null;
   h.api.mockResolvedValue({ id: "bank-operation" });
@@ -78,6 +94,33 @@ describe("bank account setup", () => {
     expect(button("Add bank account")).toBeUndefined();
     await act(async () => button("Set up payments").props.onPress());
     expect(h.go).toHaveBeenCalledWith("finance");
+    expect(h.api).not.toHaveBeenCalled();
+  });
+  it("closes an unsaved bank sheet without submitting and clears its account number", async () => {
+    await act(async () => {
+      renderer = create(<BankAccounts />);
+    });
+    await act(async () => button("Add bank account").props.onPress());
+    await act(async () =>
+      renderer.root.findByType("Field" as never).props.onChangeText("1234567890"),
+    );
+    await act(async () => renderer.root.findByType("AppSheet" as never).props.onClose());
+    expect(renderer.root.findAllByType("AppSheet" as never)).toHaveLength(0);
+    expect(h.api).not.toHaveBeenCalled();
+    await act(async () => button("Add bank account").props.onPress());
+    expect(renderer.root.findByType("Field" as never).props.value).toBe("");
+  });
+  it("reopens an existing verification instead of creating another bank submission", async () => {
+    h.finance.operations = [{ id: "existing-operation", kind: "DESTINATION", status: "QUEUED" }];
+    await act(async () => {
+      renderer = create(<BankAccounts />);
+    });
+    expect(button("Add bank account")).toBeUndefined();
+    expect(renderer.root.findAllByType("AppSheet" as never)).toHaveLength(0);
+    await act(async () => button("View bank verification").props.onPress());
+    expect(renderer.root.findAllByType("AppSheet" as never)).toHaveLength(1);
+    await act(async () => renderer.root.findByType("AppSheet" as never).props.onClose());
+    await act(async () => button("View bank verification").props.onPress());
     expect(h.api).not.toHaveBeenCalled();
   });
   it("requires ten digits and explicit review before submitting, and waits for confirmed verification", async () => {

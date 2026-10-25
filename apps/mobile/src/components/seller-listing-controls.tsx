@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { AppSheet } from "./app-sheet";
 import { useApp } from "../state";
 import { api } from "../lib/api";
 import { quantity, type Listing } from "../lib/domain";
-import { Button, Field, Heading, Label, Notice, colors } from "./ui";
+import { Button, Field, Label, Notice, colors } from "./ui";
 
 export function SmallAction({
   title,
@@ -81,51 +81,47 @@ export function ListingControls({
         {busy && !editing && <ActivityIndicator color={colors.green} />}
       </View>
       {error && !editing && <Notice text={error} error />}
-      <Modal
+      <AppSheet
         visible={editing}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
+        title="Update stock"
+        onClose={() => {
           if (!busy) setEditing(false);
         }}
+        busy={busy}
+        footer={
+          <Button
+            title="Save stock"
+            loading={busy}
+            disabled={busy}
+            onPress={() => {
+              try {
+                quantity(stock);
+                void change({ availableQuantity: stock });
+              } catch (e) {
+                setError(a.error(e));
+              }
+            }}
+          />
+        }
       >
-        <View style={styles.overlay}>
-          <SafeAreaView edges={["bottom"]} style={styles.sheet}>
-            <Heading>Update stock</Heading>
-            <Label>{item.title}</Label>
-            <Label>
-              Enter the total stock you have, including quantities reserved for existing orders.
-            </Label>
-            <Field
-              label="Total stock"
-              value={stock}
-              keyboardType="decimal-pad"
-              onChangeText={setStock}
-            />
-            <Label>
-              {a.ui("Reserved for orders: {quantity} {unit}", {
-                quantity: item.reservedQuantity,
-                unit: a.unit(item.unitCode),
-              })}
-            </Label>
-            {error && <Notice text={error} error />}
-            <Button
-              title="Save stock"
-              loading={busy}
-              disabled={busy}
-              onPress={() => {
-                try {
-                  quantity(stock);
-                  void change({ availableQuantity: stock });
-                } catch (e) {
-                  setError(a.error(e));
-                }
-              }}
-            />
-            <Button title="Cancel" secondary disabled={busy} onPress={() => setEditing(false)} />
-          </SafeAreaView>
-        </View>
-      </Modal>
+        <Label>{item.title}</Label>
+        <Label>
+          Enter the total stock you have, including quantities reserved for existing orders.
+        </Label>
+        <Field
+          label="Total stock"
+          value={stock}
+          keyboardType="decimal-pad"
+          onChangeText={setStock}
+        />
+        <Label>
+          {a.ui("Reserved for orders: {quantity} {unit}", {
+            quantity: item.reservedQuantity,
+            unit: a.unit(item.unitCode),
+          })}
+        </Label>
+        {error && <Notice text={error} error />}
+      </AppSheet>
     </>
   );
 }
@@ -141,12 +137,4 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   muted: { backgroundColor: "#f2f0ec" },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  sheet: {
-    backgroundColor: colors.paper,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    gap: 16,
-  },
 });
