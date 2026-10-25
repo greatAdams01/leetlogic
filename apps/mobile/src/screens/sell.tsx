@@ -1,3 +1,4 @@
+import { ListingVoiceNote } from "../components/listing-voice-note";
 import { AppSheet } from "../components/app-sheet";
 import { Select } from "../components/Select";
 import { ListingPage, ListingProgress } from "../components/listing-layout";
@@ -42,6 +43,12 @@ export function Sell() {
   const [ready, setReady] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const voiceActive = useRef(false);
+  const voiceActivity = (active: boolean) => {
+    voiceActive.current = active;
+    setVoiceBusy(active);
+  };
   const [photoChoice, setPhotoChoice] = useState<number | null>(null);
   const running = useRef(false),
     writes = useRef(Promise.resolve());
@@ -119,13 +126,13 @@ export function Sell() {
     item.translations.find((text) => text.locale === "en")?.name ||
     item.slug;
   const goStep = (next: 1 | 2 | 3) => {
-    if (!running.current) {
+    if (!running.current && !voiceActive.current) {
       setError("");
       setStep(next);
     }
   };
   const close = async () => {
-    if (running.current) return;
+    if (running.current || voiceActive.current) return;
     try {
       clearTimeout(timer.current);
       await saveLocal();
@@ -135,7 +142,7 @@ export function Sell() {
     }
   };
   const back = () => {
-    if (running.current) return;
+    if (running.current || voiceActive.current) return;
     if (step > 1) goStep((step - 1) as 1 | 2);
     else void close();
   };
@@ -175,7 +182,7 @@ export function Sell() {
     }
   };
   const next = async () => {
-    if (running.current || !ready) return;
+    if (running.current || voiceActive.current || !ready) return;
     setError("");
     if (step === 1) {
       if (category) goStep(2);
@@ -204,6 +211,14 @@ export function Sell() {
         { method: a.route.id ? "PATCH" : "POST", body: listingPayload(form, a.locale) },
       );
       await writes.current;
+      if (!a.route.id) {
+        const voiceKey = `listing-voice:${a.user!.id}:new`;
+        const voice = await AsyncStorage.getItem(voiceKey);
+        if (voice) {
+          await AsyncStorage.setItem(`listing-voice:${a.user!.id}:${draft.id}`, voice);
+          await AsyncStorage.removeItem(voiceKey);
+        }
+      }
       await AsyncStorage.removeItem(storage);
       a.go("review", draft.id);
     } catch (e) {
@@ -221,7 +236,7 @@ export function Sell() {
   return (
     <ListingPage
       step={step}
-      onBack={busy ? undefined : back}
+      onBack={busy || voiceBusy ? undefined : back}
       onClose={() => void close()}
       loading={r.loading || !ready}
       contentKey={String(step)}
@@ -244,6 +259,7 @@ export function Sell() {
             loading={busy}
             disabled={
               busy ||
+              voiceBusy ||
               !ready ||
               r.loading ||
               !!r.error ||
@@ -326,6 +342,11 @@ export function Sell() {
           {r.data?.verificationStatus !== "APPROVED" && (
             <Notice text="You can save and review drafts while your seller application is in progress. Approval is required before submitting produce for sale." />
           )}
+          <ListingVoiceNote
+            draftId={a.route.id || "new"}
+            disabled={busy}
+            onActivityChange={voiceActivity}
+          />
           <Card style={{ borderRadius: 16 }}>
             <Field
               label="Product title *"
@@ -576,6 +597,7 @@ export function Review() {
     r = useResource<{ id: string; fields: any; listingId: string | null }>(
       `/listing-drafts/${a.route.id}`,
     );
+  const catalogue = useResource<Catalogue>("/listing-drafts/catalogue");
   const [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -584,6 +606,14 @@ export function Review() {
   );
   const running = useRef(false);
   const form = r.data ? restoreListing(r.data.fields) : null;
+  const selectedCategory = catalogue.data?.categories.find((item) => item.id === form?.categoryId);
+  const categoryLabel =
+    selectedCategory?.translations.find((item) => item.locale === a.locale)?.name ||
+    selectedCategory?.translations.find((item) => item.locale === "en")?.name;
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => busy);
+    return () => subscription.remove();
+  }, [busy]);
   const canSubmit = a.user?.farmerProfile?.verificationStatus === "APPROVED";
   const address = a.user?.addresses.find((item) => item.id === form?.addressId);
   const submit = async () => {
@@ -609,6 +639,7 @@ export function Review() {
   const image = form?.photos[0] ? (
     <Image
       source={{ uri: `${API_URL}/v1/listing-photos/${form.photos[0].id}`, headers: authHeaders() }}
+      accessibilityLabel={a.ui("Cover photo")}
       resizeMode="cover"
       style={{ width: "100%", height: 184, borderRadius: 16 }}
     />
@@ -711,16 +742,37 @@ export function Review() {
         <Text style={listingStyles.title}>Check this.</Text>
         <Label muted>Review your produce details before submitting.</Label>
       </View>
-      {image}
+      <View style={{ gap: 8 }}>
+        <Label style={{ fontFamily: "NotoBold" }}>Uploaded photos</Label>
+        {image}
+        {form && form.photos.length > 1 && (
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {form.photos.slice(1).map((photo, index) => (
+              <Image
+                key={photo.id}
+                accessibilityLabel={a.ui("Photo {number}", { number: index + 2 })}
+                source={{ uri: `${API_URL}/v1/listing-photos/${photo.id}`, headers: authHeaders() }}
+                resizeMode="cover"
+                style={{ width: 80, height: 76, borderRadius: 10 }}
+              />
+            ))}
+          </View>
+        )}
+      </View>
       {form && (
         <Card style={listingStyles.reviewCard}>
           {[
             ["Produce", form.title],
+            ...(categoryLabel ? [["Category", categoryLabel]] : []),
             ["Quantity", `${form.quantity} ${a.unit(form.unitCode)}`],
             ["Price", `${money(toMinor(form.price))} / ${a.unit(form.unitCode)}`],
             [
               "Farm location",
-              address ? `${address.city}, ${address.state}` : a.ui("Saved pickup address"),
+              address
+                ? [address.line1, address.city, address.lga, address.state]
+                    .filter(Boolean)
+                    .join(", ")
+                : a.ui("Saved pickup address"),
             ],
             ["Shipping scope", a.ui(form.shippingScope === "LOCAL" ? "Local" : "Sells in Nigeria")],
             ["Description", form.description],

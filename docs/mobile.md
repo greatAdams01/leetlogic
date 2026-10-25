@@ -19,7 +19,7 @@ Mobile interface text is bundled for `en`, `pcm`, `ha`, `ig` and `yo` in `apps/m
 
 The bundled LeetLogic logo appears at every launch before fonts or session preferences finish loading, rather than a blank screen or spinner. The native splash plugin also uses that logo in rebuilt device binaries; Expo Go does not reproduce a custom native splash fully. Proper names, identifiers, addresses, amounts and farmer-authored listing text are preserved. Dynamic resource translations still use the separately configured Azure service; operating-system permission screens use the device language.
 
-Out of scope: admin UI on mobile, payment collection, wallet/withdrawals, invented bank/USSD details, unsupported courier promises, driver calls, GPS maps, speeds/temperatures, recommendations, social chat, general AI assistance, audio playback, image recognition and language-pack downloads. Voice is explicitly unavailable until the accepted free Igbo speech provider milestone passes. The native config does not request microphone permission.
+Out of scope: admin UI on mobile, payment collection, wallet/withdrawals, invented bank/USSD details, unsupported courier promises, driver calls, GPS maps, speeds/temperatures, recommendations, social chat, general AI assistance, automatic spoken translation, image recognition and language-pack downloads. Automatic speech transcription remains unavailable until the accepted free Igbo speech provider milestone passes. Listing detail entry supports optional device-only voice recording/playback, with microphone access requested only after the farmer taps Record.
 
 ## Dojah identity checks
 
@@ -184,7 +184,7 @@ The farmer can replace/remove photos and choose the cover. Photos remain private
 until listing approval. Quantities follow the selected unit's decimal rules and
 prices are stored as exact NGN minor amounts. Explicit review is required before
 submission. Submitted listings are **pending review**, not immediately live.
-AI grading, voice playback, automatic image identification, and sharing an
+AI grading, automatic voice transcription, automatic image identification, and sharing an
 unapproved listing are not part of this flow.
 
 For a new database, add the seven produce categories and selling units without
@@ -207,3 +207,31 @@ and Processed Produce. The actual product name is entered in step two. Re-runnin
 groups, retains old records for history, and hides them from selection. Device
 drafts recover through catalogue aliases. This does not enable new delivery
 commodities: provider eligibility still requires explicitly configured category IDs.
+
+### Listing review and private voice drafts
+
+Step 4 displays every uploaded photo, the selected category, produce details,
+price/quantity, delivery scope and full farm address. Photos are grouped into a
+cover preview and compact thumbnails immediately above the details. There is no
+voice recording card on this review step.
+
+Step 2 offers an optional voice aid beside the editable product fields. It can
+capture a farmer describing the produce and other details in their own language.
+Recording is limited to 30 seconds and stops when the app leaves the foreground.
+It supports playback, re-recording and removal. Continuing or leaving the details step stays blocked
+while recording or saving.
+
+Voice recordings and their metadata remain in account-scoped storage **on that
+device**. They are not sent to the API, Cloudinary, buyers, or a speech provider.
+Saved recordings remain local until removed or app data is cleared. Re-recording
+replaces the previous note. Typed listing fields and explicit confirmation are
+still required. This does not satisfy the separate speech-to-listing launch
+milestone; no transcription or automatic translation is advertised.
+
+After installing the audio dependency, restart Metro with
+`pnpm --filter @leetlogic/mobile start --clear`. Expo Go supports the audio module;
+custom native builds need rebuilding to pick up the microphone permission.
+Simulator/device checks: preview all four photos, deny/allow microphone access,
+record/stop, reach the 30-second limit, play/replay/remove, go back and return,
+restart the app, and switch accounts. Confirm a voice note never appears in any
+network request. Interactive microphone/speaker checks remain manual.

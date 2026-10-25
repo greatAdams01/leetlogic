@@ -12,13 +12,16 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Take a photo of the produce you want to list.",
         "NSPhotoLibraryUsageDescription": "Choose a photo of your produce.",
-        "NSLocationWhenInUseUsageDescription": "Use your location to help you confirm your farm’s pickup point."
+        "NSLocationWhenInUseUsageDescription": "Use your location to help you confirm your farm\u2019s pickup point.",
+        "NSMicrophoneUsageDescription": "Record a private voice note for your produce listing."
       }
     },
     "android": {
       "package": "com.leetlogic.marketplace",
-      "permissions": ["CAMERA"],
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-secure-store",
@@ -27,7 +30,7 @@
         {
           "photosPermission": "Choose a photo of your produce.",
           "cameraPermission": "Take a photo of your produce.",
-          "microphonePermission": false
+          "microphonePermission": "Record a private voice note for your produce listing."
         }
       ],
       "expo-font",
@@ -44,13 +47,21 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Use your location to help you confirm your farm’s pickup point.",
+          "locationWhenInUsePermission": "Use your location to help you confirm your farm\u2019s pickup point.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false,
           "isAndroidForegroundServiceEnabled": false,
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "motionUsagePermission": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record a private voice note for your produce listing.",
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
         }
       ]
     ]

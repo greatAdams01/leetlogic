@@ -114,6 +114,7 @@ describe("complete mobile interface localization", () => {
       resolve("src/components/seller-listing-controls.tsx"),
       resolve("src/components/navigation.tsx"),
       resolve("src/components/listing-layout.tsx"),
+      resolve("src/components/listing-voice-note.tsx"),
     ];
     for (const file of files) {
       const tree = ts.createSourceFile(

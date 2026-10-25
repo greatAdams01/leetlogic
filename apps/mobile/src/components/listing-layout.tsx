@@ -27,7 +27,10 @@ export function ListingPage({
     <Page
       loading={loading}
       contentKey={contentKey}
-      contentStyle={{ paddingHorizontal: step === 2 || step === 3 ? 24 : 20 }}
+      contentStyle={{
+        paddingHorizontal: step === 2 || step === 3 ? 24 : 20,
+        ...(step === 4 ? { gap: 12 } : {}),
+      }}
       header={
         <View style={styles.header}>
           <Pressable

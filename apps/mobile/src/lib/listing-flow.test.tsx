@@ -70,6 +70,7 @@ vi.mock("./listing-art", () => ({ listingCategories: {} }));
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
 vi.mock("../screens/market", () => ({ ListingPhoto: "ListingPhoto" }));
 vi.mock("../components/seller-listing-controls", () => ({ ListingControls: "ListingControls" }));
+vi.mock("../components/listing-voice-note", () => ({ ListingVoiceNote: "ListingVoiceNote" }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
 vi.mock("../components/feedback", () => ({ Confirmation: "Confirmation" }));
 vi.mock("../components/app-sheet", async () => {
@@ -214,6 +215,61 @@ describe("seller listing wizard", () => {
     expect(nodes("AppSheet")).toHaveLength(0);
     expect(button("Review listing").props.disabled).toBe(false);
     expect(nodes("Image").some((n) => n.props.source.uri === "file:///cache/photo.jpg")).toBe(true);
+  });
+  it("shows all uploaded images compactly and no voice controls in review", async () => {
+    h.route = { id: "draft" };
+    h.draft = { ...h.draft, fields: { ...valid, photoIds: ["one", "two", "three", "four"] } };
+    await act(async () => {
+      renderer = create(<Review />);
+    });
+    const images = nodes("Image");
+    expect(images).toHaveLength(4);
+    expect(images.map((n) => n.props.source.uri)).toEqual(
+      ["one", "two", "three", "four"].map((id) => `http://localhost:3000/v1/listing-photos/${id}`),
+    );
+    expect(nodes("ListingVoiceNote")).toHaveLength(0);
+    expect(images.slice(1).every((node) => node.props.style.height <= 100)).toBe(true);
+  });
+  it("offers the voice aid while editing details and blocks continuation during recording", async () => {
+    h.route = { id: "draft" };
+    h.get.mockResolvedValue(null);
+    h.api.mockResolvedValueOnce({ fields: valid, listingId: null });
+    await act(async () => {
+      renderer = create(<Sell />);
+    });
+    expect(nodes("ListingPage")[0]!.props.step).toBe(2);
+    expect(nodes("ListingVoiceNote")[0]!.props.draftId).toBe("draft");
+    await act(async () => nodes("ListingVoiceNote")[0]!.props.onActivityChange(true));
+    expect(button("Continue to photos").props.disabled).toBe(true);
+    expect(nodes("ListingPage")[0]!.props.onBack).toBeUndefined();
+    await act(async () => button("Continue to photos").props.onPress());
+    expect(nodes("ListingPage")[0]!.props.step).toBe(2);
+    await act(async () => nodes("ListingVoiceNote")[0]!.props.onActivityChange(false));
+    expect(button("Continue to photos").props.disabled).toBe(false);
+  });
+  it("keeps the voice draft on the device when a new listing reaches review", async () => {
+    const voice = JSON.stringify({
+      uri: "file:///documents/listing-voice/seller/note.m4a",
+      durationMillis: 1000,
+      locale: "ig",
+    });
+    h.get.mockImplementation((key: string) =>
+      Promise.resolve(
+        key === "listing-draft:seller"
+          ? JSON.stringify({ ...valid, step: 3 })
+          : key === "listing-voice:seller:new"
+            ? voice
+            : null,
+      ),
+    );
+    await act(async () => {
+      renderer = create(<Sell />);
+    });
+    await act(async () => button("Review listing").props.onPress());
+    expect(h.set).toHaveBeenCalledWith("listing-voice:seller:draft", voice);
+    expect(h.remove).toHaveBeenCalledWith("listing-voice:seller:new");
+    expect(JSON.stringify(h.api.mock.calls)).not.toContain("file://");
+    expect(h.go).toHaveBeenCalledWith("review", "draft");
   });
   it("requires explicit confirmation and displays moderation status after submitting", async () => {
     h.route = { id: "draft" };

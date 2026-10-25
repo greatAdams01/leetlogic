@@ -5311,5 +5311,159 @@
     "An kasa haɗuwa da sabis na loda fayil. Sake gwadawa.",
     "Enweghị ike iru ọrụ ibulite faịlụ. Biko nwaa ọzọ.",
     "A kò lè dé iṣẹ́ gbígbé fáìlì sókè. Jọ̀wọ́ gbìyànjú lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "Uploaded photos",
+    "Photos wey you upload",
+    "Hotunan da aka loda",
+    "Foto e bulitere",
+    "Àwọn fọ́tò tí o gbé sókè"
+  ],
+  [
+    "Cover photo",
+    "Main photo",
+    "Babban hoto",
+    "Isi foto",
+    "Fọ́tò àkọ́kọ́"
+  ],
+  [
+    "Voice note",
+    "Voice note",
+    "Saƙon murya",
+    "Ozi olu",
+    "Àkọsílẹ̀ ohùn"
+  ],
+  [
+    "Describe your produce, quantity, price and pickup location in your own language.",
+    "Use your language talk about your produce, quantity, price and pickup place.",
+    "Bayyana kayanka, adadi, farashi da wurin ɗauka da harshenka.",
+    "Kọwaa ihe ubi gị, ọnụọgụ, ọnụahịa na ebe a ga-eburu ya n'asụsụ gị.",
+    "Ṣàlàyé ọjà rẹ, iye, owó àti ibi gbígbé e ní èdè rẹ."
+  ],
+  [
+    "Saved only on this device. This recording is not translated or sent with your listing. Complete the written details before submitting.",
+    "E save only for this device. We no translate or send this recording with your listing. Fill the written details before you submit.",
+    "An ajiye a wannan na'urar kawai. Ba a fassara ko aika saƙon tare da tallarka. Cika bayanan rubutu kafin aikawa.",
+    "E chekwara naanị na ngwaọrụ a. A naghị atụgharị ma ọ bụ ezipụ ndekọ a na ndepụta gị. Dejupụta nkọwa ederede tupu izipu.",
+    "A fi pamọ́ sórí ẹ̀rọ yìí nìkan. A kò túmọ̀ ohùn yìí tàbí rán án pẹ̀lú àkọsílẹ̀ rẹ. Parí àlàyé tí a kọ kí o tó fi ránṣẹ́."
+  ],
+  [
+    "Recording · {seconds} / 30 seconds",
+    "Recording · {seconds} / 30 seconds",
+    "Ana ɗaukar murya · daƙiƙa {seconds} / 30",
+    "Na-edekọ · sekọnd {seconds} / 30",
+    "Ń gba ohùn · ìṣẹ́jú àáyá {seconds} / 30"
+  ],
+  [
+    "Voice note · {seconds} seconds",
+    "Voice note · {seconds} seconds",
+    "Saƙon murya · daƙiƙa {seconds}",
+    "Ozi olu · sekọnd {seconds}",
+    "Àkọsílẹ̀ ohùn · ìṣẹ́jú àáyá {seconds}"
+  ],
+  [
+    "Record voice note",
+    "Record voice note",
+    "Ɗauki saƙon murya",
+    "Dekọọ ozi olu",
+    "Gba àkọsílẹ̀ ohùn"
+  ],
+  [
+    "Record again",
+    "Record again",
+    "Sake ɗaukar murya",
+    "Dekọọ ọzọ",
+    "Tún ohùn gbà"
+  ],
+  [
+    "Stop recording",
+    "Stop recording",
+    "Tsayar da ɗaukar murya",
+    "Kwụsị ndekọ",
+    "Dá gbígba ohùn dúró"
+  ],
+  [
+    "Play voice note",
+    "Play voice note",
+    "Saurari saƙon murya",
+    "Kpọọ ozi olu",
+    "Tẹ́tí sí àkọsílẹ̀ ohùn"
+  ],
+  [
+    "Pause voice note",
+    "Pause voice note",
+    "Dakatar da saƙon murya",
+    "Kwụtụ ozi olu",
+    "Dá ohùn dúró díẹ̀"
+  ],
+  [
+    "Remove voice note",
+    "Remove voice note",
+    "Cire saƙon murya",
+    "Wepụ ozi olu",
+    "Yọ àkọsílẹ̀ ohùn kúrò"
+  ],
+  [
+    "Allow microphone access in Settings to record a voice note. You can still type your details.",
+    "Allow microphone for Settings to record. You still fit type your details.",
+    "Ba da izinin makirufo a Saituna don ɗaukar murya. Za ka iya rubuta bayananka.",
+    "Kwe ka a jiri igwe okwu na Ntọala iji dekọọ olu. Ị ka nwere ike ide nkọwa gị.",
+    "Gba ẹ̀rọ gbohùn láyè nínú Ètò láti gba ohùn. O tún lè tẹ àlàyé rẹ."
+  ],
+  [
+    "We couldn’t save your recording. Please try again.",
+    "We no fit save your recording. Try again.",
+    "An kasa ajiye saƙon muryarka. Sake gwadawa.",
+    "Anyị enweghị ike ichekwa ndekọ gị. Biko nwaa ọzọ.",
+    "A kò lè fi ohùn rẹ pamọ́. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "This recording is no longer on your device. Please record it again.",
+    "This recording no dey your device again. Record am again.",
+    "Wannan saƙon murya baya kan na'urarka. Sake ɗaukarsa.",
+    "Ndekọ a adịghịzi na ngwaọrụ gị. Biko dekọọ ya ọzọ.",
+    "Ohùn yìí kò sí lórí ẹ̀rọ rẹ mọ́. Jọ̀wọ́ tún gbà á."
+  ],
+  [
+    "We couldn’t open your saved recording. Please try again.",
+    "We no fit open your saved recording. Try again.",
+    "An kasa buɗe saƙon muryar da ka ajiye. Sake gwadawa.",
+    "Anyị enweghị ike imepe ndekọ echekwara. Biko nwaa ọzọ.",
+    "A kò lè ṣí ohùn tí o pamọ́. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "We couldn’t start recording. Please try again.",
+    "We no fit start recording. Try again.",
+    "An kasa fara ɗaukar murya. Sake gwadawa.",
+    "Anyị enweghị ike ịmalite ndekọ. Biko nwaa ọzọ.",
+    "A kò lè bẹ̀rẹ̀ gbígba ohùn. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "We couldn’t play this recording. Please record it again.",
+    "We no fit play this recording. Record am again.",
+    "An kasa kunna wannan saƙon murya. Sake ɗaukarsa.",
+    "Anyị enweghị ike ịkpọ ndekọ a. Biko dekọọ ya ọzọ.",
+    "A kò lè gbọ́ ohùn yìí. Jọ̀wọ́ tún gbà á."
+  ],
+  [
+    "We couldn’t remove your recording. Please try again.",
+    "We no fit remove your recording. Try again.",
+    "An kasa cire saƙon muryarka. Sake gwadawa.",
+    "Anyị enweghị ike iwepụ ndekọ gị. Biko nwaa ọzọ.",
+    "A kò lè yọ ohùn rẹ kúrò. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "Speak your listing details",
+    "Talk your listing details",
+    "Faɗi bayanan tallarka",
+    "Kwuo nkọwa ndepụta gị",
+    "Sọ àlàyé ọjà rẹ"
+  ],
+  [
+    "Use playback to help fill in the fields below. Automatic speech-to-text is not available yet. Your recording stays on this device.",
+    "Listen to your recording to help fill the fields below. Automatic voice-to-text never dey available. Your recording stays for this device.",
+    "Saurari saƙonka don taimaka cika bayanan da ke ƙasa. Ba a fara juya murya zuwa rubutu ta atomatik ba. Saƙon yana kan na'urarka kawai.",
+    "Gee ndekọ gị ka o nyere gị idejupụta ebe dị n'okpuru. Ịtụgharị olu gaa ederede na-akpaghị aka adịbeghị. Ndekọ gị na-anọ na ngwaọrụ a.",
+    "Tẹ́tí sí ohùn rẹ láti ràn ọ́ lọ́wọ́ láti kún àlàyé ní ìsàlẹ̀. Ìyípadà ohùn sí ọ̀rọ̀ àfọwọ́ṣe kò tíì wà. Ohùn rẹ wà lórí ẹ̀rọ yìí."
   ]
 ]
