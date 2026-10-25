@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bankVerificationPending, sellerPaymentAction, type FinancialSummary } from "./finance";
+import {
+  bankVerificationPending,
+  sellerPaymentAction,
+  withdrawalAmounts,
+  type FinancialSummary,
+} from "./finance";
 const data = (patch: Partial<FinancialSummary> = {}): FinancialSummary => ({
   enabled: true,
   account: { ready: true, status: "READY" },
@@ -11,6 +16,18 @@ const data = (patch: Partial<FinancialSummary> = {}): FinancialSummary => ({
   ...patch,
 });
 describe("seller bank and earnings flow", () => {
+  it("limits withdrawals to exact available earnings less fees", () => {
+    expect(withdrawalAmounts("10000", "150", "98.50")).toMatchObject({
+      maximum: "9850",
+      fullAmount: "98.50",
+      valid: true,
+      total: "10000",
+    });
+    for (const input of ["100", "98.51", "0", "-1", "1e2", "2.001", ""])
+      expect(withdrawalAmounts("10000", "150", input).valid).toBe(false);
+    expect(withdrawalAmounts("100", "150", "1").maximum).toBe("0");
+    expect(withdrawalAmounts("10000", null, "1").valid).toBe(false);
+  });
   it("requires provider setup before offering a bank or withdrawal", () => {
     expect(sellerPaymentAction(data({ account: null })).title).toBe("Set up payments");
     expect(

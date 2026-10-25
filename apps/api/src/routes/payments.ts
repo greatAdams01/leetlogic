@@ -1,3 +1,4 @@
+import { bankName } from "../services/bank-names.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { createHash } from "node:crypto";
 import { Router } from "express";
@@ -150,7 +151,14 @@ financialRouter.get("/", async (req, res) => {
     prisma.financialAccount.findUnique({ where: { userId_mode: { userId, mode: mode() } } }),
     prisma.bankDestination.findMany({
       where: { userId, mode: mode() },
-      select: { id: true, bankName: true, accountName: true, accountLastFour: true, usable: true },
+      select: {
+        id: true,
+        bankCode: true,
+        bankName: true,
+        accountName: true,
+        accountLastFour: true,
+        usable: true,
+      },
     }),
     prisma.moneyOperation.findMany({
       where: { ownerId: userId, mode: mode() },
@@ -178,7 +186,12 @@ financialRouter.get("/", async (req, res) => {
     serialize({
       enabled: getConfig().PAYMENTS_ENABLED,
       account: account ? { status: account.status, ready: account.status === "READY" } : null,
-      destinations,
+      destinations: await Promise.all(
+        destinations.map(async ({ bankCode, ...bank }) => ({
+          ...bank,
+          bankName: await bankName(bankCode, bank.bankName),
+        })),
+      ),
       operations: operations.map(safeOperation),
       earnings,
       heldMinor: held._sum.heldMinor || 0n,
@@ -281,13 +294,23 @@ financialRouter.get("/banks/operations/:id", async (req, res) => {
         select: {
           id: true,
           bankName: true,
+          bankCode: true,
           accountName: true,
           accountLastFour: true,
           usable: true,
         },
       })
     : null;
-  res.json({ status: operation.status, destination });
+  const resolvedDestination = destination
+    ? {
+        id: destination.id,
+        accountName: destination.accountName,
+        accountLastFour: destination.accountLastFour,
+        usable: destination.usable,
+        bankName: await bankName(destination.bankCode, destination.bankName),
+      }
+    : null;
+  res.json({ status: operation.status, destination: resolvedDestination });
 });
 financialRouter.post("/withdrawals", async (req, res) => {
   const input = z

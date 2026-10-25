@@ -34,6 +34,8 @@ pnpm --filter @leetlogic/api worker:payments
 
 For compiled deployment, run `node dist/payment-jobs.js` inside `apps/api` with deployment environment variables. Keep the API process running for webhooks. Delivery jobs currently run in the API process. Payment jobs use database claims and leases; do not depend on the browser staying open. Run a single supervised payment worker initially. Graceful shutdown stops timers and closes database/Redis connections.
 
+If the worker reports `NGN_BALANCE_MISSING`, confirm NGN is enabled for the Bachs platform account in the configured sandbox/live environment. A USD-only balance cannot confirm NGN funds; the app does not convert it or assume a zero NGN balance. Failed balance checks retry after five minutes with exponential backoff up to one hour, independently of payment jobs. Successful checks resume the daily schedule. Logs include the failed stage, safe provider diagnostics, and retry delay. Development already runs a worker in the API, so do not also start the standalone worker locally.
+
 ## Financial behaviour
 
 - Checkout contains produce and a saved current delivery quote. Bachs processing fees are charged to the buyer and disclosed on hosted checkout. Produce, shipping, provider fee and commission are separate records.

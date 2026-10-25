@@ -1,9 +1,12 @@
+import { bankName } from "./bank-names.js";
 import { prisma, type MoneyOperation } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { bachs, minor, decimal, paymentReady } from "../providers/payments/bachs.js";
 import { AppError } from "../lib/errors.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { logger } from "../lib/logger.js";
+import { dependencyError } from "../lib/dependency-errors.js";
+import { startPaymentSchedule } from "./payment-schedule.js";
 import {
   journal,
   mode,
@@ -25,12 +28,20 @@ function providerId(value: any) {
 export function balanceOf(data: any): bigint {
   const rows = Array.isArray(data) ? data : data.balances || data.data || [];
   const balance = Array.isArray(rows) ? rows.find((row: any) => row.currency === "NGN") : undefined;
-  if (!balance || typeof balance.available_balance !== "string")
-    throw new AppError(
+  if (!balance || typeof balance.available_balance !== "string") {
+    const error = new AppError(
       503,
       "PAYMENT_BALANCE_UNAVAILABLE",
       "We couldn’t confirm available funds. Please try again.",
     );
+    error.diagnostics = {
+      provider: "bachs",
+      operation: "balances",
+      reason: !balance ? "NGN_BALANCE_MISSING" : "INVALID_NGN_BALANCE",
+      hint: "Confirm that NGN balances are enabled for this Bachs account and environment. USD balances cannot fund NGN transactions.",
+    };
+    throw error;
+  }
   return minor(balance.available_balance);
 }
 async function checkFunds(amount: bigint, account?: string) {
@@ -418,6 +429,7 @@ export async function runMoneyOperation(id: string) {
         !/^\d{10}$/.test(result.account_number || "")
       )
         throw new Error("BANK_RESULT_INVALID");
+      const resolvedBankName = await bankName(result.bank_code, result.bank_name);
       await prisma.bankDestination.upsert({
         where: {
           userId_mode_fingerprint: {
@@ -431,13 +443,13 @@ export async function runMoneyOperation(id: string) {
           mode: mode(),
           providerId: result.id,
           bankCode: result.bank_code,
-          bankName: result.bank_name || "Bank",
+          bankName: resolvedBankName,
           accountName: result.account_name,
           accountLastFour: result.account_number.slice(-4),
           fingerprint: payload.fingerprint,
           usable: result.is_usable === true,
         },
-        update: { usable: result.is_usable === true },
+        update: { usable: result.is_usable === true, bankName: resolvedBankName },
       });
       await prisma.moneyOperation.update({
         where: { id },
@@ -917,23 +929,28 @@ export async function reconcileBalances() {
   });
 }
 export function startPaymentWorker() {
-  let running = false,
-    lastReconciliation = 0;
-  const timer = setInterval(() => {
-    if (running || !getConfig().PAYMENTS_ENABLED) return;
-    running = true;
-    runPaymentJobs()
-      .then(async () => {
-        if (Date.now() - lastReconciliation > 86400000) {
-          await reconcileBalances();
-          lastReconciliation = Date.now();
-        }
-      })
-      .catch(() => logger.error("Payment worker needs attention"))
-      .finally(() => {
-        running = false;
-      });
-  }, 15000);
-  timer.unref();
-  return () => clearInterval(timer);
+  return startPaymentSchedule({
+    enabled: () => getConfig().PAYMENTS_ENABLED,
+    jobs: runPaymentJobs,
+    reconcile: reconcileBalances,
+    report: (error, stage, retryInSeconds) => {
+      const dependency = dependencyError(error);
+      const appError = error instanceof AppError ? error : undefined;
+      logger.error(
+        {
+          stage,
+          retryInSeconds,
+          err: {
+            type: error instanceof Error ? error.name : "Error",
+            code: dependency?.code || appError?.code || "PAYMENT_WORKER_FAILED",
+            message:
+              dependency?.message || appError?.message || "Payment background processing failed.",
+            ...(dependency ? { hint: dependency.hint } : {}),
+            ...appError?.diagnostics,
+          },
+        },
+        "Payment worker needs attention",
+      );
+    },
+  });
 }

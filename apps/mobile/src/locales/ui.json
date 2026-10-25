@@ -4429,5 +4429,117 @@
     "Ana shirya saitin biyan kuɗinka. Duba matsayinsa nan ba da jimawa ba.",
     "A na-akwadebe nhazi ịkwụ ụgwọ gị. Lelee ọnọdụ ya n’oge na-adịghị anya.",
     "A ń pèsè ètò ìsanwó rẹ. Ṣàyẹ̀wò ipò rẹ̀ láìpẹ́."
+  ],
+  [
+    "Available to withdraw",
+    "Money wey you fit withdraw",
+    "Kuɗin da za ka iya cirewa",
+    "Ego ị nwere ike ịdọrọ",
+    "Owó tó ṣeé yọ"
+  ],
+  [
+    "Awaiting release: {amount}",
+    "Wey dey wait for release: {amount}",
+    "Ana jiran sakin: {amount}",
+    "Na-eche ịhapụ: {amount}",
+    "Ń dúró fún ìtúsílẹ̀: {amount}"
+  ],
+  [
+    "Withdrawals in progress: {amount}",
+    "Withdrawals wey dey process: {amount}",
+    "Cire kuɗi da ake sarrafawa: {amount}",
+    "Mwepụ ego na-aga n’ihu: {amount}",
+    "Yíyọ owó tó ń lọ lọ́wọ́: {amount}"
+  ],
+  [
+    "Close withdrawal",
+    "Close withdrawal",
+    "Rufe cire kuɗi",
+    "Mechie mwepụ ego",
+    "Pa yíyọ owó dé"
+  ],
+  [
+    "Confirm your details securely before adding a bank account.",
+    "Confirm your details safely before you add bank account.",
+    "Tabbatar da bayananka cikin tsaro kafin ƙara asusun banki.",
+    "Kwenye nkọwa gị n’enweghị nsogbu tupu itinye akaụntụ ụlọ akụ.",
+    "Jẹ́rìí sí àlàyé rẹ láìléwu kí o tó fi àkọọ́lẹ̀ banki kún un."
+  ],
+  [
+    "Payment setup complete",
+    "Payment setup don complete",
+    "An kammala saitin biyan kuɗi",
+    "Emechaala nhazi ịkwụ ụgwọ",
+    "Ètò ìsanwó ti parí"
+  ],
+  [
+    "Complete payment setup to receive earnings.",
+    "Finish payment setup to receive your earnings.",
+    "Kammala saitin biyan kuɗi don karɓar ribarka.",
+    "Mechaa nhazi ịkwụ ụgwọ iji nata ego ị ritere.",
+    "Parí ètò ìsanwó láti gba owó tí o rí."
+  ],
+  [
+    "No bank accounts added yet.",
+    "You never add bank account.",
+    "Ba a ƙara asusun banki ba tukuna.",
+    "Etinyebeghị akaụntụ ụlọ akụ.",
+    "A kò tíì fi àkọọ́lẹ̀ banki kún un."
+  ],
+  [
+    "Payment history",
+    "Payment history",
+    "Tarihin biyan kuɗi",
+    "Akụkọ ịkwụ ụgwọ",
+    "Ìtàn ìsanwó"
+  ],
+  [
+    "No payments yet. Your sales earnings and withdrawals will appear here.",
+    "No payments yet. Your sales earnings and withdrawals go show here.",
+    "Babu biyan kuɗi tukuna. Kuɗin tallace-tallace da cire kuɗinka za su bayyana a nan.",
+    "Enweghị ịkwụ ụgwọ ugbu a. Ego ị nwetara n’ahịa na ego ị dọpụtara ga-apụta ebe a.",
+    "Kò sí ìsanwó síbẹ̀. Owó tí o rí nínú títà àti owó tí o yọ yóò hàn níbí."
+  ],
+  [
+    "Maximum you can receive: {amount}",
+    "Highest amount wey you fit receive: {amount}",
+    "Mafi yawan kuɗin da za ka iya karɓa: {amount}",
+    "Ego kachasị ị nwere ike ịnata: {amount}",
+    "Owó tó pọ̀ jù tí o lè gbà: {amount}"
+  ],
+  [
+    "Use full amount",
+    "Use all the money",
+    "Yi amfani da duk kuɗin",
+    "Jiri ego niile",
+    "Lo gbogbo owó"
+  ],
+  [
+    "You have no earnings available to withdraw after the fee.",
+    "After the fee, no earnings dey to withdraw.",
+    "Bayan kuɗin caji, babu kuɗin da za ka iya cirewa.",
+    "Mgbe e wepụrụ ụgwọ ọrụ, enweghị ego fọdụrụ ịdọrọ.",
+    "Lẹ́yìn owó iṣẹ́, kò sí owó tó kù láti yọ."
+  ],
+  [
+    "Enter an amount within your available earnings after the fee.",
+    "Enter amount wey no pass your earnings after the fee.",
+    "Shigar da adadin da bai wuce kuɗin da ya rage bayan caji ba.",
+    "Tinye ego na-erughị ma ọ bụ hà ego fọdụrụ mgbe e wepụrụ ụgwọ ọrụ.",
+    "Tẹ iye tí kò kọjá owó tó kù lẹ́yìn owó iṣẹ́."
+  ],
+  [
+    "Total deducted: {amount}",
+    "Total wey we go remove: {amount}",
+    "Jimillar da za a cire: {amount}",
+    "Ego niile a ga-ewepụ: {amount}",
+    "Àpapọ̀ owó tí a ó yọ: {amount}"
+  ],
+  [
+    "Withdrawal requested. You can follow its progress in payment history.",
+    "You don request withdrawal. Check payment history to follow am.",
+    "An nemi cire kuɗi. Za ka iya bin ci gabansa a tarihin biyan kuɗi.",
+    "Arịọla mwepụ ego. Ị nwere ike iso ọganihu ya na akụkọ ịkwụ ụgwọ.",
+    "A ti béèrè yíyọ owó. O lè tọpinpin rẹ̀ nínú ìtàn ìsanwó."
   ]
 ]

@@ -730,13 +730,13 @@ suite("provider-backed payment safeguards", () => {
       parent_organization_id: "org_fixture",
       enabled_capabilities: ["transfers", "payouts"],
     });
+    vi.spyOn(bachs, "banks").mockResolvedValue([{ code: "001", name: "Test bank" }]);
     vi.spyOn(bachs, "call").mockResolvedValue({
       id: `new_bank_${randomUUID()}`,
       currency: "NGN",
       account_name: "Example Farmer",
       account_number: "1234567891",
       bank_code: "001",
-      bank_name: "Test bank",
       is_usable: true,
     });
     const result = await request(app)
@@ -750,6 +750,18 @@ suite("provider-backed payment safeguards", () => {
     expect(saved.status).toBe(200);
     expect(saved.body.status).toBe("SUCCEEDED");
     expect(saved.body.destination.accountName).toBe("Example Farmer");
+    expect(saved.body.destination.bankName).toBe("Test bank");
+    await prisma.bankDestination.updateMany({
+      where: { userId: seller, accountLastFour: "7891" },
+      data: { bankName: "Bank" },
+    });
+    const summary = await request(app)
+      .get("/v1/financial")
+      .set({ Authorization: `Bearer ${sellerToken}` });
+    expect(summary.status).toBe(200);
+    expect(
+      summary.body.destinations.find((bank: any) => bank.accountLastFour === "7891").bankName,
+    ).toBe("Test bank");
     expect(saved.body.destination.accountLastFour).toBe("7891");
     expect(JSON.stringify(saved.body)).not.toContain("1234567891");
     expect(
