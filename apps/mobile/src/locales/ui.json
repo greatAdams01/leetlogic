@@ -4541,5 +4541,250 @@
     "An nemi cire kuɗi. Za ka iya bin ci gabansa a tarihin biyan kuɗi.",
     "Arịọla mwepụ ego. Ị nwere ike iso ọganihu ya na akụkọ ịkwụ ụgwọ.",
     "A ti béèrè yíyọ owó. O lè tọpinpin rẹ̀ nínú ìtàn ìsanwó."
+  ],
+  [
+    "Where is your farm?",
+    "Where your farm dey?",
+    "Ina gonarka take?",
+    "Ebee ka ugbo gị dị?",
+    "Ibo ni oko rẹ wà?"
+  ],
+  [
+    "We’ll use this address for produce pickup unless you choose another location for an order.",
+    "We go collect produce for this address unless you choose another place for an order.",
+    "Za a ɗauki kayan gona daga wannan adireshi sai ka zaɓi wani wurin don oda.",
+    "Anyị ga-eji adreesị a bulie ihe ubi ma ọ bụrụ na ị họrọghị ebe ọzọ maka oda.",
+    "A ó lo àdírẹ́sì yìí fún gbígbé èso oko àyàfi tí o bá yan ibòmíràn fún ọ̀dà."
+  ],
+  [
+    "Your farm is the default pickup location. You can choose a different address when arranging an order’s delivery.",
+    "Na your farm we go collect produce. You fit choose another address when you arrange delivery.",
+    "Gonarka ita ce wurin ɗaukar kaya. Za ka iya zaɓar wani adireshi lokacin shirya isar da oda.",
+    "Ugbo gị bụ ebe a na-ebuli ihe ubi. Ị nwere ike ịhọrọ adreesị ọzọ mgbe ị na-ahazi nnyefe oda.",
+    "Oko rẹ ni ibi gbígbé ẹrù. O lè yan àdírẹ́sì mìíràn nígbà ṣíṣètò ìfijiṣẹ́ ọ̀dà."
+  ],
+  [
+    "Complete your farm address before listing produce.",
+    "Complete your farm address before you list produce.",
+    "Kammala adireshin gonarka kafin saka kayan gona.",
+    "Mechaa adreesị ugbo gị tupu idepụta ihe ubi.",
+    "Parí àdírẹ́sì oko rẹ kí o tó ṣe àtòkọ èso oko."
+  ],
+  [
+    "Your farm address is used for pickup. Choose a different pickup address only when arranging an order’s delivery.",
+    "Na your farm address we go use collect produce. Choose another pickup address only when you arrange delivery.",
+    "Ana amfani da adireshin gonarka don ɗaukar kaya. Zaɓi wani adireshi ne kawai lokacin shirya isar da oda.",
+    "A na-eji adreesị ugbo gị ebuli ihe ubi. Họrọ adreesị ọzọ naanị mgbe ị na-ahazi nnyefe oda.",
+    "Àdírẹ́sì oko rẹ ni a ń lò fún gbígbé ẹrù. Yan àdírẹ́sì mìíràn nígbà ṣíṣètò ìfijiṣẹ́ ọ̀dà nìkan."
+  ],
+  [
+    "Different pickup address",
+    "Another pickup address",
+    "Wani adireshin ɗaukar kaya",
+    "Adreesị mbuli ọzọ",
+    "Àdírẹ́sì gbígbé ẹrù mìíràn"
+  ],
+  [
+    "Save pickup address",
+    "Save pickup address",
+    "Ajiye adireshin ɗaukar kaya",
+    "Chekwaa adreesị mbuli",
+    "Fi àdírẹ́sì gbígbé ẹrù pamọ́"
+  ],
+  [
+    "Pickup location",
+    "Where dem go collect produce",
+    "Wurin ɗaukar kaya",
+    "Ebe mbuli ihe ubi",
+    "Ibi gbígbé ẹrù"
+  ],
+  [
+    "Pickup address",
+    "Pickup address",
+    "Adireshin ɗaukar kaya",
+    "Adreesị mbuli",
+    "Àdírẹ́sì gbígbé ẹrù"
+  ],
+  [
+    "Use a different pickup address",
+    "Use another pickup address",
+    "Yi amfani da wani adireshin ɗaukar kaya",
+    "Jiri adreesị mbuli ọzọ",
+    "Lo àdírẹ́sì gbígbé ẹrù mìíràn"
+  ],
+  [
+    "Add a different pickup address",
+    "Add another pickup address",
+    "Ƙara wani adireshin ɗaukar kaya",
+    "Tinye adreesị mbuli ọzọ",
+    "Fi àdírẹ́sì gbígbé ẹrù mìíràn kún un"
+  ],
+  [
+    "Changing pickup clears delivery quotes. The buyer will need a new quote before payment.",
+    "If pickup change, old delivery prices no go work. Buyer go need new price before payment.",
+    "Canza wurin ɗaukar kaya yana share farashin isarwa. Mai saye zai buƙaci sabon farashi kafin biya.",
+    "Ịgbanwe ebe mbuli na-ewepụ ọnụahịa nnyefe. Onye zụrụ ga-achọ ọnụahịa ọhụrụ tupu ịkwụ ụgwọ.",
+    "Yíyí ibi gbígbé ẹrù padà ń pa iye ìfijiṣẹ́ tẹ́lẹ̀ rẹ́. Olùrà yóò nílò iye tuntun kí ó tó sanwó."
+  ],
+  [
+    "Pickup · farmer’s confirmed address",
+    "Pickup · address wey farmer confirm",
+    "Ɗaukar kaya · adireshin da manomi ya tabbatar",
+    "Mbuli · adreesị onye ọrụ ugbo kwadoro",
+    "Gbígbé ẹrù · àdírẹ́sì tí àgbẹ̀ jẹ́rìí sí"
+  ],
+  [
+    "Complete farm details",
+    "Complete your farm details",
+    "Kammala bayanan gona",
+    "Mechaa nkọwa ugbo",
+    "Parí àlàyé oko"
+  ],
+  [
+    "Map location",
+    "Map location",
+    "Wuri a taswira",
+    "Ebe dị na maapụ",
+    "Ibi lórí máàpù"
+  ],
+  [
+    "Use your current location at the pickup point, then confirm the pin. Your address is still needed for delivery.",
+    "Use your location when you dey pickup point, then confirm the pin. We still need your address for delivery.",
+    "Yi amfani da wurin da kake a wurin ɗaukar kaya, sannan ka tabbatar da alamar taswira. Har yanzu ana buƙatar adireshinka don isarwa.",
+    "Jiri ebe ị nọ n’ebe mbuli ihe ubi, wee kwado akara ahụ. A ka chọrọ adreesị gị maka nnyefe.",
+    "Lo ibi tí o wà ní ibi gbígbé ẹrù, kí o sì jẹ́rìí sí àmì náà. A ṣì nílò àdírẹ́sì rẹ fún ìfijiṣẹ́."
+  ],
+  [
+    "Location pin confirmed.",
+    "You don confirm the location pin.",
+    "An tabbatar da alamar wurin.",
+    "Ekwenyela akara ebe ahụ.",
+    "A ti jẹ́rìí sí àmì ibi náà."
+  ],
+  [
+    "Finding your location…",
+    "We dey find your location…",
+    "Ana neman wurin da kake…",
+    "A na-achọ ebe ị nọ…",
+    "A ń wá ibi tí o wà…"
+  ],
+  [
+    "Use my current location",
+    "Use where I dey now",
+    "Yi amfani da wurin da nake yanzu",
+    "Jiri ebe m nọ ugbu a",
+    "Lo ibi tí mo wà báyìí"
+  ],
+  [
+    "View or adjust pin",
+    "View or adjust the pin",
+    "Duba ko gyara alamar",
+    "Lee ma ọ bụ mezie akara",
+    "Wo tàbí ṣàtúnṣe àmì"
+  ],
+  [
+    "Choose location on map",
+    "Choose location for map",
+    "Zaɓi wuri a taswira",
+    "Họrọ ebe na maapụ",
+    "Yan ibi lórí máàpù"
+  ],
+  [
+    "Confirm map location",
+    "Confirm map location",
+    "Tabbatar da wurin taswira",
+    "Kwado ebe na maapụ",
+    "Jẹ́rìí sí ibi lórí máàpù"
+  ],
+  [
+    "Confirm location pin",
+    "Confirm the location pin",
+    "Tabbatar da alamar wurin",
+    "Kwado akara ebe ahụ",
+    "Jẹ́rìí sí àmì ibi náà"
+  ],
+  [
+    "Tap the map or drag the pin to the collection point.",
+    "Tap the map or drag the pin reach where dem go collect produce.",
+    "Taɓa taswira ko ja alamar zuwa wurin ɗaukar kaya.",
+    "Pịa maapụ ma ọ bụ dọrọ akara gaa ebe mbuli ihe ubi.",
+    "Tẹ máàpù tàbí fa àmì lọ sí ibi gbígbé ẹrù."
+  ],
+  [
+    "Location accuracy: about {meters} metres",
+    "Location fit differ by about {meters} metres",
+    "Daidaiton wuri: kusan mita {meters}",
+    "Izi ezi ebe: ihe dị ka mita {meters}",
+    "Ìpéye ibi: nǹkan bí mítà {meters}"
+  ],
+  [
+    "This location is approximate. Move outdoors and retry, or adjust the pin before confirming.",
+    "This location no too exact. Go outside try again, or adjust the pin before you confirm.",
+    "Wannan wurin kimantawa ne. Fita waje ka sake gwadawa, ko gyara alamar kafin tabbatarwa.",
+    "Ebe a abụghị kpọmkwem. Pụọ n’èzí wee nwalee ọzọ, ma ọ bụ mezie akara tupu ịkwado ya.",
+    "Ibi yìí kò péye. Jáde síta kí o tún gbìyànjú, tàbí ṣàtúnṣe àmì kí o tó jẹ́rìí sí i."
+  ],
+  [
+    "Turn on your device’s location services and try again.",
+    "Turn on location for your phone and try again.",
+    "Kunna sabis na wuri a na’urarka ka sake gwadawa.",
+    "Gbanwuo ọrụ ọnọdụ ngwaọrụ gị ma nwalee ọzọ.",
+    "Tan iṣẹ́ ibi lórí ẹ̀rọ rẹ kí o tún gbìyànjú."
+  ],
+  [
+    "Location access was not allowed. Enable it in Settings or choose your farm on the map.",
+    "Location permission no dey. Allow am for Settings or choose your farm for map.",
+    "Ba a ba da izinin wuri ba. Kunna shi a Saituna ko zaɓi gonarka a taswira.",
+    "Enyeghị ikike ọnọdụ. Kwe ka ya na Ntọala ma ọ bụ họrọ ugbo gị na maapụ.",
+    "A kò gba àṣẹ ibi. Fún un ní àṣẹ nínú Ètò tàbí yan oko rẹ lórí máàpù."
+  ],
+  [
+    "We couldn’t find your location in time. Move outdoors and try again, or choose your farm on the map.",
+    "We no fit find your location on time. Go outside try again, or choose your farm for map.",
+    "Ba mu gano wurinka a kan lokaci ba. Fita waje ka sake gwadawa, ko zaɓi gonarka a taswira.",
+    "Anyị ahụghị ebe ị nọ n’oge. Pụọ n’èzí wee nwalee ọzọ, ma ọ bụ họrọ ugbo gị na maapụ.",
+    "A kò rí ibi tí o wà ní àkókò. Jáde síta kí o tún gbìyànjú, tàbí yan oko rẹ lórí máàpù."
+  ],
+  [
+    "Your location could not be confirmed. Try again outdoors or choose your farm on the map.",
+    "We no fit confirm your location. Try again outside or choose your farm for map.",
+    "Ba a iya tabbatar da wurinka ba. Sake gwadawa a waje ko zaɓi gonarka a taswira.",
+    "Enweghị ike ikwenye ebe ị nọ. Nwalee ọzọ n’èzí ma ọ bụ họrọ ugbo gị na maapụ.",
+    "A kò lè jẹ́rìí sí ibi tí o wà. Tún gbìyànjú níta tàbí yan oko rẹ lórí máàpù."
+  ],
+  [
+    "We couldn’t read your location. Check location permissions and try again outdoors, or choose a point on the map.",
+    "We no fit read your location. Check location permission and try again outside, or choose point for map.",
+    "Ba mu iya karanta wurinka ba. Duba izinin wuri ka sake gwadawa a waje, ko zaɓi wuri a taswira.",
+    "Anyị enweghị ike ịgụ ebe ị nọ. Lelee ikike ọnọdụ wee nwalee ọzọ n’èzí, ma ọ bụ họrọ ebe na maapụ.",
+    "A kò lè ka ibi tí o wà. Ṣàyẹ̀wò àṣẹ ibi kí o tún gbìyànjú níta, tàbí yan ibi lórí máàpù."
+  ],
+  [
+    "View pickup on map",
+    "View pickup point for map",
+    "Duba wurin ɗaukar kaya a taswira",
+    "Lee ebe mbuli na maapụ",
+    "Wo ibi gbígbé ẹrù lórí máàpù"
+  ],
+  [
+    "The map could not be opened. Please try again.",
+    "Map no fit open. Try again.",
+    "Ba a iya buɗe taswira ba. Sake gwadawa.",
+    "Enweghị ike imeghe maapụ. Biko nwalee ọzọ.",
+    "A kò lè ṣí máàpù. Jọ̀wọ́ tún gbìyànjú."
+  ],
+  [
+    "Save your farm address before adding its map location.",
+    "Save your farm address before you add map location.",
+    "Ajiye adireshin gonarka kafin ƙara wurinta a taswira.",
+    "Chekwaa adreesị ugbo gị tupu itinye ebe ya na maapụ.",
+    "Fi àdírẹ́sì oko rẹ pamọ́ kí o tó fi ibi rẹ̀ lórí máàpù kún un."
+  ],
+  [
+    "Your farm address could not be found.",
+    "We no fit find your farm address.",
+    "Ba a sami adireshin gonarka ba.",
+    "Enweghị ike ịchọta adreesị ugbo gị.",
+    "A kò rí àdírẹ́sì oko rẹ."
   ]
 ]

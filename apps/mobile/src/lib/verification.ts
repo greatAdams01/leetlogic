@@ -6,6 +6,7 @@ export type FarmForm = {
   lga: string;
   city: string;
   line1: string;
+  coordinates?: { latitude: number; longitude: number };
 };
 export type VerificationStep =
   "details" | "location" | "identity" | "document" | "evidence" | "review";

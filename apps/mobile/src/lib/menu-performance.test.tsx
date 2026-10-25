@@ -1,3 +1,4 @@
+vi.mock("../components/farm-pin", () => ({ FarmPin: "FarmPin" }));
 import React, { Profiler } from "react";
 import { Navigation } from "../components/navigation";
 import { Profile } from "../screens/account";

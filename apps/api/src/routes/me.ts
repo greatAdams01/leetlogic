@@ -1,7 +1,13 @@
+import { audit } from "../services/audit.js";
 import { getConfig } from "../config.js";
 import { z } from "zod";
 import { Router } from "express";
-import { sellerProfileSchema, updateLocaleSchema, updateMeSchema } from "@leetlogic/contracts";
+import {
+  coordinatesSchema,
+  sellerProfileSchema,
+  updateLocaleSchema,
+  updateMeSchema,
+} from "@leetlogic/contracts";
 import { prisma } from "@leetlogic/database";
 import { requireAuth } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
@@ -72,7 +78,12 @@ meRouter.post("/seller-profile", async (req, res) => {
       previousAddress.state === body.state &&
       previousAddress.lga === body.lga &&
       previousAddress.city === body.city &&
-      previousAddress.line1 === body.line1;
+      previousAddress.line1 === body.line1 &&
+      (!body.coordinates ||
+        (previousAddress.latitude !== null &&
+          previousAddress.longitude !== null &&
+          Number(previousAddress.latitude) === body.coordinates.latitude &&
+          Number(previousAddress.longitude) === body.coordinates.longitude));
     const address = sameAddress
       ? previousAddress
       : await tx.address.create({
@@ -84,6 +95,7 @@ meRouter.post("/seller-profile", async (req, res) => {
             city: body.city,
             line1: body.line1 ?? "Farm location pending full address",
             isDefaultFarm: true,
+            ...(body.coordinates || {}),
           },
         });
     const farmer = await tx.farmerProfile.upsert({
@@ -118,7 +130,33 @@ meRouter.post("/seller-profile", async (req, res) => {
   res.status(201).json(result);
 });
 
+meRouter.patch("/farm-location", async (req, res) => {
+  const coordinates = coordinatesSchema.parse(req.body);
+  const farmer = await prisma.farmerProfile.findUnique({ where: { userId: req.auth!.sub } });
+  if (!farmer?.primaryAddressId)
+    throw new AppError(
+      422,
+      "FARM_ADDRESS_REQUIRED",
+      "Save your farm address before adding its map location.",
+    );
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.address.updateMany({
+      where: { id: farmer.primaryAddressId!, userId: req.auth!.sub, deletedAt: null },
+      data: coordinates,
+    });
+    if (!updated.count)
+      throw new AppError(404, "ADDRESS_NOT_FOUND", "Your farm address could not be found.");
+    await audit(
+      req,
+      { action: "farm.location.pinned", entityType: "address", entityId: farmer.primaryAddressId! },
+      tx,
+    );
+  });
+  res.json({ saved: true });
+});
+
 const addressSchema = z.object({
+  coordinates: coordinatesSchema.optional(),
   label: z.string().trim().min(1).max(60),
   state: z.string().trim().min(2).max(80),
   lga: z.string().trim().min(2).max(80),
@@ -126,9 +164,9 @@ const addressSchema = z.object({
   line1: z.string().trim().min(5).max(180),
 });
 meRouter.post("/addresses", async (req, res) => {
-  const body = addressSchema.parse(req.body);
+  const { coordinates, ...body } = addressSchema.parse(req.body);
   const address = await prisma.address.create({
-    data: { ...body, countryCode: "NG", userId: req.auth!.sub },
+    data: { ...body, ...coordinates, countryCode: "NG", userId: req.auth!.sub },
   });
   res.status(201).json({ address });
 });

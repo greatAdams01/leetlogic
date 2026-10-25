@@ -8,6 +8,8 @@ export const contactSchema = z.object({
   address: z.string().trim().min(15).max(500),
   state: z.string().trim().min(2).max(80),
   country: z.literal("NG").default("NG"),
+  latitude: z.number().finite().min(-90).max(90).optional(),
+  longitude: z.number().finite().min(-180).max(180).optional(),
 });
 export const parcelSchema = z.object({
   weightKg: z.number().positive(),
@@ -107,9 +109,13 @@ export class Shipbubble implements ShippingProvider {
     return envelope.data;
   }
   async validateAddress(contact: Contact) {
+    // Keep the confirmed map pin in our snapshot; Shipbubble validates its supported address fields.
+    const { latitude: _latitude, longitude: _longitude, ...address } = contact;
+    void _latitude;
+    void _longitude;
     return z
       .object({ address_code: z.number().int() })
-      .parse(await this.call("/shipping/address/validate", "POST", contact)).address_code;
+      .parse(await this.call("/shipping/address/validate", "POST", address)).address_code;
   }
   async quotes(input: {
     pickup: Contact;

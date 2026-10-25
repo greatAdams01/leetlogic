@@ -96,6 +96,94 @@ customerDeliveryRouter.get("/", async (req, res) => {
   });
   res.json(serialize({ items }));
 });
+// Only the farmer can change where their produce is collected, before checkout.
+customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.farmerProfile.userId !== req.auth!.sub)
+    throw new AppError(403, "FARMER_REQUIRED", "Only the farmer can change the pickup address.");
+  const { addressId } = z.object({ addressId: uuid }).strict().parse(req.body);
+  const address = await prisma.address.findFirst({
+    where: { id: addressId, userId: req.auth!.sub, deletedAt: null, countryCode: "NG" },
+  });
+  if (!address) throw new AppError(422, "INVALID_ADDRESS", "Choose one of your saved addresses.");
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+    await unlockedCheckout(tx, order.id);
+    const current = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { delivery: true, shipment: true },
+    });
+    if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.paidMinor)
+      throw new AppError(409, "DELIVERY_LOCKED", "Pickup cannot change after payment or dispatch.");
+    const pickup = {
+      name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
+      phone: order.farmerProfile.user.phoneE164,
+      email: order.farmerProfile.user.profile?.email || "",
+      address: `${address.line1}, ${address.city}, ${address.lga}`,
+      state: address.state,
+      country: "NG",
+      ...(address.latitude !== null && address.longitude !== null
+        ? { latitude: Number(address.latitude), longitude: Number(address.longitude) }
+        : {}),
+    };
+    const delivery = await tx.delivery.upsert({
+      where: { orderId: order.id },
+      create: { orderId: order.id, pickup },
+      update: {
+        pickup,
+        selectedQuoteId: null,
+        shippingMinor: 0n,
+        courier: null,
+        failureCode: null,
+        status: "QUOTE_REQUIRED",
+      },
+    });
+    await tx.deliveryQuote.deleteMany({ where: { deliveryId: delivery.id } });
+    await deliveryEvent(
+      tx,
+      delivery.id,
+      "QUOTE_REQUIRED",
+      "customer",
+      `${delivery.id}:pickup:${hashInput(pickup)}:${Date.now()}`,
+      req.auth!.sub,
+    );
+    await audit(
+      req,
+      { action: "delivery.pickup.updated", entityType: "order", entityId: order.id },
+      tx,
+    );
+  });
+  res.json({ saved: true });
+});
+function savedPickup(order: any) {
+  const pickup = order.delivery?.pickup;
+  return pickup && typeof pickup.address === "string" && typeof pickup.state === "string"
+    ? pickup
+    : {
+        address: order.listing.locationAddress.line1,
+        state: order.listing.locationAddress.state,
+        ...(order.listing.locationAddress.latitude != null &&
+        order.listing.locationAddress.longitude != null
+          ? {
+              latitude: Number(order.listing.locationAddress.latitude),
+              longitude: Number(order.listing.locationAddress.longitude),
+            }
+          : {}),
+      };
+}
+function checkPickup(order: any, pickup: { address: string; state: string }) {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const expected = savedPickup(order);
+  if (
+    !normalize(pickup.address).includes(normalize(expected.address)) ||
+    pickup.state.toLowerCase() !== expected.state.toLowerCase()
+  )
+    throw new AppError(
+      422,
+      "PICKUP_ADDRESS_MISMATCH",
+      "Pickup changed. Refresh to use the farmer’s saved pickup address.",
+    );
+}
 for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
   router.get("/:id/delivery", async (req, res) => {
     const order = await orderAccess(req);
@@ -115,8 +203,11 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
             name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
             phone: order.farmerProfile.user.phoneE164,
             email: order.farmerProfile.user.profile?.email || "",
-            address: order.listing.locationAddress.line1,
-            state: order.listing.locationAddress.state,
+            address: savedPickup(order).address,
+            state: savedPickup(order).state,
+            ...(savedPickup(order).latitude != null && savedPickup(order).longitude != null
+              ? { latitude: savedPickup(order).latitude, longitude: savedPickup(order).longitude }
+              : {}),
           },
         },
         delivery: delivery ? { ...delivery, quotes: delivery.quotes.map(safeQuote) } : null,
@@ -139,18 +230,14 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       );
     if (!c.DELIVERY_ENABLED)
       throw new AppError(503, "DELIVERY_UNAVAILABLE", "Delivery quotes are not available yet");
-    const normalizeAddress = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-    if (
-      !normalizeAddress(body.pickup.address).includes(
-        normalizeAddress(order.listing.locationAddress.line1),
-      ) ||
-      body.pickup.state.toLowerCase() !== order.listing.locationAddress.state.toLowerCase()
-    )
-      throw new AppError(
-        422,
-        "PICKUP_ADDRESS_MISMATCH",
-        "Pickup must match the farmer's saved listing location",
-      );
+    checkPickup(order, body.pickup);
+    const confirmed = savedPickup(order);
+    delete body.pickup.latitude;
+    delete body.pickup.longitude;
+    if (confirmed.latitude != null && confirmed.longitude != null) {
+      body.pickup.latitude = Number(confirmed.latitude);
+      body.pickup.longitude = Number(confirmed.longitude);
+    }
     const categories = c.DELIVERY_ALLOWED_CATEGORIES.split(",");
     const states = c.DELIVERY_ALLOWED_STATES.toLowerCase()
       .split(",")
@@ -180,6 +267,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           current.delivery?.paidMinor
         )
           throw new AppError(409, "DELIVERY_LOCKED", "Order changed; refresh and retry");
+        checkPickup({ ...order, delivery: current.delivery }, body.pickup);
         const d = await tx.delivery.upsert({
           where: { orderId: order.id },
           create: {
@@ -230,6 +318,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       });
       if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.paidMinor)
         throw new AppError(409, "DELIVERY_LOCKED", "Order changed; refresh and retry");
+      checkPickup({ ...order, delivery: current.delivery }, body.pickup);
       const d = await tx.delivery.upsert({
         where: { orderId: order.id },
         create: {

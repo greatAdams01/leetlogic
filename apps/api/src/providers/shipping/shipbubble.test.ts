@@ -23,6 +23,11 @@ describe("Shipbubble protocol", () => {
   beforeEach(() => {
     fetcher.mockReset();
   });
+  it("keeps internal map pins out of the provider's address-validation payload", async () => {
+    fetcher.mockResolvedValue(Response.json({ status: "success", data: { address_code: 1 } }));
+    await provider.validateAddress({ ...contact, latitude: 6.52, longitude: 3.37 });
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toEqual(contact);
+  });
   it("uses address validation and VAT-inclusive pickup quotes only", async () => {
     fetcher
       .mockResolvedValueOnce(Response.json({ status: "success", data: { address_code: 1 } }))

@@ -1,3 +1,5 @@
+import { FarmPin } from "../components/farm-pin";
+import { savedFarmPoint } from "../lib/farm-location";
 import { DojahIdentity } from "../components/dojah-identity";
 import { Confirmation } from "../components/feedback";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -108,6 +110,7 @@ export function Seller() {
           lga: address?.lga || "",
           city: address?.city || "",
           line1: address?.line1 || "",
+          coordinates: savedFarmPoint(address),
         };
         setForm(restoredForm);
         savedFarm.current = restoredForm;
@@ -147,7 +150,10 @@ export function Seller() {
           verificationSteps.includes(draft.step)
         ) {
           const validForm =
-            draft.form && Object.keys(form).every((key) => typeof draft.form[key] === "string");
+            draft.form &&
+            ["farmName", "farmType", "description", "state", "lga", "city", "line1"].every(
+              (key) => typeof draft.form[key] === "string",
+            );
           if (validForm && ["details", "location"].includes(draft.step)) {
             setForm(draft.form);
             setStep(
@@ -470,7 +476,16 @@ export function Seller() {
           {step === "location" && (
             <>
               <Heading>Farm location</Heading>
-              <Label>Where is your farm or pickup point?</Label>
+              <Label>Where is your farm?</Label>
+              <Label muted>
+                We’ll use this address for produce pickup unless you choose another location for an
+                order.
+              </Label>
+              <FarmPin
+                value={form.coordinates}
+                disabled={busy}
+                onConfirm={(coordinates) => setForm((current) => ({ ...current, coordinates }))}
+              />
               <View style={{ gap: 24 }}>
                 <Select
                   label="State *"

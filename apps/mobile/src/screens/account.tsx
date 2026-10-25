@@ -1,3 +1,6 @@
+import { FarmPin } from "../components/farm-pin";
+import { savedFarmPoint, type FarmPoint } from "../lib/farm-location";
+import { farmLocation } from "../lib/farm-location";
 import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect } from "react";
 import { View, Pressable, AppState } from "react-native";
@@ -132,7 +135,7 @@ export function Profile() {
           { label: "Bank accounts", sub: "Manage bank accounts for your earnings", route: "banks" },
           { label: "Personal details", sub: "Name, display name and email", route: "details" },
           {
-            label: seller ? "Farm and pickup locations" : "Delivery addresses",
+            label: seller ? "Farm location" : "Delivery addresses",
             sub: seller
               ? "Manage where you farm and where produce is collected"
               : "Manage where your orders are delivered",
@@ -247,80 +250,121 @@ export function Addresses() {
     [form, setForm] = useState({ label: "", line1: "", state: "", lga: "", city: "" }),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [saved, setSaved] = useState(false);
+    [saved, setSaved] = useState(false),
+    [coordinates, setCoordinates] = useState<FarmPoint | undefined>();
   const seller = a.role === "SELLER" || !!a.user?.farmerProfile;
+  const addingPickup = seller && a.route.id === "pickup";
+  const farmAddress = farmLocation(
+    a.user?.addresses || [],
+    a.user?.farmerProfile?.primaryAddressId,
+  );
   return (
-    <Page title={seller ? "Farm and pickup locations" : "Saved addresses"} back={a.back}>
+    <Page
+      title={
+        addingPickup ? "Different pickup address" : seller ? "Farm location" : "Saved addresses"
+      }
+      back={a.back}
+    >
       <Heading>
-        {seller ? "Where do you operate?" : "Where should your orders be delivered?"}
+        {addingPickup
+          ? "Different pickup address"
+          : seller
+            ? "Farm location"
+            : "Where should your orders be delivered?"}
       </Heading>
       <Label muted>
         {seller
-          ? "Add your farm or collection point in Nigeria. This is where produce is picked up, not the buyer’s delivery destination."
+          ? "Your farm address is used for pickup. Choose a different pickup address only when arranging an order’s delivery."
           : "Save the addresses where you want to receive your orders."}
       </Label>
       {saved && <Notice text={seller ? "Pickup location saved." : "Delivery address saved."} />}
-      {a.user?.addresses.map((ad) => (
-        <Card key={ad.id}>
-          <Label style={{ fontFamily: "NotoBold" }}>{ad.label}</Label>
-          <Label>
-            {ad.line1}, {ad.city}, {ad.lga}, {ad.state}
-          </Label>
-        </Card>
-      ))}
-      <Text style={s.sectionTitle}>
-        {seller ? "Add a pickup location" : "Add a delivery address"}
-      </Text>
-      <Card>
-        {(["label", "line1", "city"] as const).map((k) => (
-          <Field
-            key={k}
-            label={
-              {
-                label: "Address label",
-                line1: "Full street address",
-                state: "State",
-                lga: "Local government area",
-                city: "City / town",
-              }[k]
-            }
-            value={form[k]}
-            onChangeText={(v) => setForm((f) => ({ ...f, [k]: v }))}
-          />
-        ))}
-        <Select
-          label="State"
-          value={form.state}
-          options={nigeriaStates}
-          onChange={(state) => setForm((f) => changeState(f, state))}
-        />
-        <Select
-          label="Local government area"
-          value={form.lga}
-          options={localGovernments(form.state)}
-          disabled={!form.state}
-          onChange={(lga) => setForm((f) => ({ ...f, lga }))}
-        />
-      </Card>
-      <Button
-        title={busy ? "Saving…" : seller ? "Save pickup location" : "Save address"}
-        disabled={busy || !form.state || !form.lga}
-        onPress={async () => {
-          setBusy(true);
-          try {
-            setSaved(false);
-            setError("");
-            await api("/me/addresses", { method: "POST", body: form });
+      {(seller && !addingPickup ? (farmAddress ? [farmAddress] : []) : a.user?.addresses)?.map(
+        (ad) => (
+          <Card key={ad.id}>
+            <Label style={{ fontFamily: "NotoBold" }}>
+              {ad.id === farmAddress?.id ? a.ui("Farm location") : ad.label}
+            </Label>
+            <Label>
+              {ad.line1}, {ad.city}, {ad.lga}, {ad.state}
+            </Label>
+          </Card>
+        ),
+      )}
+      {seller && !addingPickup && farmAddress && (
+        <FarmPin
+          value={savedFarmPoint(farmAddress)}
+          onConfirm={async (point) => {
+            await api("/me/farm-location", { method: "PATCH", body: point });
             await a.loadUser();
-            setForm({ label: "", line1: "", state: "", lga: "", city: "" });
-            setSaved(true);
-          } catch (e) {
-            setError(a.error(e));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
+          }}
+        />
+      )}
+      {(!seller || addingPickup) && (
+        <>
+          <Text style={s.sectionTitle}>
+            {seller ? "Different pickup address" : "Add a delivery address"}
+          </Text>
+          {addingPickup && <FarmPin value={coordinates} onConfirm={setCoordinates} />}
+          <Card>
+            {(["label", "line1", "city"] as const).map((k) => (
+              <Field
+                key={k}
+                label={
+                  {
+                    label: "Address label",
+                    line1: "Full street address",
+                    state: "State",
+                    lga: "Local government area",
+                    city: "City / town",
+                  }[k]
+                }
+                value={form[k]}
+                onChangeText={(v) => setForm((f) => ({ ...f, [k]: v }))}
+              />
+            ))}
+            <Select
+              label="State"
+              value={form.state}
+              options={nigeriaStates}
+              onChange={(state) => setForm((f) => changeState(f, state))}
+            />
+            <Select
+              label="Local government area"
+              value={form.lga}
+              options={localGovernments(form.state)}
+              disabled={!form.state}
+              onChange={(lga) => setForm((f) => ({ ...f, lga }))}
+            />
+          </Card>
+          <Button
+            title={busy ? "Saving…" : seller ? "Save pickup address" : "Save address"}
+            disabled={busy || !form.state || !form.lga}
+            onPress={async () => {
+              setBusy(true);
+              try {
+                setSaved(false);
+                setError("");
+                await api("/me/addresses", {
+                  method: "POST",
+                  body: { ...form, ...(coordinates ? { coordinates } : {}) },
+                });
+                await a.loadUser();
+                setForm({ label: "", line1: "", state: "", lga: "", city: "" });
+                setSaved(true);
+                setCoordinates(undefined);
+                if (addingPickup) a.back();
+              } catch (e) {
+                setError(a.error(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        </>
+      )}
+      {seller && !addingPickup && !farmAddress && (
+        <Button title="Complete farm details" onPress={() => a.go("seller")} />
+      )}
       {error && <Notice text={error} error />}
     </Page>
   );

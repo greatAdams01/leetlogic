@@ -47,6 +47,9 @@ export type Listing = {
 export type Address = {
   id: string;
   label: string;
+  isDefaultFarm?: boolean;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
   state: string;
   city: string;
   lga: string;
@@ -58,7 +61,11 @@ export type Customer = {
   phoneVerifiedAt?: string | null;
   preferredLocale: string;
   profile: { fullName?: string; displayName?: string; email?: string } | null;
-  farmerProfile: { farmName: string; verificationStatus: string } | null;
+  farmerProfile: {
+    farmName: string;
+    verificationStatus: string;
+    primaryAddressId?: string | null;
+  } | null;
   addresses: Address[];
 };
 export type Order = {
@@ -77,6 +84,8 @@ export type Contact = {
   address: string;
   state: string;
   country: "NG";
+  latitude?: number;
+  longitude?: number;
 };
 export type DeliveryData = {
   order: {

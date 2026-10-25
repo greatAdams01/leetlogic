@@ -11,7 +11,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Take a photo of the produce you want to list.",
-        "NSPhotoLibraryUsageDescription": "Choose a photo of your produce."
+        "NSPhotoLibraryUsageDescription": "Choose a photo of your produce.",
+        "NSLocationWhenInUseUsageDescription": "Use your location to help you confirm your farm’s pickup point."
       }
     },
     "android": {
@@ -38,6 +39,18 @@
           "imageWidth": 128,
           "resizeMode": "contain",
           "backgroundColor": "#faf7f0"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Use your location to help you confirm your farm’s pickup point.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "motionUsagePermission": false
         }
       ]
     ]

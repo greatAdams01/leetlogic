@@ -1,3 +1,4 @@
+import { farmLocation } from "../lib/farm-location";
 import { Confirmation } from "../components/feedback";
 import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect } from "react";
@@ -64,6 +65,7 @@ export function Sell() {
       categories: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
       units: { code: string }[];
       addresses: Address[];
+      primaryAddressId?: string;
       verificationStatus: string;
     }>("/listing-drafts/catalogue"),
     [form, setForm] = useState<Form>(initial),
@@ -116,6 +118,17 @@ export function Sell() {
     }, 500);
     return () => clearTimeout(timer);
   }, [form, ready, storage]);
+  const farmAddress = farmLocation(r.data?.addresses || [], r.data?.primaryAddressId);
+  const listingAddress =
+    r.data?.addresses.find((address) => address.id === form.addressId) || farmAddress;
+  useEffect(() => {
+    if (!ready || !farmAddress) return;
+    setForm((current) =>
+      r.data?.addresses.some((address) => address.id === current.addressId)
+        ? current
+        : { ...current, addressId: farmAddress.id },
+    );
+  }, [ready, farmAddress?.id]);
   const field = (k: keyof Form, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const upload = async (camera: boolean) => {
     setBusy(true);
@@ -241,19 +254,23 @@ export function Sell() {
           onChangeText={(v) => field("quantity", v)}
         />
       </Card>
-      <Text style={s.sectionTitle}>Location and delivery</Text>
-      {r.data?.addresses.map((ad) => (
-        <Pressable
-          key={ad.id}
-          onPress={() => field("addressId", ad.id)}
-          style={[s.choice, form.addressId === ad.id && s.selected]}
-        >
+      <Text style={s.sectionTitle}>Farm location</Text>
+      {listingAddress ? (
+        <Card>
           <Label>
-            {ad.label} · {ad.line1}, {ad.city}, {ad.state}
+            {listingAddress.line1}, {listingAddress.city}, {listingAddress.state}
           </Label>
-        </Pressable>
-      ))}
-      <Button title="Add pickup address" secondary onPress={() => a.go("addresses")} />
+          <Label muted>
+            Your farm is the default pickup location. You can choose a different address when
+            arranging an order’s delivery.
+          </Label>
+        </Card>
+      ) : (
+        <>
+          <Notice text="Complete your farm address before listing produce." />
+          <Button title="Farm location" secondary onPress={() => a.go("seller")} />
+        </>
+      )}
       <Notice text="Delivery coverage and package eligibility are checked before payment. Bulk and cold-chain orders need staff review." />
       <Text style={s.sectionTitle}>{a.t("sell.photo")}</Text>
       {(form.photoUri || form.photoId) && (

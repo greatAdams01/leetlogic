@@ -40,7 +40,13 @@ listingDraftRouter.get("/catalogue", async (req, res) => {
     prisma.farmerProfile.findUnique({ where: { userId: req.auth!.sub } }),
   ]);
   res.json(
-    serialize({ categories, units, addresses, verificationStatus: farmer?.verificationStatus }),
+    serialize({
+      categories,
+      units,
+      addresses,
+      primaryAddressId: farmer?.primaryAddressId,
+      verificationStatus: farmer?.verificationStatus,
+    }),
   );
 });
 listingDraftRouter.post("/", async (req, res) => {

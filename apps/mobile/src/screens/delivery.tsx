@@ -23,7 +23,9 @@ export function Delivery() {
   const a = useApp(),
     r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [changePickup, setChangePickup] = useState(false),
+    [pickupAddressId, setPickupAddressId] = useState("");
   const data = r.data,
     d = data?.delivery;
   const run = async (path: string) => {
@@ -76,6 +78,81 @@ export function Delivery() {
               Produce and shipping are accounted for separately.
             </Label>
           </Card>
+          <Card>
+            <Heading>Pickup location</Heading>
+            <Label>
+              {data.order.suggestedPickup.address}, {data.order.suggestedPickup.state}
+            </Label>
+            {data.order.suggestedPickup.latitude != null &&
+              data.order.suggestedPickup.longitude != null && (
+                <Button
+                  title="View pickup on map"
+                  secondary
+                  onPress={() => {
+                    void Linking.openURL(
+                      `https://www.google.com/maps/search/?api=1&query=${data.order.suggestedPickup.latitude},${data.order.suggestedPickup.longitude}`,
+                    ).catch(() => setError(a.ui("The map could not be opened. Please try again.")));
+                  }}
+                />
+              )}
+            {!data.order.isBuyer &&
+              data.order.status === "AWAITING_PAYMENT" &&
+              (!d || d.paidMinor === "0") && (
+                <>
+                  <Button
+                    title="Use a different pickup address"
+                    secondary
+                    disabled={busy}
+                    onPress={() => setChangePickup(!changePickup)}
+                  />
+                  {changePickup && (
+                    <>
+                      <Select
+                        label="Pickup address"
+                        value={pickupAddressId}
+                        options={(a.user?.addresses || []).map((address) => ({
+                          value: address.id,
+                          label: `${address.id === a.user?.farmerProfile?.primaryAddressId ? a.ui("Farm location") : address.label} · ${address.line1}, ${address.city}`,
+                        }))}
+                        onChange={setPickupAddressId}
+                        disabled={busy}
+                      />
+                      <Button
+                        title="Save pickup address"
+                        loading={busy}
+                        disabled={busy || !pickupAddressId}
+                        onPress={async () => {
+                          setBusy(true);
+                          setError("");
+                          try {
+                            await api(`/orders/${a.route.id}/delivery/pickup`, {
+                              method: "POST",
+                              body: { addressId: pickupAddressId },
+                            });
+                            await r.reload();
+                            setChangePickup(false);
+                          } catch (e) {
+                            setError(a.error(e));
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      />
+                      <Button
+                        title="Add a different pickup address"
+                        secondary
+                        disabled={busy}
+                        onPress={() => a.go("addresses", "pickup")}
+                      />
+                      <Label muted>
+                        Changing pickup clears delivery quotes. The buyer will need a new quote
+                        before payment.
+                      </Label>
+                    </>
+                  )}
+                </>
+              )}
+          </Card>
           <OrderPayment
             orderId={a.route.id!}
             isBuyer={data.order.isBuyer}
@@ -106,7 +183,10 @@ export function Delivery() {
           )}
           {data.order.isBuyer &&
             data.order.status === "AWAITING_PAYMENT" &&
-            (!d || ["QUOTED", "PAYMENT_PENDING", "MANUAL_REVIEW"].includes(d.status)) && (
+            (!d ||
+              ["QUOTE_REQUIRED", "QUOTED", "PAYMENT_PENDING", "MANUAL_REVIEW"].includes(
+                d.status,
+              )) && (
               <Button
                 title={a.t("delivery.quotes")}
                 onPress={() => a.go("quotes", data.order.id)}
@@ -328,7 +408,7 @@ export function Quotes() {
       <Notice text="Only eligible produce parcels can be booked. Bulk, cold-chain and unsupported routes go to staff review." />
       {r.data && (
         <Card>
-          <Label style={{ fontFamily: "NotoBold" }}>Pickup · farmer’s saved address</Label>
+          <Label style={{ fontFamily: "NotoBold" }}>Pickup · farmer’s confirmed address</Label>
           <Label>
             {r.data.order.suggestedPickup.address}, {r.data.order.suggestedPickup.state}
           </Label>

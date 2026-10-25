@@ -20,7 +20,10 @@ export const updateMeSchema = z.object({
   email: z.string().email().nullable().optional(),
 });
 export const updateLocaleSchema = z.object({ locale: localeSchema });
+export { coordinatesSchema } from "./coordinates.js";
+import { coordinatesSchema } from "./coordinates.js";
 export const sellerProfileSchema = z.object({
+  coordinates: coordinatesSchema.optional(),
   line1: z.string().trim().min(5).max(180).optional(),
   farmName: z.string().trim().min(2).max(160),
   farmType: z.string().trim().min(2).max(80),

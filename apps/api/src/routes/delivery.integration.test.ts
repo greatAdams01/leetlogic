@@ -201,6 +201,142 @@ suite("delivery and language database workflows", () => {
       ).status,
     ).toBe(200);
   });
+  it("defaults to the farm and lets only its farmer change an unpaid order pickup", async () => {
+    const farmer = await prisma.farmerProfile.update({
+      where: { id: farmerId },
+      data: { primaryAddressId: addressId },
+    });
+    const sourceOrder = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    const order = await prisma.tradeOrder.create({
+      data: {
+        reference: `PICKUP-${randomUUID()}`,
+        buyerId: sourceOrder.buyerId,
+        farmerProfileId: farmerId,
+        listingId,
+        quantity: "1",
+        totalMinor: 10000n,
+      },
+    });
+    const path = `/v1/orders/${order.id}/delivery`;
+    const sellerAuth = { Authorization: `Bearer ${seller}` };
+    const catalogue = await request(app).get("/v1/listing-drafts/catalogue").set(sellerAuth);
+    expect(catalogue.body.primaryAddressId).toBe(addressId);
+    expect((await request(app).get(path).set(customer())).body.order.suggestedPickup.address).toBe(
+      contact.address,
+    );
+    const alternate = await prisma.address.create({
+      data: {
+        userId: farmer.userId,
+        state: "Lagos",
+        city: "Ikeja",
+        lga: "Ikeja",
+        line1: "25 Collection Centre Road",
+        label: "Collection centre",
+      },
+    });
+    expect(
+      (await request(app).post(`${path}/pickup`).set(customer()).send({ addressId: alternate.id }))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post(`${path}/pickup`)
+          .set({ Authorization: `Bearer ${outsider}` })
+          .send({ addressId: alternate.id })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId: randomUUID() }))
+        .status,
+    ).toBe(422);
+    expect(
+      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId: alternate.id }))
+        .status,
+    ).toBe(200);
+    const detail = await request(app).get(path).set(customer());
+    expect(detail.body.order.suggestedPickup.address).toContain(alternate.line1);
+    expect(
+      (await prisma.listing.findUniqueOrThrow({ where: { id: listingId } })).locationAddressId,
+    ).toBe(addressId);
+    const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
+      {
+        courierId: "test",
+        courier: "Test courier",
+        amountMinor: 500n,
+        walletMinor: 500n,
+        requestToken: "pickup-fixture",
+        serviceCode: "pickup-fixture",
+        eta: "1 day",
+      },
+    ]);
+    expect((await request(app).post(`${path}/quotes`).set(customer()).send(input)).status).toBe(
+      422,
+    );
+    const valid = {
+      ...input,
+      pickup: { ...contact, address: detail.body.order.suggestedPickup.address },
+    };
+    const quoted = await request(app).post(`${path}/quotes`).set(customer()).send(valid);
+    expect(quoted.status).toBe(200);
+    const oldQuote = quoted.body.items[0].id;
+    expect(
+      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId })).status,
+    ).toBe(200);
+    expect(
+      (await request(app).post(`${path}/select`).set(customer()).send({ quoteId: oldQuote }))
+        .status,
+    ).toBe(409);
+    expect(
+      await prisma.deliveryQuote.count({ where: { deliveryId: detail.body.delivery.id } }),
+    ).toBe(0);
+    await prisma.tradeOrder.update({ where: { id: order.id }, data: { status: "FUNDED" } });
+    expect(
+      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId: alternate.id }))
+        .status,
+    ).toBe(409);
+    quotes.mockRestore();
+  });
+  it("stores only the signed-in farmer’s valid map pin and keeps it out of public listings", async () => {
+    const sellerAuth = { Authorization: `Bearer ${seller}` };
+    const point = { latitude: 6.524379, longitude: 3.379206 };
+    expect(
+      (await request(app).patch("/v1/me/farm-location").set(sellerAuth).send(point)).status,
+    ).toBe(200);
+    const saved = await prisma.address.findUniqueOrThrow({ where: { id: addressId } });
+    expect(Number(saved.latitude)).toBe(point.latitude);
+    expect(Number(saved.longitude)).toBe(point.longitude);
+    expect(
+      (
+        await request(app)
+          .patch("/v1/me/farm-location")
+          .set({ Authorization: `Bearer ${outsider}` })
+          .send(point)
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await request(app)
+          .patch("/v1/me/farm-location")
+          .set(sellerAuth)
+          .send({ ...point, latitude: 91 })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await request(app)
+          .patch("/v1/me/farm-location")
+          .set(sellerAuth)
+          .send({ ...point, addressId })
+      ).status,
+    ).toBe(422);
+    const order = await request(app).get(`/v1/orders/${orderId}/delivery`).set(customer());
+    expect(order.body.order.suggestedPickup.latitude).toBe(point.latitude);
+    const publicListing = await request(app).get(`/v1/marketplace/listings/${listingId}`);
+    expect(publicListing.status).toBe(200);
+    expect(publicListing.body.item.locationAddress).not.toHaveProperty("latitude");
+    expect(publicListing.body.item.locationAddress).not.toHaveProperty("longitude");
+  });
   it("routes special handling to manual review and serves real quotes without provider tokens", async () => {
     const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
       {
