@@ -19,6 +19,7 @@ import { Profile, Details, Addresses, Notifications, Help, Seller } from "./src/
 import { colors } from "./src/components/ui";
 import { Navigation } from "./src/components/navigation";
 import { SellerHome } from "./src/screens/seller-home";
+import { protectedScreens } from "./src/lib/navigation";
 import { showsBottomTabs } from "./src/lib/bottom-tabs";
 function Router() {
   const a = useApp();
@@ -49,21 +50,6 @@ function Router() {
     notifications: Notifications,
     help: Help,
   };
-  const protectedScreens = [
-    "orders",
-    "delivery",
-    "quotes",
-    "finance",
-    "banks",
-    "profile",
-    "details",
-    "addresses",
-    "seller",
-    "sell",
-    "review",
-    "myListings",
-    "notifications",
-  ];
   const Screen = !a.user && protectedScreens.includes(a.route.name) ? Phone : screens[a.route.name];
   return (
     <>

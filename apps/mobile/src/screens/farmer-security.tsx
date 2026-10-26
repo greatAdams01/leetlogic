@@ -75,27 +75,29 @@ export function FarmerSecurity() {
         setEnabled(true);
       }
     });
-  const submit = () =>
-    perform(async () => {
+  const submit = (completedPin = pin) => {
+    if (!/^\d{4}$/.test(completedPin) || step === "biometric") return;
+    return perform(async () => {
       if (step === "unlock") {
-        await checkPin(id, pin);
+        await checkPin(id, completedPin);
         a.unlock();
         return;
       }
       if (step === "create") {
-        first.current = pin;
+        first.current = completedPin;
         setPin("");
         setStep("confirm");
         return;
       }
-      if (pin !== first.current)
+      if (completedPin !== first.current)
         throw new Error("Your PINs do not match. Enter the first PIN again.");
-      await createSecurity(id, pin);
+      await createSecurity(id, completedPin);
       first.current = "";
       setPin("");
       setEnabled(false);
       setStep("biometric");
     });
+  };
   const title =
     step === "unlock"
       ? "Welcome back."
@@ -209,7 +211,13 @@ export function FarmerSecurity() {
                 autoFocus
                 accessibilityLabel={a.ui("Security PIN")}
                 value={pin}
-                onChangeText={(v) => setPin(v.replace(/\D/g, "").slice(0, 4))}
+                onChangeText={(v) => {
+                  if (pending.current) return;
+                  const next = v.replace(/\D/g, "").slice(0, 4);
+                  setPin(next);
+                  setError("");
+                  if (next.length === 4 && next !== pin) void submit(next);
+                }}
                 maxLength={4}
                 keyboardType="number-pad"
                 secureTextEntry
@@ -308,7 +316,7 @@ export function FarmerSecurity() {
             title={step === "biometric" ? "Done" : "Continue"}
             disabled={busy || (step !== "biometric" && pin.length !== 4)}
             loading={busy}
-            onPress={step === "biometric" ? a.unlock : submit}
+            onPress={step === "biometric" ? a.unlock : () => void submit()}
           />
         </View>
       </View>

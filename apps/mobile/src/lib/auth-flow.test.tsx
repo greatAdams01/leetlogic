@@ -79,3 +79,25 @@ it("lets buyers browse without a phone code or farmer security", async () => {
   expect(current.user).toBeNull();
   expect(current.security).toBeNull();
 });
+it("returns a guest from the Orders sign-in prompt to browsing", async () => {
+  await act(async () => {
+    tree = create(
+      <AppProvider>
+        <Probe />
+      </AppProvider>,
+    );
+  });
+  await act(async () => {
+    await current.selectRole("BUYER");
+  });
+  await act(async () => current.go("search"));
+  await act(async () => current.go("orders"));
+  expect(current.canGoBack).toBe(true);
+  await act(async () => current.back());
+  expect(current.route.name).toBe("search");
+  // Recover existing navigation state from before the fix too.
+  await act(async () => current.reset("orders"));
+  expect(current.canGoBack).toBe(true);
+  await act(async () => current.back());
+  expect(current.route.name).toBe("home");
+});

@@ -38,3 +38,30 @@ export function openLanguageScreen(stack: Route[], introStep?: number): Route[] 
 export function finishLanguageSelection(stack: Route[]): Route[] {
   return stack.length > 1 ? stack.slice(0, -1) : [...stack, { name: "intro" }];
 }
+
+export const protectedScreens: Route["name"][] = [
+  "orders",
+  "delivery",
+  "quotes",
+  "finance",
+  "banks",
+  "profile",
+  "details",
+  "addresses",
+  "seller",
+  "sell",
+  "review",
+  "myListings",
+  "notifications",
+];
+
+/** A sign-in prompt must always have a way back to public browsing. */
+export function backStack(stack: Route[], signedIn: boolean): Route[] {
+  if (stack.length > 1) return stack.slice(0, -1);
+  if (signedIn) return stack;
+  const route = stack[0];
+  if (route && protectedScreens.includes(route.name)) return [{ name: "home" }];
+  if (route?.name === "phone") return [{ name: "role" }];
+  if (route?.name === "otp") return [{ name: "phone" }];
+  return stack;
+}

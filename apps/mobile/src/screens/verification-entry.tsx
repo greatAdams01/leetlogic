@@ -258,15 +258,15 @@ export function Otp() {
       subscription.remove();
     };
   }, []);
-  const verify = async () => {
-    if (submitting.current || code.length !== 6) return;
+  const verify = async (completedCode = code) => {
+    if (submitting.current || completedCode.length !== 6) return;
     submitting.current = true;
     setBusy(true);
     setError("");
     try {
       const result = await api("/auth/otp/verify", {
         method: "POST",
-        body: { phone: a.route.id, deviceId: await deviceId(), code },
+        body: { phone: a.route.id, deviceId: await deviceId(), code: completedCode },
       });
       await saveSession(result);
       const user = await a.loadUser();
@@ -345,8 +345,11 @@ export function Otp() {
               autoCorrect={false}
               editable={!busy}
               onChangeText={(value) => {
-                setCode(otpDigits(value));
+                if (submitting.current) return;
+                const next = otpDigits(value);
+                setCode(next);
                 setError("");
+                if (next.length === 6 && next !== code) void verify(next);
               }}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}

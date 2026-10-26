@@ -170,7 +170,10 @@ export function Navigation() {
                 accessibilityLabel={a.ui(tab.label)}
                 accessibilityState={{ selected: active }}
                 onPress={() => {
-                  if (!active) a.reset(tab.name);
+                  if (!active) {
+                    if (a.user) a.reset(tab.name);
+                    else a.go(tab.name);
+                  }
                 }}
                 style={styles.tab}
               >

@@ -12,7 +12,12 @@ import {
   type Locale,
   type MessageKey,
 } from "../../../packages/localization/src/customer-messages";
-import { type Route, openLanguageScreen, finishLanguageSelection } from "./lib/navigation";
+import {
+  type Route,
+  openLanguageScreen,
+  finishLanguageSelection,
+  backStack,
+} from "./lib/navigation";
 import { accountRoleKey, restoredAccount, signInRole } from "./lib/onboarding";
 import { readSecurity } from "./lib/farmer-security";
 import { singleFlight } from "./lib/async-cache";
@@ -37,7 +42,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [],
   );
   const reset = useCallback((name: Route["name"]) => setStack([{ name }]), []);
-  const back = useCallback(() => setStack((v) => (v.length > 1 ? v.slice(0, -1) : v)), []);
+  const back = useCallback(() => setStack((v) => backStack(v, !!user)), [user]);
   const loadUser = useCallback(async () => {
     const version = sessionVersion();
     const r = await readAccount(version);
@@ -98,13 +103,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       // The verification wizard owns Back within its separate application stages.
-      if (route.name === "seller") return false;
-      if (stack.length <= 1) return false;
+      if (route.name === "seller" && user) return false;
+      if (backStack(stack, !!user) === stack) return false;
       back();
       return true;
     });
     return () => sub.remove();
-  }, [stack.length, route.name, back]);
+  }, [stack, route.name, back, user]);
   const changeLocale = (l: Locale) => {
     setOverrides({});
     setLocale(l);
@@ -188,7 +193,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       <Context.Provider
         value={{
           route,
-          canGoBack: stack.length > 1,
+          canGoBack: backStack(stack, !!user) !== stack,
           openLanguage: (introStep?: number) => setStack((v) => openLanguageScreen(v, introStep)),
           finishLanguage: () => setStack(finishLanguageSelection),
           go,
