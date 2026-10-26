@@ -37,7 +37,18 @@ vi.mock("../components/ui", () => ({
   Notice: "Notice",
   colors: {},
 }));
-import { BuyerLocation } from "../components/buyer-location";
+import {
+  BuyerLocation as LocationControls,
+  BuyerLocationProvider,
+  useBuyerLocation,
+} from "../components/buyer-location";
+function BuyerLocation(props: { onChange: (area: any) => void }) {
+  return (
+    <BuyerLocationProvider key={h.id || "guest"} enabled>
+      <LocationControls {...props} />
+    </BuyerLocationProvider>
+  );
+}
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer;
 beforeEach(() => {
@@ -136,4 +147,28 @@ it("lets a manual choice win over a pending GPS response", async () => {
   await act(async () => tree.root.findAllByType("Select" as any)[0]!.props.onChange("Abia"));
   await act(async () => resolve({ point: { latitude: 6.52, longitude: 3.37 }, accuracy: 10 }));
   expect(h.change).toHaveBeenLastCalledWith({ state: "Abia", lga: "" });
+});
+
+it("keeps the active location when controls are left and reopened", async () => {
+  h.locate.mockResolvedValue({ point: { latitude: 6.52, longitude: 3.37 }, accuracy: 10 });
+  let current!: ReturnType<typeof useBuyerLocation>;
+  function Probe() {
+    current = useBuyerLocation();
+    return null;
+  }
+  const content = (show: boolean) => (
+    <BuyerLocationProvider enabled>
+      <Probe />
+      {show && <LocationControls />}
+    </BuyerLocationProvider>
+  );
+  await act(async () => {
+    tree = create(content(true));
+  });
+  await act(async () => tree.update(content(false)));
+  expect(current.area.latitude).toBe(6.52);
+  await act(async () => current.choose({ state: "Lagos", lga: "Ikeja" }));
+  await act(async () => tree.update(content(true)));
+  expect(current.area).toEqual({ state: "Lagos", lga: "Ikeja" });
+  expect(h.locate).toHaveBeenCalledTimes(1);
 });

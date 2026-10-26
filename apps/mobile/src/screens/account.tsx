@@ -16,7 +16,7 @@ import { localizedError } from "../lib/localization";
 export function Profile() {
   const a = useApp(),
     [error, setError] = useState("");
-  const state = sellerMenuState(a.user?.farmerProfile, a.role);
+  const state = a.role === "BUYER" ? "buyer" : sellerMenuState(a.user?.farmerProfile, a.role);
   // Refresh on entering Menu, returning to the foreground and while approval is pending.
   // Keep the current account visible during refresh; never display a guessed status.
   useEffect(() => {
@@ -47,7 +47,7 @@ export function Profile() {
     };
   }, [a.loadUser, state, a.locale]);
   const phoneVerified = !!a.user?.phoneVerifiedAt;
-  const seller = state !== "buyer";
+  const seller = a.role === "SELLER";
   return (
     <Page title="Menu">
       <Heading>
@@ -114,7 +114,10 @@ export function Profile() {
               Use the same account to sell produce. Your farmer profile must be approved before
               listing.
             </Label>
-            <Button title="Start selling" onPress={() => a.go("seller")} />
+            <Button
+              title="Start selling"
+              onPress={() => void a.selectRole("SELLER").catch((e) => setError(a.error(e)))}
+            />
           </>
         ) : (
           <>
@@ -133,6 +136,15 @@ export function Profile() {
             route: "finance",
           },
           { label: "Bank accounts", sub: "Manage bank accounts for your earnings", route: "banks" },
+          ...(!seller
+            ? [
+                {
+                  label: "Shopping location",
+                  sub: "Current location and nearby farmers",
+                  route: "shoppingLocation",
+                },
+              ]
+            : []),
           { label: "Personal details", sub: "Name, display name and email", route: "details" },
           {
             label: seller ? "Farm location" : "Delivery addresses",
@@ -152,7 +164,7 @@ export function Profile() {
           .filter(
             (item) =>
               (item.route !== "myListings" || state === "approved") &&
-              (item.route !== "banks" || seller),
+              (!["finance", "banks"].includes(item.route) || a.role === "SELLER"),
           )
           .map((item) => (
             <Pressable

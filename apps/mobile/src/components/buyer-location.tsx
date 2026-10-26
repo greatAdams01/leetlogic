@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, View } from "react-native";
 import { useApp } from "../state";
@@ -14,9 +14,39 @@ export type BuyerArea = {
   radiusKm?: number;
 };
 const empty = (): BuyerArea => ({ state: "", lga: "" });
-export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => void }) {
+type LocationState = {
+  area: BuyerArea;
+  ready: boolean;
+  busy: boolean;
+  error: string;
+  manual: boolean;
+  setManual: React.Dispatch<React.SetStateAction<boolean>>;
+  locate: () => Promise<void>;
+  choose: (area: BuyerArea) => void;
+  setRadius: (value: number) => void;
+};
+const LocationContext = createContext<LocationState | null>(null);
+export function useBuyerLocation() {
+  const value = useContext(LocationContext);
+  if (!value) throw new Error("Buyer location provider is missing");
+  return value;
+}
+export function BuyerLocationProvider({
+  children,
+  enabled: override,
+}: {
+  children: React.ReactNode;
+  enabled?: boolean;
+}) {
   const a = useApp();
   const key = `buyer-area:${a.user?.id || "guest"}`;
+  const entry =
+    a.role === "BUYER" && ["home", "search", "shoppingLocation"].includes(a.route?.name);
+  const [activatedKey, setActivatedKey] = useState("");
+  useEffect(() => {
+    if (entry) setActivatedKey(key);
+  }, [entry, key]);
+  const enabled = override ?? (activatedKey === key && a.role === "BUYER");
   const [area, setArea] = useState<BuyerArea>(empty);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -45,7 +75,6 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
       const next = { ...empty(), ...captured.point, radiusKm: radius.current };
       mode.current = "device";
       setArea(next);
-      onChange(next);
       setManual(false);
       // Save the mode and radius, never precise device coordinates.
       persist({ mode: "device", radiusKm: radius.current });
@@ -54,7 +83,6 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
         setError(a.error(e));
         if (mode.current === "device") {
           setArea(empty());
-          onChange(empty());
         }
         setManual(true);
       }
@@ -66,6 +94,7 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
     }
   };
   useEffect(() => {
+    if (!enabled) return;
     const request = ++generation.current;
     let initialized = false;
     running.current = false;
@@ -73,7 +102,6 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
     setReady(false);
     setError("");
     setArea(empty());
-    onChange(empty());
     void (async () => {
       let saved: any;
       try {
@@ -97,7 +125,6 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
           lga: localGovernments(saved.state).includes(saved.lga) ? saved.lga : "",
         };
         setArea(restored);
-        onChange(restored);
         setManual(true);
       } else {
         mode.current = "device";
@@ -112,7 +139,7 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
       running.current = false;
       sub.remove();
     };
-  }, [key, onChange]);
+  }, [key, enabled]);
   const choose = (next: BuyerArea) => {
     generation.current++;
     running.current = false;
@@ -120,9 +147,28 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
     setError("");
     mode.current = "manual";
     setArea(next);
-    onChange(next);
     persist(next);
   };
+  const setRadius = (value: number) => {
+    radius.current = value;
+    setArea((current) => ({ ...current, radiusKm: value }));
+    persist({ mode: "device", radiusKm: value });
+  };
+  return (
+    <LocationContext.Provider
+      value={{ area, ready, busy, error, manual, setManual, locate, choose, setRadius }}
+    >
+      {children}
+    </LocationContext.Provider>
+  );
+}
+export function BuyerLocation({ onChange }: { onChange?: (area: BuyerArea) => void }) {
+  const a = useApp();
+  const { area, ready, busy, error, manual, setManual, locate, choose, setRadius } =
+    useBuyerLocation();
+  useEffect(() => {
+    onChange?.(area);
+  }, [area, onChange]);
   const located = area.latitude !== undefined && area.longitude !== undefined;
   return (
     <Card>
@@ -146,13 +192,7 @@ export function BuyerLocation({ onChange }: { onChange: (area: BuyerArea) => voi
             value: String(km),
             label: a.ui("Within {distance} km", { distance: km }),
           }))}
-          onChange={(value) => {
-            radius.current = Number(value);
-            const next = { ...area, radiusKm: radius.current };
-            setArea(next);
-            onChange(next);
-            persist({ mode: "device", radiusKm: radius.current });
-          }}
+          onChange={(value) => setRadius(Number(value))}
         />
       )}
       {!!error && <Notice text={error} error />}

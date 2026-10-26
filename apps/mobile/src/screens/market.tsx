@@ -1,4 +1,4 @@
-import { BuyerLocation, type BuyerArea } from "../components/buyer-location";
+import { useBuyerLocation } from "../components/buyer-location";
 import { ListingGallery } from "../components/listing-gallery";
 import { ListingPhoto } from "../components/listing-photo";
 import { LocalizedText as Text } from "../localization";
@@ -24,8 +24,8 @@ export function Market() {
   const a = useApp(),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
-    [category, setCategory] = useState(""),
-    [area, setArea] = useState<BuyerArea>({ state: "", lga: "" });
+    [category, setCategory] = useState("");
+  const { area, busy: locating } = useBuyerLocation();
   const r = useResource<{ items: Listing[] }>(
       `/marketplace/listings?search=${encodeURIComponent(query)}${category ? "&categoryId=" + category : ""}${area.state ? "&state=" + encodeURIComponent(area.state) : ""}${area.lga ? "&lga=" + encodeURIComponent(area.lga) : ""}${area.latitude !== undefined && area.longitude !== undefined ? `&latitude=${area.latitude}&longitude=${area.longitude}&radiusKm=${area.radiusKm || 50}` : ""}`,
     ),
@@ -75,7 +75,33 @@ export function Market() {
           <Label muted>Nigeria · Direct from verified farmers</Label>
         </>
       )}
-      <BuyerLocation onChange={setArea} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={a.ui("Change shopping location")}
+        onPress={() => a.go("shoppingLocation")}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          alignSelf: "flex-start",
+          paddingHorizontal: 12,
+          paddingVertical: 8,
+          borderRadius: 20,
+          backgroundColor: colors.mint,
+        }}
+      >
+        <Icon name="pin" size={18} />
+        <Label style={{ color: colors.green, fontSize: 13 }}>
+          {locating
+            ? "Finding your location…"
+            : area.latitude !== undefined
+              ? "Using current location"
+              : area.state
+                ? [area.lga, area.state].filter(Boolean).join(", ")
+                : "Set shopping location"}
+        </Label>
+        <Icon name="chevron" size={14} />
+      </Pressable>
       <Field
         label="Search produce"
         value={search}

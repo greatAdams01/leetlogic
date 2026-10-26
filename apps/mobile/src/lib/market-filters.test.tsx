@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   paths: [] as string[],
+  setArea: null as any,
   categories: {
     items: [
       { id: "veg", slug: "vegetables", translations: [{ locale: "en", name: "Vegetables" }] },
@@ -22,7 +23,13 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("../components/buyer-location", () => ({ BuyerLocation: "BuyerLocation" }));
+vi.mock("../components/buyer-location", () => ({
+  useBuyerLocation: () => {
+    const [area, setArea] = React.useState({ state: "", lga: "" });
+    h.setArea = setArea;
+    return { area, busy: false };
+  },
+}));
 vi.mock("../components/listing-gallery", () => ({ ListingGallery: "ListingGallery" }));
 vi.mock("../components/listing-photo", () => ({ ListingPhoto: "ListingPhoto" }));
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
@@ -73,9 +80,7 @@ it("combines buyer area and produce category filters in the public request", asy
   await act(async () => {
     tree = create(<Market />);
   });
-  await act(async () =>
-    tree.root.findByType("BuyerLocation" as any).props.onChange({ state: "Lagos", lga: "Ikeja" }),
-  );
+  await act(async () => h.setArea({ state: "Lagos", lga: "Ikeja" }));
   const category = tree.root
     .findAllByType("Label" as any)
     .find((n) => n.props.children === "Vegetables")!;
@@ -105,11 +110,21 @@ it("sends device coordinates and radius to the nearby search", async () => {
     tree = create(<Market />);
   });
   await act(async () =>
-    tree.root
-      .findByType("BuyerLocation" as any)
-      .props.onChange({ state: "", lga: "", latitude: 6.52, longitude: 3.37, radiusKm: 25 }),
+    h.setArea({ state: "", lga: "", latitude: 6.52, longitude: 3.37, radiusKm: 25 }),
   );
   expect(h.paths).toContain(
     "/marketplace/listings?search=&latitude=6.52&longitude=3.37&radiusKm=25",
   );
+});
+
+it("uses a compact location indicator that opens shopping location settings", async () => {
+  await act(async () => {
+    tree = create(<Market />);
+  });
+  expect(tree.root.findAllByType("BuyerLocation" as any)).toHaveLength(0);
+  expect(
+    tree.root
+      .findAllByType("Pressable" as any)
+      .some((node) => node.props.accessibilityLabel === "Change shopping location"),
+  ).toBe(true);
 });

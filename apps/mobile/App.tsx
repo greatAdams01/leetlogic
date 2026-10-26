@@ -1,3 +1,5 @@
+import { BuyerLocationProvider } from "./src/components/buyer-location";
+import { ShoppingLocation } from "./src/screens/shopping-location";
 import { FarmerSecurity } from "./src/screens/farmer-security";
 import { BankAccounts } from "./src/screens/bank-accounts";
 import { Finance } from "./src/screens/finance";
@@ -34,6 +36,7 @@ function Router() {
     otp: Otp,
     home: a.role === "SELLER" && a.user ? SellerHome : Market,
     search: Market,
+    shoppingLocation: ShoppingLocation,
     product: Product,
     orders: Orders,
     delivery: Delivery,
@@ -107,9 +110,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <ErrorBoundary>
-          <Router />
-        </ErrorBoundary>
+        <BuyerLocationProvider>
+          <ErrorBoundary>
+            <Router />
+          </ErrorBoundary>
+        </BuyerLocationProvider>
       </AppProvider>
     </SafeAreaProvider>
   );
