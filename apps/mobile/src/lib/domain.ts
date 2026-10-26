@@ -29,13 +29,17 @@ export const safeHttps = (url: string) => {
     return false;
   }
 };
+import type { Packaging } from "../../../../packages/contracts/src/packaging";
 export type Listing = {
+  packaging?: Packaging | null;
   distanceKm?: number;
+  unit?: { name: string; allowsDecimal: boolean };
   id: string;
   title: string;
   description: string | null;
   categoryId: string;
   sourceLocale: string;
+  shippingScope?: "LOCAL" | "NATIONWIDE";
   unitCode: string;
   unitPriceMinor: string;
   availableQuantity: string;
@@ -99,6 +103,19 @@ export type DeliveryData = {
     totalMinor: string;
     isBuyer: boolean;
     suggestedPickup: Contact;
+    quantity?: string;
+    unitCode?: string;
+    packageSuggestion?: {
+      farmer: Packaging;
+      packageCount: number;
+      weightKg: number;
+      length: number | null;
+      width: number | null;
+      height: number | null;
+      handling: Packaging["handling"];
+      notes: string;
+      needsPackedDimensions: boolean;
+    } | null;
   };
   delivery: null | {
     id: string;
@@ -108,6 +125,16 @@ export type DeliveryData = {
     selectedQuoteId: string | null;
     trackingUrl: string | null;
     courier: string | null;
+    package?: {
+      weightKg: number;
+      packageCount?: number;
+      length: number;
+      width: number;
+      height: number;
+      pickupDate: string;
+      handling: string;
+      notes?: string;
+    } | null;
     destination: Contact;
     quotes: {
       id: string;

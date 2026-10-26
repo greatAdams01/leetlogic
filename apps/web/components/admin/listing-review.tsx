@@ -240,6 +240,21 @@ export function ListingReview({
               ] || record.sourceLocale}
             </Fact>
           </dl>
+          {record.packaging && (
+            <>
+              <h4>Packing & handling</h4>
+              <dl>
+                <Fact title="Selling units per parcel">{record.packaging.unitsPerPackage}</Fact>
+                <Fact title="Packed weight">{record.packaging.weightKg} kg</Fact>
+                <Fact title="Dimensions">
+                  {record.packaging.length} × {record.packaging.width} × {record.packaging.height}{" "}
+                  cm
+                </Fact>
+                <Fact title="Handling">{label(record.packaging.handling)}</Fact>
+                <Fact title="Instructions">{record.packaging.notes || "None"}</Fact>
+              </dl>
+            </>
+          )}
           <h4>Description</h4>
           <p className="verification-prose">{record.description || "No description provided."}</p>
         </section>

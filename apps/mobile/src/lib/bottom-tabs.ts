@@ -21,7 +21,7 @@ export const showsBottomTabs = (
 ) =>
   route !== "sell" &&
   (signedIn || route === "home" || route === "search") &&
-  bottomTabs(role).some((tab) => tab.name === route);
+  (bottomTabs(role).some((tab) => tab.name === route) || (role === "BUYER" && route === "categories"));
 
 // Reserve space for a compact icon-and-label pill, keeping every other tab tappable.
 export function tabGeometry(width: number, count: number, selected: number, labelWidth: number) {

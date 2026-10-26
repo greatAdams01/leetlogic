@@ -21,7 +21,7 @@ export function Navigation() {
   const tabs = bottomTabs(a.role);
   const selected = Math.max(
     0,
-    tabs.findIndex((tab) => tab.name === a.route.name),
+    tabs.findIndex((tab) => tab.name === (a.route.name === "categories" ? "search" : a.route.name)),
   );
   const orders = useResource<{ items: Order[] }>(
     `/orders?view=${a.role === "SELLER" ? "seller" : "buyer"}`,

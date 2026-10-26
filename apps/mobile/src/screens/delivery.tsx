@@ -2,7 +2,7 @@ import { OrderPayment } from "../components/order-payment";
 import { Select } from "../components/Select";
 import { nigeriaStates } from "../lib/locations";
 import { LocalizedText as Text } from "../localization";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Pressable, Linking } from "react-native";
 import { useApp, useResource } from "../state";
 import {
@@ -153,6 +153,26 @@ export function Delivery() {
                 </>
               )}
           </Card>
+          {d?.package && (
+            <Card>
+              <Heading>Package details</Heading>
+              <Label>
+                {a.ui("Final parcel count")}: {d.package.packageCount || 1}
+              </Label>
+              <Label>
+                {a.ui("Total packed weight (kg)")}: {d.package.weightKg}
+              </Label>
+              <Label>
+                {a.ui("Package size: {length} × {width} × {height} cm", {
+                  length: d.package.length,
+                  width: d.package.width,
+                  height: d.package.height,
+                })}
+              </Label>
+              <Label>{a.status(d.package.handling)}</Label>
+              {!!d.package.notes && <Label>{d.package.notes}</Label>}
+            </Card>
+          )}
           <OrderPayment
             orderId={a.route.id!}
             isBuyer={data.order.isBuyer}
@@ -357,6 +377,8 @@ export function Quotes() {
     }),
     [pickupEmail, setPickupEmail] = useState(""),
     [parcel, setParcel] = useState({
+      packageCount: "1",
+      notes: "",
       weightKg: "",
       length: "",
       width: "",
@@ -366,6 +388,28 @@ export function Quotes() {
     }),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const initialized = useRef<string | null>(null);
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (!r.data || initialized.current === r.data.order.id) return;
+    initialized.current = r.data.order.id;
+    const saved = r.data.delivery?.package;
+    const suggested = r.data.order.packageSuggestion;
+    const source = saved || suggested;
+    if (source)
+      setParcel((current) => ({
+        ...current,
+        weightKg: String(source.weightKg),
+        packageCount: String(source.packageCount || 1),
+        length: source.length == null ? "" : String(source.length),
+        width: source.width == null ? "" : String(source.width),
+        height: source.height == null ? "" : String(source.height),
+        handling: source.handling,
+        notes: source.notes || "",
+        ...(saved ? { pickupDate: saved.pickupDate } : {}),
+      }));
+    if (r.data.delivery?.destination) setDestination(r.data.delivery.destination);
+  }, [r.data]);
   return (
     <Page
       title="Delivery quote"
@@ -375,10 +419,27 @@ export function Quotes() {
         <Button
           title={busy ? "Checking couriers…" : "Get delivery quotes"}
           disabled={busy || !r.data}
+          loading={busy}
           onPress={async () => {
+            if (submitting.current) return;
+            submitting.current = true;
             setBusy(true);
             setError("");
             try {
+              for (const key of [
+                "packageCount",
+                "weightKg",
+                "length",
+                "width",
+                "height",
+              ] as const) {
+                if (!/^\d+(\.\d+)?$/.test(parcel[key]) || Number(parcel[key]) <= 0)
+                  throw new Error(
+                    "Enter a positive parcel count, packed weight and all three dimensions.",
+                  );
+              }
+              if (!Number.isInteger(Number(parcel.packageCount)))
+                throw new Error("The number of parcels must be a whole number.");
               const p = r.data!.order.suggestedPickup;
               await api(`/orders/${a.route.id}/delivery/quotes`, {
                 method: "POST",
@@ -387,6 +448,7 @@ export function Quotes() {
                   destination,
                   parcel: {
                     ...parcel,
+                    packageCount: Number(parcel.packageCount),
                     weightKg: Number(parcel.weightKg),
                     length: Number(parcel.length),
                     width: Number(parcel.width),
@@ -398,12 +460,14 @@ export function Quotes() {
             } catch (e) {
               setError(a.error(e));
             } finally {
+              submitting.current = false;
               setBusy(false);
             }
           }}
         />
       }
     >
+      {(error || r.error) && <Notice text={error || r.error} error />}
       <Heading>Where should it go?</Heading>
       <Notice text="Only eligible produce parcels can be booked. Bulk, cold-chain and unsupported routes go to staff review." />
       {r.data && (
@@ -466,37 +530,85 @@ export function Quotes() {
           onChange={(state) => setDestination((d) => ({ ...d, state }))}
         />
       </Card>
+      {r.data?.order.packageSuggestion && (
+        <Card>
+          <Label style={{ fontFamily: "NotoBold" }}>Farmer’s packing estimate</Label>
+          <Label>{a.status(r.data.order.packageSuggestion.handling)}</Label>
+          <Label>
+            {a.ui("{count} parcels · estimated packed weight {weight} kg", {
+              count: r.data.order.packageSuggestion.packageCount,
+              weight: r.data.order.packageSuggestion.weightKg,
+            })}
+          </Label>
+          <Label muted>
+            Weight assumes full packages, including a partly filled last package. Review it before
+            requesting a quote.
+          </Label>
+          {r.data.order.packageSuggestion.needsPackedDimensions && (
+            <Notice text="Enter the dimensions of the final packed shipment. Separate parcels need staff review; dimensions are not multiplied automatically." />
+          )}
+          {!!r.data.order.packageSuggestion.farmer.notes && (
+            <Label>{r.data.order.packageSuggestion.farmer.notes}</Label>
+          )}
+        </Card>
+      )}
+      {!r.data?.order.packageSuggestion && (
+        <Notice text="The farmer has not provided packing measurements. Confirm them with the farmer before requesting delivery." />
+      )}
       <Text style={s.sectionTitle}>Package details</Text>
       <Card>
-        {(["weightKg", "length", "width", "height", "pickupDate"] as const).map((k) => (
-          <Field
-            key={k}
-            label={
-              {
-                weightKg: "Weight (kg)",
-                length: "Length (cm)",
-                width: "Width (cm)",
-                height: "Height (cm)",
-                pickupDate: "Pickup date · YYYY-MM-DD",
-              }[k]
-            }
-            keyboardType={k === "pickupDate" ? "default" : "decimal-pad"}
-            value={parcel[k]}
-            onChangeText={(v) => setParcel((p) => ({ ...p, [k]: v }))}
-          />
-        ))}
+        {(["packageCount", "weightKg", "length", "width", "height", "pickupDate"] as const).map(
+          (k) => (
+            <Field
+              key={k}
+              label={
+                {
+                  packageCount: "Final parcel count",
+                  weightKg: "Total packed weight (kg)",
+                  length: "Length (cm)",
+                  width: "Width (cm)",
+                  height: "Height (cm)",
+                  pickupDate: "Pickup date · YYYY-MM-DD",
+                }[k]
+              }
+              keyboardType={k === "pickupDate" ? "default" : "decimal-pad"}
+              value={parcel[k]}
+              onChangeText={(v) => setParcel((p) => ({ ...p, [k]: v }))}
+            />
+          ),
+        )}
       </Card>
+      <Field
+        label="Handling instructions"
+        value={parcel.notes}
+        multiline
+        maxLength={500}
+        onChangeText={(notes) => setParcel((p) => ({ ...p, notes }))}
+      />
+      <Label muted>
+        Edits apply to this order and require a new quote. They do not change the farmer’s listing.
+      </Label>
       <Label style={{ fontFamily: "NotoBold" }}>Handling requirements</Label>
-      {["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"].map((v) => (
-        <Pressable
-          key={v}
-          onPress={() => setParcel((p) => ({ ...p, handling: v }))}
-          style={[s.choice, parcel.handling === v && s.selected]}
-        >
-          <Label>{a.status(v)}</Label>
-        </Pressable>
-      ))}
-      {(error || r.error) && <Notice text={error || r.error} error />}
+      {["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"].map((v) => {
+        const required = r.data?.order.packageSuggestion?.handling;
+        const allowed =
+          !required ||
+          required === "STANDARD" ||
+          v === required ||
+          (required === "PERISHABLE" && v === "COLD_CHAIN");
+        return (
+          <Pressable
+            key={v}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: parcel.handling === v, disabled: busy || !allowed }}
+            disabled={busy || !allowed}
+            onPress={() => setParcel((p) => ({ ...p, handling: v }))}
+            style={[s.choice, parcel.handling === v && s.selected, !allowed && { opacity: 0.4 }]}
+          >
+            <Label>{a.status(v)}</Label>
+          </Pressable>
+        );
+      })}
     </Page>
   );
 }

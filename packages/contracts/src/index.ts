@@ -79,3 +79,5 @@ export type ErrorEnvelope = {
     retryAfterSeconds?: number;
   };
 };
+
+export { packagingSchema, handlingSchema, type Packaging } from "./packaging.js";

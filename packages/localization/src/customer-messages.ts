@@ -8,6 +8,11 @@ export const languageNames: Record<Locale, string> = {
   yo: "Yorùbá",
 };
 export const en = {
+  "delivery.parcelCount": "Final parcel count",
+  "delivery.instructions": "Handling instructions",
+  "delivery.packingEstimate": "Farmer’s packing estimate",
+  "delivery.dimensionsReview": "Confirm final dimensions; separate parcels require staff review.",
+
   "nav.about": "About",
   "nav.how": "How it works",
   "nav.buyers": "For buyers",
@@ -100,6 +105,11 @@ export const en = {
 } as const;
 export type MessageKey = keyof typeof en;
 const pcm: Partial<Record<MessageKey, string>> = {
+  "delivery.parcelCount": "Final number of packages",
+  "delivery.instructions": "How to handle am",
+  "delivery.packingEstimate": "Farmer packing estimate",
+  "delivery.dimensionsReview": "Confirm final size; staff go check separate packages.",
+
   "nav.about": "About us",
   "nav.how": "How e dey work",
   "nav.buyers": "For buyers",
@@ -132,6 +142,11 @@ const pcm: Partial<Record<MessageKey, string>> = {
   "status.CANCELLED": "Cancelled",
 };
 const ha: Partial<Record<MessageKey, string>> = {
+  "delivery.parcelCount": "Adadin kunshi na ƙarshe",
+  "delivery.instructions": "Umarnin kulawa",
+  "delivery.packingEstimate": "Ƙiyasin kunshin manomi",
+  "delivery.dimensionsReview": "Tabbatar da girman ƙarshe; ma’aikata za su duba kunshi daban.",
+
   "nav.about": "Game da mu",
   "nav.how": "Yadda yake aiki",
   "nav.buyers": "Ga masu saye",
@@ -169,6 +184,11 @@ const ha: Partial<Record<MessageKey, string>> = {
   "status.CANCELLED": "An soke",
 };
 const ig: Partial<Record<MessageKey, string>> = {
+  "delivery.parcelCount": "Ọnụọgụ ngwugwu ikpeazụ",
+  "delivery.instructions": "Ntuziaka nlekọta",
+  "delivery.packingEstimate": "Atụmatụ nkwakọ onye ọrụ ugbo",
+  "delivery.dimensionsReview": "Kwenye nha ikpeazụ; ndị ọrụ ga-enyocha ngwugwu dị iche iche.",
+
   "nav.about": "Gbasara anyị",
   "nav.how": "Otu o si arụ ọrụ",
   "nav.buyers": "Maka ndị na-azụ ahịa",
@@ -206,6 +226,11 @@ const ig: Partial<Record<MessageKey, string>> = {
   "status.CANCELLED": "Akagbuola",
 };
 const yo: Partial<Record<MessageKey, string>> = {
+  "delivery.parcelCount": "Iye ìdìpọ̀ ìkẹyìn",
+  "delivery.instructions": "Ìtọ́ni ìtọ́jú",
+  "delivery.packingEstimate": "Ìṣírò ìdìpọ̀ àgbẹ̀",
+  "delivery.dimensionsReview": "Jẹ́rìí ìwọ̀n ìkẹyìn; òṣìṣẹ́ gbọ́dọ̀ ṣàyẹ̀wò ìdìpọ̀ ọ̀tọ̀.",
+
   "nav.about": "Nípa wa",
   "nav.how": "Bí ó ṣe ń ṣiṣẹ́",
   "nav.buyers": "Fún àwọn olùrà",

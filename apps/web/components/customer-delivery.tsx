@@ -78,6 +78,8 @@ export function CustomerDelivery({
       pickup: contact("pickup"),
       destination: contact("destination"),
       parcel: {
+        packageCount: Number(form.get("packageCount")),
+        notes: String(form.get("notes") || ""),
         weightKg: Number(form.get("weight")),
         length: Number(form.get("length")),
         width: Number(form.get("width")),
@@ -96,6 +98,7 @@ export function CustomerDelivery({
       </section>
     );
   const d = data.delivery;
+  const packing = d?.package || data.order.packageSuggestion;
   return (
     <section className="customer-panel">
       <h1>{data.order.title}</h1>
@@ -171,24 +174,60 @@ export function CustomerDelivery({
                 ))}
               </fieldset>
             ))}
+            {data.order.packageSuggestion && (
+              <p>
+                {t("delivery.packingEstimate")}: {data.order.packageSuggestion.packageCount} ·{" "}
+                {data.order.packageSuggestion.weightKg} kg. {t("delivery.dimensionsReview")}
+              </p>
+            )}
+            <label>
+              {t("delivery.parcelCount")}
+              <input
+                name="packageCount"
+                type="number"
+                min="1"
+                step="1"
+                required
+                defaultValue={packing?.packageCount || 1}
+              />
+            </label>
             {["weight", "length", "width", "height"].map((key) => (
               <label key={key}>
                 {t(`delivery.${key}` as MessageKey)}
-                <input name={key} type="number" step="0.01" min="0.01" required />
+                <input
+                  name={key}
+                  type="number"
+                  step="0.001"
+                  min="0.001"
+                  required
+                  defaultValue={packing?.[key === "weight" ? "weightKg" : key] ?? ""}
+                />
               </label>
             ))}
             <label>
               {t("delivery.date")}
-              <input name="date" type="date" min={new Date().toISOString().slice(0, 10)} required />
+              <input
+                name="date"
+                type="date"
+                min={new Date().toISOString().slice(0, 10)}
+                defaultValue={
+                  packing?.pickupDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+                }
+                required
+              />
             </label>
             <label>
               {t("delivery.handling")}
-              <select name="handling">
+              <select name="handling" defaultValue={packing?.handling || "STANDARD"}>
                 <option value="STANDARD">Standard parcel</option>
                 <option value="PERISHABLE">Perishable produce</option>
                 <option value="COLD_CHAIN">Cold chain</option>
                 <option value="BULK">Bulk load</option>
               </select>
+            </label>
+            <label>
+              {t("delivery.instructions")}
+              <textarea name="notes" maxLength={500} defaultValue={packing?.notes || ""} />
             </label>
             <button disabled={busy}>{t("delivery.quotes")}</button>
           </form>

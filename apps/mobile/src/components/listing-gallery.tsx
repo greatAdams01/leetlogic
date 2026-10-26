@@ -110,10 +110,28 @@ export function ListingGallery({ item }: { item: Listing }) {
                 }}
                 style={{ width }}
               >
-                <ListingPhoto item={item} objectKey={key} height={Math.min(360, width * 0.95)} />
+                <ListingPhoto item={item} objectKey={key} height={Math.min(288, width * 0.754)} />
               </Pressable>
             )}
           />
+        )}
+        {item.locationAddress?.state && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 14,
+              right: 14,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: 20,
+              backgroundColor: colors.mint,
+            }}
+          >
+            <Label style={{ fontSize: 13, color: colors.green, fontFamily: "NotoBold" }}>
+              {item.locationAddress.state}
+            </Label>
+          </View>
         )}
         <LinearGradient
           pointerEvents="none"

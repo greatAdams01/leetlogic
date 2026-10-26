@@ -7,6 +7,7 @@ export type Route = {
     | "otp"
     | "home"
     | "search"
+    | "categories"
     | "shoppingLocation"
     | "product"
     | "orders"

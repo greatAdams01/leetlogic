@@ -1,4 +1,13 @@
 export const icons = {
+  buyerSelectedDot: require("../assets/figma/9966f.svg"),
+  buyerFilter: require("../assets/figma/95c41.svg"),
+  buyerLogo: require("../assets/figma/12e8c.svg"),
+  buyerAccount: require("../assets/figma/b57bd.svg"),
+  buyerBack: require("../assets/figma/2bad2.svg"),
+  buyerFilterActive: require("../assets/figma/e46e4.svg"),
+  buyerVerified: require("../assets/figma/c6bc1.svg"),
+  buyerTruck: require("../assets/figma/a2538.svg"),
+  productBack: require("../assets/figma/f7863.svg"),
   securityBack: require("../assets/figma/security-back.svg"),
   securityFingerprint: require("../assets/figma/security-fingerprint.svg"),
   listingBack: require("../assets/figma/3a86b.svg"),

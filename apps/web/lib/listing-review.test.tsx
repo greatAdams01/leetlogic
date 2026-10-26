@@ -83,3 +83,35 @@ describe("admin listing review", () => {
     expect(listingPrice("999999999999")).toBe("₦9,999,999,999.99");
   });
 });
+
+it("includes the farmer's packed measurements and handling in staff review", () => {
+  const html = renderToStaticMarkup(
+    <ListingReview
+      record={{
+        ...listing,
+        packaging: {
+          unitsPerPackage: 1,
+          weightKg: 25,
+          length: 50,
+          width: 40,
+          height: 30,
+          handling: "PERISHABLE",
+          notes: "Keep upright",
+        },
+      }}
+      busy={false}
+      canDecide
+      onStatus={() => {}}
+    />,
+  );
+  for (const text of [
+    "Packing &amp; handling",
+    "Selling units per parcel",
+    "25",
+    "50",
+    "40",
+    "30",
+    "Keep upright",
+  ])
+    expect(html).toContain(text);
+});

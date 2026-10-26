@@ -1,3 +1,4 @@
+import { handlingAllowed, packageSuggestion } from "../services/packaging.js";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
@@ -198,6 +199,12 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           description: order.listing.description,
           listingId: order.listing.id,
           totalMinor: order.totalMinor,
+          quantity: order.quantity,
+          unitCode: order.listing.unitCode,
+          packageSuggestion: packageSuggestion(
+            order.packagingSnapshot ?? order.listing.packaging,
+            order.quantity,
+          ),
           isBuyer: order.buyerId === req.auth!.sub,
           suggestedPickup: {
             name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
@@ -230,6 +237,12 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       );
     if (!c.DELIVERY_ENABLED)
       throw new AppError(503, "DELIVERY_UNAVAILABLE", "Delivery quotes are not available yet");
+    if (!handlingAllowed(order.packagingSnapshot ?? order.listing.packaging, body.parcel.handling))
+      throw new AppError(
+        422,
+        "HANDLING_REQUIRED",
+        "Keep the farmer’s required handling. Contact support if the requirement needs to change.",
+      );
     checkPickup(order, body.pickup);
     const confirmed = savedPickup(order);
     delete body.pickup.latitude;
@@ -253,6 +266,8 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       .map((x) => x.trim());
     const eligible =
       body.parcel.handling === "STANDARD" &&
+      body.parcel.packageCount === 1 &&
+      Math.max(body.parcel.length, body.parcel.width, body.parcel.height) <= 200 &&
       body.parcel.weightKg <= c.DELIVERY_MAX_WEIGHT_KG &&
       categories.includes(order.listing.categoryId) &&
       states.includes(body.pickup.state.toLowerCase()) &&
@@ -282,16 +297,24 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           create: {
             orderId: order.id,
             status: "MANUAL_REVIEW",
+            selectedQuoteId: null,
+            shippingMinor: 0,
             pickup: body.pickup,
             destination: body.destination,
             package: body.parcel,
           },
           update: {
             status: "MANUAL_REVIEW",
+            selectedQuoteId: null,
+            shippingMinor: 0,
             pickup: body.pickup,
             destination: body.destination,
             package: body.parcel,
           },
+        });
+        await tx.deliveryQuote.updateMany({
+          where: { deliveryId: d.id },
+          data: { expiresAt: new Date() },
         });
         await deliveryEvent(
           tx,

@@ -1,3 +1,5 @@
+import { PackingFieldsForm } from "../components/packing-fields";
+import { emptyPacking } from "../lib/packaging";
 import { ListingVoiceNote } from "../components/listing-voice-note";
 import { AppSheet } from "../components/app-sheet";
 import { Select } from "../components/Select";
@@ -153,7 +155,7 @@ export function Sell() {
     });
     return () => subscription.remove();
   }, [step, form]);
-  const field = (key: keyof ListingForm, value: string) =>
+  const field = <K extends keyof ListingForm>(key: K, value: ListingForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
   const upload = async (camera: boolean) => {
     if (running.current || photoChoice === null) return;
@@ -401,6 +403,10 @@ export function Sell() {
             </Label>
             {!address && <Button title="Farm location" secondary onPress={() => a.go("seller")} />}
           </Card>
+          <PackingFieldsForm
+            value={form.packaging || emptyPacking}
+            onChange={(value) => field("packaging", value)}
+          />
           <Label style={{ fontFamily: "NotoBold" }}>Delivery scope *</Label>
           {(
             [
@@ -770,6 +776,18 @@ export function Review() {
                     .join(", ")
                 : a.ui("Saved pickup address"),
             ],
+            ...(form.packaging?.weightKg
+              ? [
+                  ["Packed weight (kg)", form.packaging.weightKg],
+                  ["Units in one package", form.packaging.unitsPerPackage],
+                  [
+                    "Package size (cm)",
+                    `${form.packaging.length} × ${form.packaging.width} × ${form.packaging.height}`,
+                  ],
+                  ["Required handling", a.status(form.packaging.handling)],
+                  ["Handling instructions", form.packaging.notes || a.ui("None")],
+                ]
+              : []),
             ["Shipping scope", a.ui(form.shippingScope === "LOCAL" ? "Local" : "Sells in Nigeria")],
             ["Description", form.description],
           ].map(([label, value]) => (

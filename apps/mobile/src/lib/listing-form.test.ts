@@ -12,6 +12,15 @@ const units = [
 ];
 const valid = {
   ...emptyListing,
+  packaging: {
+    unitsPerPackage: "1",
+    weightKg: "2",
+    length: "30",
+    width: "20",
+    height: "20",
+    handling: "STANDARD" as const,
+    notes: "",
+  },
   title: "Fresh tomatoes",
   description: "Freshly harvested",
   categoryId: "tomatoes",

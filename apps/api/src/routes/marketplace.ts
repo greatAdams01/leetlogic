@@ -15,12 +15,14 @@ const publicListing = {
   description: true,
   sourceLocale: true,
   unitCode: true,
+  unit: { select: { name: true, allowsDecimal: true } },
   unitPriceMinor: true,
   availableQuantity: true,
   reservedQuantity: true,
   status: true,
   categoryId: true,
   shippingScope: true,
+  packaging: true,
   farmerProfile: { select: { farmName: true, verificationStatus: true } },
   locationAddress: { select: { state: true, city: true, lga: true } },
   media: {
@@ -32,11 +34,50 @@ const publicListing = {
 } satisfies Prisma.ListingSelect;
 marketplaceRouter.get("/categories", async (_req, res) =>
   res.json({
-    items: await prisma.category.findMany({
-      where: { isActive: true },
-      include: { translations: true },
-      orderBy: [{ sortOrder: "asc" }, { slug: "asc" }],
-    }),
+    items: await prisma.category
+      .findMany({
+        where: { isActive: true },
+        include: {
+          translations: true,
+          _count: {
+            select: {
+              listings: {
+                where: {
+                  status: "ACTIVE",
+                  deletedAt: null,
+                  farmerProfile: { verificationStatus: "APPROVED" },
+                },
+              },
+            },
+          },
+          listings: {
+            where: {
+              status: "ACTIVE",
+              deletedAt: null,
+              farmerProfile: { verificationStatus: "APPROVED" },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              title: true,
+              media: {
+                where: { type: "IMAGE", status: "READY" },
+                select: { objectKey: true },
+                orderBy: { displayOrder: "asc" },
+                take: 1,
+              },
+            },
+          },
+        },
+        orderBy: [{ sortOrder: "asc" }, { slug: "asc" }],
+      })
+      .then((items) =>
+        items.map(({ _count, listings, ...item }) => ({
+          ...item,
+          listingCount: _count.listings,
+          cover: listings[0] || null,
+        })),
+      ),
   }),
 );
 marketplaceRouter.get("/listings", async (req, res) => {
@@ -49,6 +90,10 @@ marketplaceRouter.get("/listings", async (req, res) => {
       latitude: z.coerce.number().finite().min(-90).max(90).optional(),
       longitude: z.coerce.number().finite().min(-180).max(180).optional(),
       radiusKm: z.coerce.number().min(1).max(500).default(50),
+      maxPriceMinor: z
+        .string()
+        .regex(/^\d{1,12}$/)
+        .optional(),
     })
     .refine((q) => !q.lga || !!q.state, {
       message: "Choose a state before a local government",
@@ -74,6 +119,7 @@ marketplaceRouter.get("/listings", async (req, res) => {
         WHERE l.status = 'ACTIVE' AND l.deleted_at IS NULL AND f.verification_status = 'APPROVED'
           AND a.deleted_at IS NULL AND a.latitude IS NOT NULL AND a.longitude IS NOT NULL
           AND a.latitude BETWEEN -90 AND 90 AND a.longitude BETWEEN -180 AND 180
+          ${q.maxPriceMinor ? Prisma.sql`AND l.unit_price_minor <= ${BigInt(q.maxPriceMinor)}` : Prisma.empty}
           ${q.categoryId ? Prisma.sql`AND l.category_id = ${q.categoryId}::uuid` : Prisma.empty}
           ${q.state ? Prisma.sql`AND LOWER(a.state) = LOWER(${q.state})` : Prisma.empty}
           ${q.lga ? Prisma.sql`AND LOWER(a.lga) = LOWER(${q.lga})` : Prisma.empty}
@@ -107,6 +153,7 @@ marketplaceRouter.get("/listings", async (req, res) => {
       deletedAt: null,
       farmerProfile: { verificationStatus: "APPROVED" },
       ...(q.categoryId ? { categoryId: q.categoryId } : {}),
+      ...(q.maxPriceMinor ? { unitPriceMinor: { lte: BigInt(q.maxPriceMinor) } } : {}),
       ...(q.state
         ? {
             locationAddress: {
@@ -266,7 +313,7 @@ marketplaceRouter.post("/orders", async (req, res) => {
     await tx.$queryRaw`SELECT id FROM listings WHERE id = ${body.listingId}::uuid FOR UPDATE`;
     const listing = await tx.listing.findUnique({
       where: { id: body.listingId },
-      include: { farmerProfile: true },
+      include: { farmerProfile: true, unit: true },
     });
     if (
       !listing ||
@@ -278,6 +325,12 @@ marketplaceRouter.post("/orders", async (req, res) => {
       throw new AppError(409, "INVENTORY_UNAVAILABLE", "This quantity is no longer available");
     if (listing.farmerProfile.userId === req.auth!.sub)
       throw new AppError(422, "OWN_LISTING", "You cannot buy your own produce");
+    if (!listing.unit.allowsDecimal && !quantity.isInteger())
+      throw new AppError(
+        422,
+        "WHOLE_UNIT_REQUIRED",
+        "Enter a whole quantity for this selling unit.",
+      );
     const total = quantity.mul(listing.unitPriceMinor.toString());
     if (!total.isInteger() || total.gt("9223372036854775807"))
       throw new AppError(422, "INVALID_TOTAL", "Quantity must produce a whole kobo total");
@@ -293,6 +346,9 @@ marketplaceRouter.post("/orders", async (req, res) => {
         farmerProfileId: listing.farmerProfileId,
         listingId: listing.id,
         quantity,
+        packagingSnapshot: listing.packaging
+          ? (listing.packaging as Prisma.InputJsonValue)
+          : { unavailable: true },
         totalMinor: BigInt(total.toFixed(0)),
         feeBasisPoints: settings.platformFeeBasisPoints,
         ...(getConfig().PAYMENTS_ENABLED

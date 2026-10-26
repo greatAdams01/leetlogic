@@ -13,11 +13,13 @@ export function ListingPhoto({
   height = 200,
   objectKey,
   resizeMode = "cover",
+  radius = 14,
 }: {
   item: Listing;
   height?: number;
   objectKey?: string;
   resizeMode?: "cover" | "contain";
+  radius?: number;
 }) {
   const a = useApp();
   const selected =
@@ -76,7 +78,7 @@ export function ListingPhoto({
       style={{
         height,
         width: "100%",
-        borderRadius: 14,
+        borderRadius: radius,
         overflow: "hidden",
         backgroundColor: resizeMode === "contain" ? "#101a14" : colors.mint,
         justifyContent: "center",

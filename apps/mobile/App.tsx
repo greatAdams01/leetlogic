@@ -1,3 +1,4 @@
+import { BuyerCategories } from "./src/screens/buyer-categories";
 import { BuyerLocationProvider } from "./src/components/buyer-location";
 import { ShoppingLocation } from "./src/screens/shopping-location";
 import { FarmerSecurity } from "./src/screens/farmer-security";
@@ -36,6 +37,7 @@ function Router() {
     otp: Otp,
     home: a.role === "SELLER" && a.user ? SellerHome : Market,
     search: Market,
+    categories: BuyerCategories,
     shoppingLocation: ShoppingLocation,
     product: Product,
     orders: Orders,

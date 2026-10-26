@@ -1,8 +1,13 @@
+import {
+  CategoryTiles,
+  ProduceGrid,
+  categoryTitle,
+  type BuyerCategory,
+} from "../components/buyer-discovery";
 import { useBuyerLocation } from "../components/buyer-location";
 import { ListingGallery } from "../components/listing-gallery";
-import { ListingPhoto } from "../components/listing-photo";
 import { LocalizedText as Text } from "../localization";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AppState, View, Pressable } from "react-native";
 import { useApp, useResource } from "../state";
 import {
@@ -17,6 +22,8 @@ import {
   s,
   colors,
 } from "../components/ui";
+import { estimatedPacking, produceTotal } from "../lib/packaging";
+import { Select } from "../components/Select";
 import { api, uuid } from "../lib/api";
 import { money, quantity, type Listing, type Order } from "../lib/domain";
 export { ListingPhoto } from "../components/listing-photo";
@@ -24,13 +31,14 @@ export function Market() {
   const a = useApp(),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
-    [category, setCategory] = useState("");
+    [category, setCategory] = useState(a.route.id || ""),
+    [maxPrice, setMaxPrice] = useState("");
   const { area, busy: locating } = useBuyerLocation();
   const r = useResource<{ items: Listing[] }>(
-      `/marketplace/listings?search=${encodeURIComponent(query)}${category ? "&categoryId=" + category : ""}${area.state ? "&state=" + encodeURIComponent(area.state) : ""}${area.lga ? "&lga=" + encodeURIComponent(area.lga) : ""}${area.latitude !== undefined && area.longitude !== undefined ? `&latitude=${area.latitude}&longitude=${area.longitude}&radiusKm=${area.radiusKm || 50}` : ""}`,
+      `/marketplace/listings?search=${encodeURIComponent(query)}${category ? "&categoryId=" + category : ""}${maxPrice ? "&maxPriceMinor=" + (BigInt(maxPrice) * 100n).toString() : ""}${area.state ? "&state=" + encodeURIComponent(area.state) : ""}${area.lga ? "&lga=" + encodeURIComponent(area.lga) : ""}${area.latitude !== undefined && area.longitude !== undefined ? `&latitude=${area.latitude}&longitude=${area.longitude}&radiusKm=${area.radiusKm || 50}` : ""}`,
     ),
     c = useResource<{
-      items: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
+      items: BuyerCategory[];
     }>("/marketplace/categories");
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
@@ -46,33 +54,106 @@ export function Market() {
   }, [c.data, category]);
   return (
     <Page loading={r.loading}>
-      <View style={s.between}>
-        <View style={s.row}>
-          <Icon name="leaf" size={32} />
-          <View>
-            <Label muted>Leetlogic Farmlink</Label>
-            <Label style={{ color: colors.green, fontFamily: "NotoBold" }}>● Direct trade</Label>
+      {a.route.name !== "home" ? (
+        <View style={s.between}>
+          <View style={s.row}>
+            <Icon name="buyerLogo" nativeSize={{ width: 28, height: 28 }} />
+            <Label style={{ fontFamily: "Montserrat", fontSize: 23, color: colors.green }}>
+              LeetLogic
+            </Label>
           </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={a.ui("My account")}
+            onPress={() => a.go("profile")}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: colors.green,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="buyerAccount" nativeSize={{ width: 20, height: 20 }} />
+          </Pressable>
         </View>
-        <Pressable
-          accessibilityLabel="Notifications"
-          accessibilityRole="button"
-          onPress={() => a.go("notifications")}
-        >
-          <Icon name="bell" />
-        </Pressable>
-      </View>
+      ) : (
+        <View style={s.between}>
+          <View style={s.row}>
+            <Icon name="leaf" nativeSize={{ width: 36, height: 36 }} />
+            <View>
+              <Label muted>Leetlogic Farmlink</Label>
+              <Label style={{ color: colors.green, fontFamily: "NotoBold" }}>● Direct trade</Label>
+            </View>
+          </View>
+          <Pressable
+            accessibilityLabel="Notifications"
+            accessibilityRole="button"
+            onPress={() => a.go("notifications")}
+          >
+            <Icon name="bell" nativeSize={{ width: 22, height: 22 }} />
+          </Pressable>
+        </View>
+      )}
+      {a.route.name === "search" && (
+        <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={a.ui("Go back")}
+            onPress={() => (a.canGoBack ? a.back() : a.reset("home"))}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: "#f2f0ec",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="buyerBack" nativeSize={{ width: 20, height: 20 }} />
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Label style={{ fontFamily: "Montserrat", fontSize: 22 }}>
+              {category
+                ? categoryTitle(
+                    c.data?.items.find((item) => item.id === category) || {
+                      id: category,
+                      slug: "",
+                      translations: [],
+                    },
+                    a.locale,
+                  )
+                : a.ui("Fresh from the farm")}
+            </Label>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={a.ui("Change shopping location")}
+            onPress={() => a.go("shoppingLocation")}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: colors.green,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="buyerFilterActive" nativeSize={{ width: 20, height: 20 }} />
+          </Pressable>
+        </View>
+      )}
       {a.route.name === "home" && (
         <>
-          <Heading>
+          <Label style={{ fontFamily: "Montserrat", fontSize: 21 }}>
             {a.ui("Hello, {name}.", {
               name:
                 a.user?.profile?.displayName ||
                 a.user?.profile?.fullName?.split(" ")[0] ||
                 a.ui("there"),
             })}
-          </Heading>
-          <Label muted>Nigeria · Direct from verified farmers</Label>
+          </Label>
         </>
       )}
       <Pressable
@@ -90,7 +171,7 @@ export function Market() {
           backgroundColor: colors.mint,
         }}
       >
-        <Icon name="pin" size={18} />
+        <Icon name="pin" nativeSize={{ width: 22, height: 22 }} />
         <Label style={{ color: colors.green, fontSize: 13 }}>
           {locating
             ? "Finding your location…"
@@ -104,6 +185,8 @@ export function Market() {
       </Pressable>
       <Field
         label="Search produce"
+        hideLabel
+        style={{ borderRadius: 999, backgroundColor: "white", height: 54 }}
         value={search}
         onChangeText={setSearch}
         placeholder="Produce, farmer, state..."
@@ -113,32 +196,38 @@ export function Market() {
       <Button title="Search" secondary onPress={() => setQuery(search)} />
       <View style={s.between}>
         <Text style={s.sectionTitle}>Categories</Text>
-        {category && (
-          <Pressable onPress={() => setCategory("")}>
-            <Text style={s.link}>Show all</Text>
-          </Pressable>
-        )}
+        <Pressable accessibilityRole="button" onPress={() => a.go("categories")}>
+          <Label style={s.link}>See all</Label>
+        </Pressable>
       </View>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {c.data?.items.map((i) => (
-          <Pressable
-            accessibilityRole="button"
-            key={i.id}
-            onPress={() => setCategory(i.id)}
-            style={{
-              padding: 10,
-              borderRadius: 14,
-              backgroundColor: category === i.id ? colors.green : colors.mint,
-            }}
-          >
-            <Label style={{ fontSize: 13, color: category === i.id ? "white" : colors.green }}>
-              {i.translations.find((t) => t.locale === a.locale)?.name ||
-                i.translations.find((t) => t.locale === "en")?.name ||
-                i.slug}
-            </Label>
-          </Pressable>
-        ))}
-      </View>
+      <CategoryTiles
+        items={a.route.name === "home" ? (c.data?.items || []).slice(0, 4) : c.data?.items || []}
+        selected={category}
+        compact
+        chips={a.route.name === "search"}
+        onChoose={(id) => {
+          if (a.route.name === "home") a.go("search", id);
+          else setCategory(id);
+        }}
+      />
+      {a.route.name === "search" && (
+        <>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Select
+              label="Maximum price per selling unit"
+              value={maxPrice}
+              options={[
+                { value: "", label: "Any price" },
+                ...[1000, 5000, 10000, 50000].map((value) => ({
+                  value: String(value),
+                  label: money(value * 100),
+                })),
+              ]}
+              onChange={setMaxPrice}
+            />
+          </View>
+        </>
+      )}
       <Text style={s.sectionTitle}>Fresh from the farm</Text>
       {r.error && (
         <>
@@ -155,35 +244,9 @@ export function Market() {
           }
         />
       )}
-      {!r.loading &&
-        r.data?.items.map((item) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={a.ui("View {title}", { title: item.title })}
-            key={item.id}
-            onPress={() => a.go("product", item.id)}
-          >
-            <Card>
-              <ListingPhoto item={item} />
-              <View style={s.between}>
-                <Label style={{ fontFamily: "NotoBold", flex: 1 }}>{item.title}</Label>
-                <Text style={s.badge}>Direct</Text>
-              </View>
-              <Label style={{ color: colors.green }}>
-                {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
-              </Label>
-              <Label muted style={s.small}>
-                {item.farmerProfile.farmName} · {item.locationAddress.state}
-              </Label>
-              <Label muted style={s.small}>
-                {a.ui("{quantity} {unit} available", {
-                  quantity: Number(item.availableQuantity) - Number(item.reservedQuantity),
-                  unit: a.unit(item.unitCode),
-                })}
-              </Label>
-            </Card>
-          </Pressable>
-        ))}
+      {!r.loading && (
+        <ProduceGrid items={r.data?.items || []} compact={a.route.name === "search"} />
+      )}
       {a.role === "SELLER" && (
         <Button title="My produce listings" onPress={() => a.go("myListings")} />
       )}
@@ -191,30 +254,87 @@ export function Market() {
   );
 }
 export function Product() {
-  const a = useApp(),
-    r = useResource<{ item: Listing }>(`/marketplace/listings/${a.route.id}`),
-    [qty, setQty] = useState("1"),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [key, setKey] = useState(uuid),
-    [translation, setTranslation] = useState("");
+  const a = useApp();
+  const r = useResource<{ item: Listing }>(`/marketplace/listings/${a.route.id}`);
+  const [qty, setQty] = useState("1");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [key, setKey] = useState(uuid);
+  const [translation, setTranslation] = useState("");
+  const submitting = useRef(false);
   const item = r.data?.item;
+  const available = item
+    ? Math.max(0, Number(item.availableQuantity) - Number(item.reservedQuantity))
+    : 0;
+  const total = item ? produceTotal(qty, item.unitPriceMinor) : null;
+  const estimate = item ? estimatedPacking(item.packaging, qty) : null;
+  const changeQuantity = (value: string) => {
+    setQty(value);
+    setKey(uuid());
+    setError("");
+  };
+  const minimum = item?.unit?.allowsDecimal ? 0.001 : 1;
+  const quantityIssue =
+    !item || !qty
+      ? ""
+      : !/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0
+        ? "Enter a positive quantity with at most three decimal places."
+        : item.unit && !item.unit.allowsDecimal && !Number.isInteger(Number(qty))
+          ? "Enter a whole quantity for this selling unit."
+          : total === null
+            ? "Choose a quantity that produces a whole kobo total."
+            : Number(qty) > available
+              ? "This produce is no longer available in that quantity."
+              : "";
   return (
     <Page
-      title="Produce"
-      back={a.back}
       loading={r.loading}
+      header={
+        <View style={{ paddingHorizontal: 24, height: 76, justifyContent: "center" }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={a.ui("Go back")}
+            onPress={a.back}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: "#f2f0ec",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="productBack" nativeSize={{ width: 22, height: 22 }} />
+          </Pressable>
+        </View>
+      }
       footer={
         item && (
           <Button
-            title={busy ? "Creating order…" : "Start order"}
-            disabled={busy}
+            title={
+              busy
+                ? "Creating order…"
+                : total
+                  ? a.ui("Start order · {amount}", { amount: money(total) })
+                  : a.ui("Start order")
+            }
+            loading={busy}
+            disabled={
+              busy ||
+              !total ||
+              Number(qty) > available ||
+              Number(qty) < minimum ||
+              (!!item.unit && !item.unit.allowsDecimal && !Number.isInteger(Number(qty)))
+            }
             onPress={async () => {
+              if (submitting.current) return;
               if (!a.user) {
                 a.go("phone");
                 return;
               }
+              submitting.current = true;
               setBusy(true);
+              setError("");
               try {
                 quantity(qty);
                 const result = await api<{ order: { id: string } }>("/marketplace/orders", {
@@ -226,6 +346,7 @@ export function Product() {
               } catch (e) {
                 setError(a.error(e));
               } finally {
+                submitting.current = false;
                 setBusy(false);
               }
             }}
@@ -233,23 +354,138 @@ export function Product() {
         )
       }
     >
-      {r.error && <Notice text={r.error} error />}
+      {!!r.error && <Notice text={r.error} error />}
       {item && (
         <>
           <ListingGallery key={item.id} item={item} />
           <Card>
-            <Heading>{item.title}</Heading>
-            <Label>{translation || item.description || ""}</Label>
-            <Label style={{ color: colors.green, fontFamily: "NotoBold", fontSize: 20 }}>
-              {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
-            </Label>
-            <Label muted>
-              {a.ui("{quantity} {unit} available", {
-                quantity: Number(item.availableQuantity) - Number(item.reservedQuantity),
-                unit: a.unit(item.unitCode),
-              })}
+            <View style={{ flexDirection: "row", gap: 12, justifyContent: "space-between" }}>
+              <Label style={{ fontFamily: "NotoBold", fontSize: 18, flex: 1 }}>{item.title}</Label>
+              <Label muted style={{ flex: 1, textAlign: "right" }}>
+                {a.ui("{quantity} {unit} available", {
+                  quantity: available,
+                  unit: a.unit(item.unitCode),
+                })}
+              </Label>
+            </View>
+            {!!(translation || item.description) && (
+              <Label>{translation || item.description}</Label>
+            )}
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <Label>
+                {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
+              </Label>
+              {item.packaging && (
+                <Label style={{ color: colors.green }}>
+                  {a.ui("{weight} kg per parcel", { weight: item.packaging.weightKg })}
+                </Label>
+              )}
+            </View>
+          </Card>
+          <Card>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Label>Order quantity</Label>
+                <Label muted style={{ fontSize: 12 }}>
+                  {a.unit(item.unitCode)}
+                </Label>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={a.ui("Decrease quantity")}
+                disabled={busy || Number(qty) <= minimum}
+                onPress={() =>
+                  changeQuantity(String(Math.max(minimum, Number((Number(qty) - 1).toFixed(3)))))
+                }
+                style={{
+                  width: 44,
+                  height: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: Number(qty) <= minimum ? 0.4 : 1,
+                }}
+              >
+                <Label style={{ fontSize: 24 }}>−</Label>
+              </Pressable>
+              <View style={{ width: 76 }}>
+                <Field
+                  label="Order quantity"
+                  hideLabel
+                  value={qty}
+                  editable={!busy}
+                  keyboardType="decimal-pad"
+                  style={{
+                    textAlign: "center",
+                    backgroundColor: "transparent",
+                    borderWidth: 0,
+                    paddingHorizontal: 0,
+                  }}
+                  onChangeText={changeQuantity}
+                />
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={a.ui("Increase quantity")}
+                disabled={busy || Number(qty) >= available}
+                onPress={() =>
+                  changeQuantity(
+                    String(Math.min(available, Number((Number(qty || "0") + 1).toFixed(3)))),
+                  )
+                }
+                style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+              >
+                <Label style={{ fontSize: 24 }}>+</Label>
+              </Pressable>
+            </View>
+            {!!quantityIssue && <Notice text={a.ui(quantityIssue)} error />}
+            <Label muted style={s.small}>
+              Delivery is quoted separately before payment.
             </Label>
           </Card>
+          {item.packaging && (
+            <Card>
+              <Label style={{ fontFamily: "NotoBold" }}>Packing and handling</Label>
+              <Label>
+                {a.ui("{units} selling units per parcel", {
+                  units: item.packaging.unitsPerPackage,
+                })}
+              </Label>
+              <Label>
+                {a.ui("Package size: {length} × {width} × {height} cm", {
+                  length: item.packaging.length,
+                  width: item.packaging.width,
+                  height: item.packaging.height,
+                })}
+              </Label>
+              {!!estimate && (
+                <Label style={{ color: colors.green }}>
+                  {a.ui("{count} parcels · estimated packed weight {weight} kg", {
+                    count: estimate.count,
+                    weight: estimate.weightKg,
+                  })}
+                </Label>
+              )}
+              <Label>{a.status(item.packaging.handling)}</Label>
+              {!!item.packaging.notes && <Label muted>{item.packaging.notes}</Label>}
+              <Label muted style={s.small}>
+                Confirm final weight, dimensions and handling when requesting delivery.
+              </Label>
+            </Card>
+          )}
           {a.user && a.locale !== "en" && (
             <Button
               title="Translate description"
@@ -266,30 +502,20 @@ export function Product() {
             />
           )}
           <Card>
-            <Field
-              label="Order quantity"
-              value={qty}
-              keyboardType="decimal-pad"
-              onChangeText={(v) => {
-                setQty(v);
-                setKey(uuid());
-              }}
-            />
-            <Label muted style={s.small}>
-              Delivery is quoted separately before payment.
-            </Label>
-          </Card>
-          <Card>
-            <Label style={{ fontFamily: "NotoBold" }}>{item.farmerProfile.farmName}</Label>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Icon name="buyerVerified" nativeSize={{ width: 14, height: 14 }} />
+              <Label style={{ fontFamily: "NotoBold" }}>{item.farmerProfile.farmName}</Label>
+            </View>
             <Label muted>
               {item.locationAddress.city}, {item.locationAddress.state}
             </Label>
-            <Text style={s.badge}>Verified farmer</Text>
+            <Label>Verified farmer</Label>
+            <Label>{item.shippingScope === "LOCAL" ? "Local delivery" : "Nigeria delivery"}</Label>
           </Card>
-          <Notice text="This creates an order awaiting payment. No money is collected in the app; staff verify funding before dispatch." />
+          <Notice text="Delivery coverage and package eligibility are checked before payment. Bulk and cold-chain orders need staff review." />
         </>
       )}
-      {error && <Notice text={error} error />}
+      {!!error && <Notice text={error} error />}
     </Page>
   );
 }

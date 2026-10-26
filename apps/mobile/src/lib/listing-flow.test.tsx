@@ -96,7 +96,7 @@ vi.mock("../components/ui", async () => {
       createElement(name, props, children);
   return {
     ...Object.fromEntries(
-      ["Page", "Label", "Field", "Button", "Card", "Icon", "Notice"].map((n) => [n, host(n)]),
+      ["Page", "Heading", "Label", "Field", "Button", "Card", "Icon", "Notice"].map((n) => [n, host(n)]),
     ),
     s: {},
     colors: {},
@@ -108,6 +108,7 @@ let renderer: ReactTestRenderer;
 const nodes = (type: string) => renderer.root.findAllByType(type as never);
 const button = (title: string) => nodes("Button").find((n) => n.props.title === title)!;
 const valid = {
+  packaging: { unitsPerPackage: "1", weightKg: "2", length: "30", width: "20", height: "20", handling: "STANDARD" as const, notes: "" },
   title: "Tomatoes",
   description: "Fresh harvest",
   categoryId: "tomatoes",
@@ -150,6 +151,11 @@ describe("seller listing wizard", () => {
       ["Description *", "Fresh produce"],
       ["Available quantity *", "2"],
       ["Price per KG · NGN *", "123"],
+      ["Units in one package *", "1"],
+      ["Packed weight (kg) *", "2"],
+      ["Package length (cm) *", "30"],
+      ["Package width (cm) *", "20"],
+      ["Package height (cm) *", "20"],
     ]) {
       await act(async () =>
         nodes("Field")

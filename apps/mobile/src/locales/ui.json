@@ -5885,5 +5885,320 @@
     "Saita wurin sayayya",
     "Họrọ ebe ịzụ ahịa",
     "Yan ibi ìrjà"
+  ],
+  [
+    "Packing and handling",
+    "Packing and how to handle am",
+    "Shiryawa da kulawa",
+    "Nkwakọ na nlekọta",
+    "Ìdìpọ̀ àti ìtọ́jú"
+  ],
+  [
+    "Describe one fully packed box, bag or basket, including its packaging.",
+    "Describe one full box, bag or basket with the packing.",
+    "Bayyana akwati, buhu ko kwando ɗaya da aka cika tare da marufinsa.",
+    "Kọwaa otu igbe, akpa ma ọ bụ nkata juru eju tinyere ihe e ji kwakọta ya.",
+    "Ṣàpèjúwe àpótí, àpò tàbí apẹ̀rẹ̀ kan tó kún pẹ̀lú ohun ìdìpọ̀ rẹ̀."
+  ],
+  [
+    "Units in one package",
+    "How many units inside one package",
+    "Adadin raka’a a kunshi ɗaya",
+    "Nkeji dị n’otu ngwugwu",
+    "Iye ẹyọ inú ìdìpọ̀ kan"
+  ],
+  [
+    "Packed weight (kg)",
+    "Weight with packing (kg)",
+    "Nauyi tare da marufi (kg)",
+    "Ibu tinyere nkwakọ (kg)",
+    "Ìwọ̀n pẹ̀lú ìdìpọ̀ (kg)"
+  ],
+  [
+    "Package length (cm)",
+    "Package length (cm)",
+    "Tsawon kunshi (cm)",
+    "Ogologo ngwugwu (cm)",
+    "Gígùn ìdìpọ̀ (cm)"
+  ],
+  [
+    "Package width (cm)",
+    "Package width (cm)",
+    "Faɗin kunshi (cm)",
+    "Obosara ngwugwu (cm)",
+    "Fífẹ̀ ìdìpọ̀ (cm)"
+  ],
+  [
+    "Package height (cm)",
+    "Package height (cm)",
+    "Tsayin kunshi (cm)",
+    "Ịdị elu ngwugwu (cm)",
+    "Gíga ìdìpọ̀ (cm)"
+  ],
+  [
+    "Units means the selling unit you selected above. For example, 1 basket or 10 kilograms in one bag.",
+    "Units na the selling unit wey you choose above. Like 1 basket or 10 kilograms for one bag.",
+    "Raka’a ita ce ma’aunin sayarwa da ka zaɓa a sama. Misali kwando 1 ko kilo 10 a buhu ɗaya.",
+    "Nkeji bụ ihe i ji ere nke ị họọrọ n’elu. Dịka nkata 1 ma ọ bụ kilogram 10 n’otu akpa.",
+    "Ẹyọ túmọ̀ sí ìwọ̀n tí o yàn láti tà lókè. Bí apẹ̀rẹ̀ 1 tàbí kílógírámù 10 nínú àpò kan."
+  ],
+  [
+    "Required handling",
+    "How dem must handle am",
+    "Kulawar da ake buƙata",
+    "Nlekọta achọrọ",
+    "Ìtọ́jú tí a nílò"
+  ],
+  [
+    "Handling instructions",
+    "How to handle am",
+    "Umarnin kulawa",
+    "Ntuziaka nlekọta",
+    "Ìtọ́ni ìtọ́jú"
+  ],
+  [
+    "Farmer’s packing estimate",
+    "Farmer packing estimate",
+    "Ƙiyasin kunshin manomi",
+    "Atụmatụ nkwakọ onye ọrụ ugbo",
+    "Ìṣírò ìdìpọ̀ àgbẹ̀"
+  ],
+  [
+    "Weight assumes full packages, including a partly filled last package. Review it before requesting a quote.",
+    "Weight na for full packages, even if last one no full. Check am before delivery price.",
+    "Nauyi na ɗaukar duk kunshi a cike, har da na ƙarshe da bai cika ba. Duba kafin neman farashi.",
+    "Ibu a bụ maka ngwugwu juru eju, ọbụna nke ikpeazụ na-ezughị ezu. Lelee ya tupu ịrịọ ọnụahịa.",
+    "Ìwọ̀n yìí ka gbogbo ìdìpọ̀ sí èyí tó kún, pẹ̀lú èyí ìkẹyìn tí kò kún. Ṣàyẹ̀wò rẹ̀ kí o tó béèrè owó."
+  ],
+  [
+    "Enter the dimensions of the final packed shipment. Separate parcels need staff review; dimensions are not multiplied automatically.",
+    "Enter size of the final packing. Staff go check separate parcels; we no multiply the sizes.",
+    "Shigar da girman jigilar da aka shirya. Ma’aikata za su duba kunshi daban; ba a ninka girma kai tsaye.",
+    "Tinye nha ngwugwu ikpeazụ. Ndị ọrụ ga-enyocha ngwugwu dị iche iche; a naghị amụba nha na-akpaghị aka.",
+    "Tẹ ìwọ̀n ìdìpọ̀ ìkẹyìn. Òṣìṣẹ́ gbọ́dọ̀ ṣàyẹ̀wò àwọn ìdìpọ̀ ọ̀tọ̀; a kì í sọ ìwọ̀n di púpọ̀ fúnra rẹ̀."
+  ],
+  [
+    "The farmer has not provided packing measurements. Confirm them with the farmer before requesting delivery.",
+    "Farmer never give packing measurements. Confirm am with farmer before delivery.",
+    "Manomi bai bayar da ma’aunin kunshi ba. Tabbatar da su tare da manomi kafin neman jigila.",
+    "Onye ọrụ ugbo enyeghị nha nkwakọ. Kwenye ya n’aka onye ọrụ ugbo tupu ịrịọ nnyefe.",
+    "Àgbẹ̀ kò tíì pèsè ìwọ̀n ìdìpọ̀. Jẹ́rìí rẹ̀ lọ́dọ̀ àgbẹ̀ kí o tó béèrè ìfijiṣẹ́."
+  ],
+  [
+    "Edits apply to this order and require a new quote. They do not change the farmer’s listing.",
+    "Changes na for this order and need new delivery price. Farmer listing no go change.",
+    "Canje-canje na wannan oda ne kuma suna buƙatar sabon farashi. Ba sa canza tallan manomi.",
+    "Mgbanwe a bụ maka iwu a ma chọọ ọnụahịa ọhụrụ. Ha anaghị agbanwe ndepụta onye ọrụ ugbo.",
+    "Àtúnṣe jẹ́ fún àṣẹ yìí ó sì nílò owó tuntun. Kò yí àkọsílẹ̀ àgbẹ̀ padà."
+  ],
+  [
+    "Confirm final weight, dimensions and handling when requesting delivery.",
+    "Confirm final weight, size and handling before delivery.",
+    "Tabbatar da nauyi, girma da kulawa na ƙarshe lokacin neman jigila.",
+    "Kwenye ibu, nha na nlekọta ikpeazụ mgbe ị na-arịọ nnyefe.",
+    "Jẹ́rìí ìwọ̀n, gígùn àti ìtọ́jú ìkẹyìn nígbà tí o bá ń béèrè ìfijiṣẹ́."
+  ],
+  [
+    "{count} parcels · estimated packed weight {weight} kg",
+    "{count} packages · estimated weight {weight} kg",
+    "Kunshi {count} · ƙiyasin nauyi {weight} kg",
+    "Ngwugwu {count} · atụmatụ ibu {weight} kg",
+    "Ìdìpọ̀ {count} · ìṣírò ìwọ̀n {weight} kg"
+  ],
+  [
+    "{weight} kg per parcel",
+    "{weight} kg for one package",
+    "{weight} kg a kunshi ɗaya",
+    "{weight} kg n’otu ngwugwu",
+    "{weight} kg fún ìdìpọ̀ kan"
+  ],
+  [
+    "{units} selling units per parcel",
+    "{units} selling units for one package",
+    "Raka’ar sayarwa {units} a kunshi ɗaya",
+    "Nkeji ere {units} n’otu ngwugwu",
+    "Ẹyọ títa {units} fún ìdìpọ̀ kan"
+  ],
+  [
+    "Package size: {length} × {width} × {height} cm",
+    "Package size: {length} × {width} × {height} cm",
+    "Girman kunshi: {length} × {width} × {height} cm",
+    "Nha ngwugwu: {length} × {width} × {height} cm",
+    "Ìwọ̀n ìdìpọ̀: {length} × {width} × {height} cm"
+  ],
+  [
+    "Final parcel count",
+    "Final number of packages",
+    "Adadin kunshi na ƙarshe",
+    "Ọnụọgụ ngwugwu ikpeazụ",
+    "Iye ìdìpọ̀ ìkẹyìn"
+  ],
+  [
+    "Total packed weight (kg)",
+    "Total weight with packing (kg)",
+    "Jimlar nauyi tare da marufi (kg)",
+    "Mkpokọta ibu tinyere nkwakọ (kg)",
+    "Àpapọ̀ ìwọ̀n pẹ̀lú ìdìpọ̀ (kg)"
+  ],
+  [
+    "Package size (cm)",
+    "Package size (cm)",
+    "Girman kunshi (cm)",
+    "Nha ngwugwu (cm)",
+    "Ìwọ̀n ìdìpọ̀ (cm)"
+  ],
+  [
+    "None",
+    "None",
+    "Babu",
+    "Ọ dịghị",
+    "Kò sí"
+  ],
+  [
+    "Search categories",
+    "Find categories",
+    "Nemo rukunoni",
+    "Chọọ ngalaba",
+    "Wá ẹ̀ka"
+  ],
+  [
+    "See all",
+    "See all",
+    "Duba duka",
+    "Hụ ha niile",
+    "Wo gbogbo rẹ̀"
+  ],
+  [
+    "Browse produce",
+    "Check produce",
+    "Duba amfanin gona",
+    "Lelee ihe ubi",
+    "Wo ohun ọ̀gbìn"
+  ],
+  [
+    "Browse categories from verified farms across Nigeria.",
+    "Check categories from verified farms for Nigeria.",
+    "Duba rukunoni daga gonakin da aka tabbatar a Najeriya.",
+    "Lelee ngalaba sitere n’ugbo akwadoro na Naịjirịa niile.",
+    "Wo ẹ̀ka láti àwọn oko tí a jẹ́rìí ní gbogbo Nàìjíríà."
+  ],
+  [
+    "No categories match your search.",
+    "No category match your search.",
+    "Babu rukunin da ya dace da bincikenka.",
+    "Ọ dịghị ngalaba dabara ọchụchọ gị.",
+    "Kò sí ẹ̀ka tó bá àwárí rẹ mu."
+  ],
+  [
+    "Any price",
+    "Any price",
+    "Kowane farashi",
+    "Ọnụahịa ọ bụla",
+    "Iye owó èyíkéyìí"
+  ],
+  [
+    "Maximum price per selling unit",
+    "Highest price for one selling unit",
+    "Mafi girman farashi ga raka’ar sayarwa",
+    "Ọnụahịa kachasị maka otu nkeji ere",
+    "Owó tó pọ̀ jù fún ẹyọ títa kan"
+  ],
+  [
+    "View produce",
+    "See produce",
+    "Duba amfanin gona",
+    "Lelee ihe ubi",
+    "Wo ohun ọ̀gbìn"
+  ],
+  [
+    "Local delivery",
+    "Delivery for this state",
+    "Jigilar cikin jiha",
+    "Nnyefe n’ime steeti",
+    "Ìfijiṣẹ́ nínú ìpínlẹ̀"
+  ],
+  [
+    "Nigeria delivery",
+    "Delivery for Nigeria",
+    "Jigilar Najeriya",
+    "Nnyefe na Naịjirịa",
+    "Ìfijiṣẹ́ Nàìjíríà"
+  ],
+  [
+    "Start order · {amount}",
+    "Start order · {amount}",
+    "Fara oda · {amount}",
+    "Malite iwu · {amount}",
+    "Bẹ̀rẹ̀ àṣẹ · {amount}"
+  ],
+  [
+    "Decrease quantity",
+    "Reduce quantity",
+    "Rage adadi",
+    "Belata ọnụọgụ",
+    "Dín iye kù"
+  ],
+  [
+    "Increase quantity",
+    "Add quantity",
+    "Ƙara adadi",
+    "Tinye ọnụọgụ",
+    "Fi iye kún un"
+  ],
+  [
+    "Enter the units, packed weight and dimensions for one package.",
+    "Enter units, weight and size for one package.",
+    "Shigar da raka’a, nauyi da girman kunshi ɗaya.",
+    "Tinye nkeji, ibu na nha maka otu ngwugwu.",
+    "Tẹ ẹyọ, ìwọ̀n àti gígùn ìdìpọ̀ kan."
+  ],
+  [
+    "Use positive measurements: dimensions up to 1,000 cm and weight up to 1,000,000 kg.",
+    "Use measurements above zero: size no pass 1,000 cm and weight no pass 1,000,000 kg.",
+    "Yi amfani da ma’auni fiye da sifili: girma har 1,000 cm da nauyi har 1,000,000 kg.",
+    "Jiri nha karịrị efu: nha ruo 1,000 cm na ibu ruo 1,000,000 kg.",
+    "Lo ìwọ̀n tó ju òdo lọ: gígùn tó 1,000 cm àti ìwọ̀n tó 1,000,000 kg."
+  ],
+  [
+    "Enter a positive parcel count, packed weight and all three dimensions.",
+    "Enter number of packages, weight and all three sizes above zero.",
+    "Shigar da adadin kunshi, nauyi da girma uku fiye da sifili.",
+    "Tinye ọnụọgụ ngwugwu, ibu na nha atọ karịrị efu.",
+    "Tẹ iye ìdìpọ̀, ìwọ̀n àti gígùn mẹ́tẹ̀ẹ̀ta tó ju òdo lọ."
+  ],
+  [
+    "The number of parcels must be a whole number.",
+    "Number of packages must be whole number.",
+    "Adadin kunshi dole ne ya zama cikakkiyar lamba.",
+    "Ọnụọgụ ngwugwu ga-abụ ọnụọgụ zuru oke.",
+    "Iye ìdìpọ̀ gbọ́dọ̀ jẹ́ odidi nọ́mbà."
+  ],
+  [
+    "Keep the farmer’s required handling. Contact support if the requirement needs to change.",
+    "Keep how farmer say make dem handle am. Contact support if e need change.",
+    "Kiyaye kulawar da manomi ya buƙata. Tuntuɓi tallafi idan ana buƙatar canzawa.",
+    "Debe nlekọta onye ọrụ ugbo chọrọ. Kpọtụrụ nkwado ma ọ bụrụ na ọ chọrọ mgbanwe.",
+    "Pa ìtọ́jú tí àgbẹ̀ béèrè mọ́. Kan sí ìrànlọ́wọ́ bí ó bá nílò àtúnṣe."
+  ],
+  [
+    "Enter whole selling units in each package.",
+    "Enter whole selling units for one package.",
+    "Shigar da cikakkun raka’ar sayarwa a kunshi ɗaya.",
+    "Tinye nkeji ere zuru oke n’otu ngwugwu.",
+    "Tẹ odidi ẹyọ títa sínú ìdìpọ̀ kọ̀ọ̀kan."
+  ],
+  [
+    "Packed weight must include the produce weight and its packaging.",
+    "Packed weight must include produce and packing weight.",
+    "Nauyin kunshi dole ya haɗa nauyin amfanin gona da marufi.",
+    "Ibu nkwakọ ga-agụnye ibu ihe ubi na ihe e ji kwakọta ya.",
+    "Ìwọ̀n ìdìpọ̀ gbọ́dọ̀ ní ìwọ̀n ohun ọ̀gbìn àti ohun ìdìpọ̀ rẹ̀."
+  ],
+  [
+    "Choose a quantity that produces a whole kobo total.",
+    "Choose quantity wey go give whole kobo total.",
+    "Zaɓi adadin da zai ba da jimlar kobo cikakke.",
+    "Họrọ ọnụọgụ ga-enye mkpokọta kobo zuru oke.",
+    "Yan iye tí yóò fúnni ní àpapọ̀ kobo odidi."
   ]
 ]

@@ -78,6 +78,23 @@ describe("Shipbubble protocol", () => {
       package_items: [{ quantity: 1, unit_amount: 500, unit_weight: 2 }],
     });
   });
+  it("never submits separate parcels or special handling as one standard parcel", async () => {
+    for (const parcel of [
+      { packageCount: 2, handling: "STANDARD" as const, length: 10 },
+      { packageCount: 1, handling: "COLD_CHAIN" as const, length: 10 },
+      { packageCount: 1, handling: "STANDARD" as const, length: 250 },
+    ])
+      await expect(
+        provider.quotes({
+          pickup: contact,
+          destination: contact,
+          parcel: { weightKg: 2, width: 10, height: 10, pickupDate: "2026-11-01", ...parcel },
+          name: "Produce",
+          valueMinor: 50000n,
+        }),
+      ).rejects.toMatchObject({ code: "MANUAL_DELIVERY_REQUIRED" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("creates labels using the stored request token and service code", async () => {
     fetcher.mockResolvedValue(
       Response.json({

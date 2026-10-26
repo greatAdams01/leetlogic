@@ -4,7 +4,7 @@ import { deleteMedia } from "../services/storage/private-media.js";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
-import { prisma } from "@leetlogic/database";
+import { prisma, Prisma } from "@leetlogic/database";
 import { createApp } from "../app.js";
 import { createSession } from "../services/sessions.js";
 import { getConfig } from "../config.js";
@@ -339,6 +339,103 @@ suite("delivery and language database workflows", () => {
     expect(publicListing.status).toBe(200);
     expect(publicListing.body.item.locationAddress).not.toHaveProperty("latitude");
     expect(publicListing.body.item.locationAddress).not.toHaveProperty("longitude");
+  });
+  it("snapshots farmer packing, derives order estimates and preserves requirements on buyer edits", async () => {
+    const original = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    const packing = {
+      unitsPerPackage: 1,
+      weightKg: 2,
+      length: 40,
+      width: 30,
+      height: 25,
+      handling: "COLD_CHAIN",
+      notes: "Keep chilled",
+    };
+    await prisma.listing.update({ where: { id: listingId }, data: { packaging: packing } });
+    try {
+      const created = await request(app)
+        .post("/v1/marketplace/orders")
+        .set(customer())
+        .set("Idempotency-Key", randomUUID())
+        .send({ listingId, quantity: "1.5" });
+      expect(created.status).toBe(201);
+      const id = created.body.order.id;
+      await prisma.listing.update({
+        where: { id: listingId },
+        data: { packaging: { ...packing, weightKg: 99, handling: "STANDARD" } },
+      });
+      const path = `/v1/orders/${id}/delivery`;
+      const detail = await request(app).get(path).set(customer());
+      expect(detail.body.order.packageSuggestion).toMatchObject({
+        packageCount: 2,
+        weightKg: 4,
+        length: null,
+        handling: "COLD_CHAIN",
+      });
+      expect(
+        (
+          await request(app)
+            .get(path)
+            .set({ Authorization: `Bearer ${outsider}` })
+        ).status,
+      ).toBe(404);
+      const invalid = await request(app).post(`${path}/quotes`).set(customer()).send(input);
+      expect(invalid.body.error.code).toBe("HANDLING_REQUIRED");
+      const delivery = await prisma.delivery.create({ data: { orderId: id } });
+      const quote = await prisma.deliveryQuote.create({
+        data: {
+          deliveryId: delivery.id,
+          requestToken: "stale",
+          serviceCode: "test",
+          courier: "Test",
+          amountMinor: 1000n,
+          inputHash: "old",
+          expiresAt: new Date(Date.now() + 60000),
+        },
+      });
+      await prisma.delivery.update({
+        where: { id: delivery.id },
+        data: { selectedQuoteId: quote.id, shippingMinor: 1000n },
+      });
+      const edited = {
+        ...input,
+        parcel: {
+          ...input.parcel,
+          packageCount: 2,
+          weightKg: 3.5,
+          handling: "COLD_CHAIN",
+          notes: "Keep chilled and upright",
+        },
+      };
+      expect((await request(app).post(`${path}/quotes`).set(customer()).send(edited)).status).toBe(
+        202,
+      );
+      const saved = await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
+      expect(saved.package).toMatchObject(edited.parcel);
+      expect(saved.selectedQuoteId).toBeNull();
+      expect(saved.shippingMinor).toBe(0n);
+      expect(
+        (
+          await prisma.deliveryQuote.findUniqueOrThrow({ where: { id: quote.id } })
+        ).expiresAt.getTime(),
+      ).toBeLessThanOrEqual(Date.now());
+      expect(
+        (await prisma.tradeOrder.findUniqueOrThrow({ where: { id } })).packagingSnapshot,
+      ).toEqual(packing);
+      await prisma.tradeOrder.update({ where: { id }, data: { status: "FUNDED" } });
+      expect((await request(app).post(`${path}/quotes`).set(customer()).send(edited)).status).toBe(
+        409,
+      );
+    } finally {
+      await prisma.listing.update({
+        where: { id: listingId },
+        data: {
+          packaging: original.packaging
+            ? (original.packaging as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+        },
+      });
+    }
   });
   it("routes special handling to manual review and serves real quotes without provider tokens", async () => {
     const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([

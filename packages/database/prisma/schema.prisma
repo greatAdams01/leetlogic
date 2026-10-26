@@ -497,6 +497,7 @@ model Unit {
 }
 
 model Listing {
+  packaging Json?
   id                String                 @id @default(uuid()) @db.Uuid
   farmerProfileId   String                 @map("farmer_profile_id") @db.Uuid
   categoryId        String                 @map("category_id") @db.Uuid
@@ -593,6 +594,7 @@ model IdempotencyRecord {
 }
 
 model TradeOrder {
+  packagingSnapshot Json? @map("packaging_snapshot")
   fundsProvider String? @map("funds_provider") @db.VarChar(20)
   reservationExpiresAt DateTime? @map("reservation_expires_at") @db.Timestamptz(6)
   financialHold Boolean @default(false) @map("financial_hold")

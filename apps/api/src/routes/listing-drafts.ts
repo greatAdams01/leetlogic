@@ -1,3 +1,4 @@
+import { packagingSchema } from "@leetlogic/contracts";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
@@ -8,6 +9,7 @@ import { serialize } from "../services/delivery.js";
 export const listingDraftRouter = Router();
 listingDraftRouter.use(requireAuth("customer"));
 export const draftSchema = z.object({
+  packaging: packagingSchema.optional(),
   title: z.string().trim().min(2).max(160),
   description: z.string().trim().max(5000),
   sourceLocale: z.enum(["en", "pcm", "ig", "ha", "yo"]),
@@ -150,6 +152,22 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         "WHOLE_UNIT_REQUIRED",
         "Enter a whole quantity for this selling unit.",
       );
+    if (body.packaging && !unit.allowsDecimal && !Number.isInteger(body.packaging.unitsPerPackage))
+      throw new AppError(
+        422,
+        "WHOLE_PACKAGE_UNITS_REQUIRED",
+        "Enter whole selling units in each package.",
+      );
+    if (
+      body.packaging &&
+      body.unitCode === "KG" &&
+      body.packaging.weightKg < body.packaging.unitsPerPackage
+    )
+      throw new AppError(
+        422,
+        "PACKED_WEIGHT_TOO_LOW",
+        "Packed weight must include the produce weight and its packaging.",
+      );
     const photoIds = body.photoIds ?? (body.photoId ? [body.photoId] : []);
     if (!photoIds.length)
       throw new AppError(
@@ -174,6 +192,7 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         unitPriceMinor: BigInt(body.unitPriceMinor),
         availableQuantity: body.quantity,
         shippingScope: body.shippingScope,
+        ...(body.packaging ? { packaging: body.packaging } : {}),
         status: "PENDING_REVIEW",
       },
     });

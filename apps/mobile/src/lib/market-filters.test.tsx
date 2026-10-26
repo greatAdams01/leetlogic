@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   View: "View",
   Pressable: "Pressable",
+  ScrollView: "ScrollView",
+  useWindowDimensions: () => ({ width: 400, height: 800 }),
   AppState: {
     addEventListener: (_: string, fn: unknown) => {
       h.foreground = fn;
@@ -30,6 +32,7 @@ vi.mock("../components/buyer-location", () => ({
     return { area, busy: false };
   },
 }));
+vi.mock("../components/Select", () => ({ Select: "Select" }));
 vi.mock("../components/listing-gallery", () => ({ ListingGallery: "ListingGallery" }));
 vi.mock("../components/listing-photo", () => ({ ListingPhoto: "ListingPhoto" }));
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
@@ -50,7 +53,7 @@ vi.mock("../state", () => ({
   useApp: () => ({
     user: null,
     role: "BUYER",
-    route: { name: "home" },
+    route: { name: "search" },
     locale: "en",
     ui: (s: string) => s,
   }),
@@ -81,20 +84,24 @@ it("combines buyer area and produce category filters in the public request", asy
     tree = create(<Market />);
   });
   await act(async () => h.setArea({ state: "Lagos", lga: "Ikeja" }));
-  const category = tree.root
-    .findAllByType("Label" as any)
-    .find((n) => n.props.children === "Vegetables")!;
-  await act(async () => category.parent!.props.onPress());
+  await act(async () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Vegetables")!
+      .props.onPress(),
+  );
   expect(h.paths).toContain("/marketplace/listings?search=&categoryId=veg&state=Lagos&lga=Ikeja");
 });
 it("refreshes on foreground and clears a filter when admin deactivates its category", async () => {
   await act(async () => {
     tree = create(<Market />);
   });
-  const category = tree.root
-    .findAllByType("Label" as any)
-    .find((n) => n.props.children === "Vegetables")!;
-  await act(async () => category.parent!.props.onPress());
+  await act(async () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Vegetables")!
+      .props.onPress(),
+  );
   await act(async () => h.foreground("active"));
   expect(h.reloadCategories).toHaveBeenCalledTimes(1);
   expect(h.reloadListings).toHaveBeenCalledTimes(1);

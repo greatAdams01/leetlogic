@@ -12,15 +12,17 @@ export const contactSchema = z.object({
   longitude: z.number().finite().min(-180).max(180).optional(),
 });
 export const parcelSchema = z.object({
-  weightKg: z.number().positive(),
-  length: z.number().positive().max(200),
-  width: z.number().positive().max(200),
-  height: z.number().positive().max(200),
+  weightKg: z.number().finite().positive().max(1_000_000),
+  packageCount: z.number().int().positive().max(1_000_000).default(1),
+  notes: z.string().trim().max(500).default(""),
+  length: z.number().finite().positive().max(1000),
+  width: z.number().finite().positive().max(1000),
+  height: z.number().finite().positive().max(1000),
   pickupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   handling: z.enum(["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"]),
 });
 export type Contact = z.infer<typeof contactSchema>;
-export type Parcel = z.infer<typeof parcelSchema>;
+export type Parcel = z.input<typeof parcelSchema>;
 export type ShippingRate = {
   courierId: string;
   walletMinor: bigint;
@@ -125,6 +127,17 @@ export class Shipbubble implements ShippingProvider {
     valueMinor: bigint;
   }) {
     const c = getConfig();
+    if (
+      (input.parcel.packageCount ?? 1) !== 1 ||
+      input.parcel.handling !== "STANDARD" ||
+      Math.max(input.parcel.length, input.parcel.width, input.parcel.height) > 200 ||
+      input.parcel.weightKg > c.DELIVERY_MAX_WEIGHT_KG
+    )
+      throw new AppError(
+        422,
+        "MANUAL_DELIVERY_REQUIRED",
+        "This shipment needs staff review before a courier can be booked.",
+      );
     if (!c.SHIPBUBBLE_CATEGORY_ID)
       throw new AppError(
         503,
