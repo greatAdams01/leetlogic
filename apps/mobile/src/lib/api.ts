@@ -91,6 +91,7 @@ export async function api<T = any>(
     method?: string;
     body?: unknown;
     key?: string;
+    imageResponse?: boolean;
     binary?: { bytes: Uint8Array; contentType: string };
   } = {},
 ): Promise<T> {
@@ -109,7 +110,7 @@ export async function api<T = any>(
         : options.binary
           ? { body: new Uint8Array(options.binary.bytes) }
           : {}),
-      signal: AbortSignal.timeout(options.binary ? 60000 : 25000),
+      signal: AbortSignal.timeout(options.imageResponse ? 70000 : options.binary ? 60000 : 25000),
     });
   let response: Response;
   try {
@@ -130,6 +131,23 @@ export async function api<T = any>(
         ? "This is taking longer than expected. Please try again."
         : "Unable to connect. Check your internet connection and try again.",
     );
+  }
+  if (response.ok && options.imageResponse) {
+    const mime = response.headers.get("content-type")?.split(";")[0];
+    if (!["image/jpeg", "image/png"].includes(mime || ""))
+      throw new ApiError(
+        502,
+        "INVALID_SERVER_RESPONSE",
+        "We couldn’t load this photo. Please try again.",
+      );
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 10 * 1024 * 1024)
+      throw new ApiError(
+        502,
+        "INVALID_SERVER_RESPONSE",
+        "We couldn’t load this photo. Please try again.",
+      );
+    return { bytes, mime } as T;
   }
   let data;
   try {

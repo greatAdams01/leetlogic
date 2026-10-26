@@ -57,4 +57,18 @@ describe("account refresh session identity", () => {
     }
     expect(fetcher.mock.calls[2]![1].headers.Authorization).toBe("Bearer renewed");
   });
+  it("refreshes authentication before reading a private pending-listing photo", async () => {
+    await saveSession({ accessToken: "expired", refreshToken: "refresh" });
+    const bytes = new Uint8Array([255, 216, 255, 1]);
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ error: { code: "SESSION_EXPIRED" } }, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ accessToken: "renewed", refreshToken: "new-refresh" }))
+      .mockResolvedValueOnce(new Response(bytes, { headers: { "content-type": "image/jpeg" } }));
+    vi.stubGlobal("fetch", fetcher);
+    const photo = await api("/listing-photos/private-id", { imageResponse: true });
+    expect(photo.bytes).toEqual(bytes);
+    expect(photo.mime).toBe("image/jpeg");
+    expect(fetcher.mock.calls[2]![1].headers.Authorization).toBe("Bearer renewed");
+  });
 });

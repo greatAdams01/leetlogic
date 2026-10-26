@@ -1,6 +1,7 @@
+import { ListingPhoto } from "../components/listing-photo";
 import { LocalizedText as Text } from "../localization";
 import React, { useState } from "react";
-import { View, Pressable, Image } from "react-native";
+import { View, Pressable } from "react-native";
 import { useApp, useResource } from "../state";
 import {
   Page,
@@ -14,34 +15,9 @@ import {
   s,
   colors,
 } from "../components/ui";
-import { api, uuid, API_URL, authHeaders } from "../lib/api";
+import { api, uuid } from "../lib/api";
 import { money, quantity, type Listing, type Order } from "../lib/domain";
-export function ListingPhoto({ item, height = 200 }: { item: Listing; height?: number }) {
-  const photo = item.media.find((m) => /^produce\/[a-f0-9-]{36}$/.test(m.objectKey));
-  return photo ? (
-    <Image
-      accessibilityLabel={item.title}
-      source={{
-        headers: authHeaders(),
-        uri: `${API_URL}/v1/listing-photos/${photo.objectKey.split("/")[1]}`,
-      }}
-      style={{ height, width: "100%", borderRadius: 14 }}
-    />
-  ) : (
-    <View
-      style={{
-        height,
-        borderRadius: 14,
-        backgroundColor: colors.mint,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Icon name="leaf" size={48} />
-      <Label muted>Photo unavailable</Label>
-    </View>
-  );
-}
+export { ListingPhoto } from "../components/listing-photo";
 export function Market() {
   const a = useApp(),
     [search, setSearch] = useState(""),
