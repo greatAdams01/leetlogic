@@ -1,4 +1,6 @@
 export const icons = {
+  securityBack: require("../assets/figma/security-back.svg"),
+  securityFingerprint: require("../assets/figma/security-fingerprint.svg"),
   listingBack: require("../assets/figma/3a86b.svg"),
   listingClose: require("../assets/figma/f6c84.svg"),
   listingInfoBack: require("../assets/figma/dc7ef.svg"),

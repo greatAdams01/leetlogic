@@ -1,5 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { accountRoleKey } from "../lib/onboarding";
 import React, { useEffect, useRef, useState } from "react";
 import {
   AppState,
@@ -272,9 +270,8 @@ export function Otp() {
       });
       await saveSession(result);
       const user = await a.loadUser();
-      await AsyncStorage.setItem(accountRoleKey(user.id), a.role);
       await a.changeLocale(a.locale);
-      a.reset(a.role === "SELLER" ? "seller" : "home");
+      await a.finishSignIn(user);
     } catch (e) {
       setError(a.error(e));
     } finally {

@@ -360,7 +360,7 @@ export function Role() {
         <>
           <Button
             title={a.role === "SELLER" ? "Continue as Seller/Farmer" : "Continue as Buyer"}
-            onPress={() => a.go(a.user ? "home" : "phone")}
+            onPress={() => void a.selectRole(a.role)}
           />
           <Button title="Change language" secondary onPress={() => a.openLanguage()} />
         </>

@@ -235,3 +235,11 @@ Simulator/device checks: preview all four photos, deny/allow microphone access,
 record/stop, reach the 30-second limit, play/replay/remove, go back and return,
 restart the app, and switch accounts. Confirm a voice note never appears in any
 network request. Interactive microphone/speaker checks remain manual.
+
+### Account entry and farmer device security
+
+Signing out clears the session, account mode and navigation history immediately and returns to language selection. Buyers can choose their role and browse without signing in; account actions still require a phone code. A newly verified phone without an account preference or farmer profile must choose its role. Role preferences and device security belong to the verified user ID, not the last phone used on the device.
+
+Farmers create and confirm a four-digit device PIN. Returning farmer sessions require that PIN, and leaving the app in the background for at least 30 seconds locks the farmer workspace. Optional Face ID, Android face unlock or fingerprint authentication uses the enrolled device capabilities with strong Android biometrics required. Biometrics do not replace Dojah identity verification or server authorization for payments. Five incorrect PIN attempts trigger a persisted one-minute cooldown. “Sign in with a code instead” requires another phone OTP before creating a replacement PIN for that same account.
+
+PIN flows can be tested in Expo Go. Face ID requires an iOS development build with the configured usage permission; restart Metro after installing dependencies and rebuild the native development client to include `expo-local-authentication`. Simulator biometric enrollment and success/failure simulation must be configured in the simulator. Test new-phone role selection, buyer guest browsing, farmer PIN confirmation, cancelled biometric prompts, background locking, recovery and logout with an unavailable API. Interactive simulator testing remains a manual check.

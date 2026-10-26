@@ -13,7 +13,8 @@ import {
   type MessageKey,
 } from "../../../packages/localization/src/customer-messages";
 import { type Route, openLanguageScreen, finishLanguageSelection } from "./lib/navigation";
-import { accountRoleKey, restoredAccount } from "./lib/onboarding";
+import { accountRoleKey, restoredAccount, signInRole } from "./lib/onboarding";
+import { readSecurity } from "./lib/farmer-security";
 import { singleFlight } from "./lib/async-cache";
 const readAccount = singleFlight<number, { user: Customer }>(() => api<{ user: Customer }>("/me"));
 const Context = createContext<any>(null);
@@ -24,6 +25,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [ready, setReady] = useState(false),
     [role, setRole] = useState<"BUYER" | "SELLER">("BUYER"),
     [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [security, setSecurity] = useState<"create" | "unlock" | null>(null);
+  const recoverAccount = useRef<string | null>(null);
+  const roleIntent = useRef<"BUYER" | "SELLER" | null>(null);
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const feedbackId = useRef(0);
   const localeWrites = useRef<Promise<void>>(Promise.resolve());
@@ -59,6 +63,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               await AsyncStorage.getItem(accountRoleKey(user.id)),
             );
             setRole(restored.role);
+            if (restored.role === "SELLER")
+              setSecurity((await readSecurity(user.id)) ? "unlock" : "create");
             reset(restored.route);
           } catch {
             await clearSession();
@@ -113,14 +119,69 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     return localeWrites.current;
   };
-  const signOut = async () => {
-    try {
-      await api("/auth/logout", { method: "POST" });
-    } finally {
-      await clearSession();
-      setUser(null);
-      reset("phone");
+  const selectRole = async (selected: "BUYER" | "SELLER") => {
+    roleIntent.current = selected;
+    setRole(selected);
+    if (!user) {
+      reset(selected === "BUYER" ? "home" : "phone");
+      return;
     }
+    await AsyncStorage.setItem(accountRoleKey(user.id), selected);
+    const restored = restoredAccount(user, selected);
+    if (selected === "SELLER") setSecurity((await readSecurity(user.id)) ? "unlock" : "create");
+    reset(restored.route);
+  };
+  const finishSignIn = async (account: Customer) => {
+    const saved = await AsyncStorage.getItem(accountRoleKey(account.id));
+    const selected = signInRole(account, saved, roleIntent.current);
+    roleIntent.current = null;
+    if (!selected) {
+      setRole("BUYER");
+      reset("role");
+      return;
+    }
+    const restored = restoredAccount(account, selected);
+    await AsyncStorage.setItem(accountRoleKey(account.id), restored.role);
+    setRole(restored.role);
+    // Phone OTP has just established account ownership; allow PIN recovery here.
+    if (restored.role === "SELLER")
+      setSecurity(
+        recoverAccount.current === account.id || !(await readSecurity(account.id))
+          ? "create"
+          : "unlock",
+      );
+    recoverAccount.current = null;
+    reset(restored.route);
+  };
+  useEffect(() => {
+    let backgrounded = 0;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background") backgrounded = Date.now();
+      if (
+        state === "active" &&
+        backgrounded &&
+        Date.now() - backgrounded >= 30_000 &&
+        user &&
+        role === "SELLER" &&
+        !security
+      ) {
+        setSecurity("unlock");
+        backgrounded = 0;
+      }
+    });
+    return () => sub.remove();
+  }, [user, role, security]);
+  const signOut = async () => {
+    // Start revocation with the current token, then clear local access immediately.
+    const revoke = api("/auth/logout", { method: "POST" }).catch(() => {});
+    setUser(null);
+    setRole("BUYER");
+    roleIntent.current = null;
+    setSecurity(null);
+    setFeedback(null);
+    reset("language");
+    await clearSession();
+    void revoke;
   };
   return (
     <LocaleProvider value={locale}>
@@ -142,6 +203,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           role,
           setRole,
           signOut,
+          selectRole,
+          finishSignIn,
+          security,
+          unlock: () => setSecurity(null),
+          recoverSecurity: () => {
+            recoverAccount.current = user?.id || null;
+            return signOut();
+          },
           notify: (text: string) => setFeedback({ id: ++feedbackId.current, text }),
           t: (key: MessageKey) => overrides[key] || ui(locale, en[key] || "Update"),
           ui: (source: string, params?: Record<string, string | number>) =>
@@ -182,6 +251,11 @@ export function useApp() {
     role: "BUYER" | "SELLER";
     setRole: (r: "BUYER" | "SELLER") => void;
     signOut: () => Promise<void>;
+    selectRole: (role: "BUYER" | "SELLER") => Promise<void>;
+    finishSignIn: (user: Customer) => Promise<void>;
+    security: "create" | "unlock" | null;
+    unlock: () => void;
+    recoverSecurity: () => Promise<void>;
     notify: (text: string) => void;
     t: (key: MessageKey) => string;
     ui: (source: string, params?: Record<string, string | number>) => string;

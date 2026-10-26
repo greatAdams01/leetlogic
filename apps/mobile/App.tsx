@@ -1,3 +1,4 @@
+import { FarmerSecurity } from "./src/screens/farmer-security";
 import { BankAccounts } from "./src/screens/bank-accounts";
 import { Finance } from "./src/screens/finance";
 import React, { useEffect, useState } from "react";
@@ -22,6 +23,8 @@ import { showsBottomTabs } from "./src/lib/bottom-tabs";
 function Router() {
   const a = useApp();
   if (!a.ready) return <Startup />;
+  if (a.user && a.role === "SELLER" && a.security)
+    return <FarmerSecurity key={`${a.user.id}:${a.security}`} />;
   const screens = {
     language: Language,
     intro: Intro,

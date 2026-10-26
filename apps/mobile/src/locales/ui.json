@@ -5479,5 +5479,222 @@
     "Ana loda hoto…",
     "Na-ebunye foto…",
     "Ń gbé fọ́tò wọlé…"
+  ],
+  [
+    "Security PIN",
+    "Security PIN",
+    "PIN tsaro",
+    "PIN nche",
+    "PIN ààbò"
+  ],
+  [
+    "Create a PIN.",
+    "Create a PIN.",
+    "Ƙirƙiri PIN.",
+    "Mepụta PIN.",
+    "Ṣẹ̀dá PIN."
+  ],
+  [
+    "Confirm your PIN.",
+    "Confirm your PIN.",
+    "Tabbatar da PIN ɗinka.",
+    "Kwenye PIN gị.",
+    "Jẹ́rìí PIN rẹ."
+  ],
+  [
+    "Welcome back.",
+    "Welcome back.",
+    "Barka da dawowa.",
+    "Nnọọ ọzọ.",
+    "Ẹ káàbọ̀ padà."
+  ],
+  [
+    "Enter the same 4 digits again.",
+    "Enter the same 4 digits again.",
+    "Sake shigar da lambobi 4 ɗin.",
+    "Tinye otu ọnụọgụ anọ ahụ ọzọ.",
+    "Tẹ nọ́mbà mẹ́rin kan náà lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "4 digits. You will use this to open LeetLogic.",
+    "4 digits. You will use this to open LeetLogic.",
+    "Lambobi 4. Za ka yi amfani da su wajen buɗe LeetLogic.",
+    "Ọnụọgụ anọ. Ị ga-eji ha mepee LeetLogic.",
+    "Nọ́mbà mẹ́rin. Wàá fi wọlé sí LeetLogic."
+  ],
+  [
+    "Enter your PIN to open your farmer account.",
+    "Enter your PIN to open your farmer account.",
+    "Shigar da PIN don buɗe asusun manominka.",
+    "Tinye PIN gị imepe akaụntụ onye ọrụ ugbo gị.",
+    "Tẹ PIN rẹ láti ṣí àkọọ́lẹ̀ àgbẹ̀ rẹ."
+  ],
+  [
+    "Choose a different PIN",
+    "Choose a different PIN",
+    "Zaɓi wani PIN",
+    "Họrọ PIN ọzọ",
+    "Yan PIN mìíràn"
+  ],
+  [
+    "Device unlock",
+    "Device unlock",
+    "Buɗe na’ura",
+    "Mepee ngwaọrụ",
+    "Ṣí ẹ̀rọ"
+  ],
+  [
+    "Enable device unlock",
+    "Enable device unlock",
+    "Kunna buɗe na’ura",
+    "Kwado imepe ngwaọrụ",
+    "Mu ṣíṣí ẹ̀rọ ṣiṣẹ́"
+  ],
+  [
+    "Enter your 4-digit PIN",
+    "Enter your 4-digit PIN",
+    "Shigar da PIN mai lambobi 4",
+    "Tinye PIN ọnụọgụ anọ gị",
+    "Tẹ PIN oní nọ́mbà mẹ́rin rẹ"
+  ],
+  [
+    "Sign in with a code instead",
+    "Sign in with a code instead",
+    "Shiga da lambar tabbatarwa",
+    "Jiri koodu banye",
+    "Lo kóòdù láti wọlé"
+  ],
+  [
+    "Unlock LeetLogic",
+    "Unlock LeetLogic",
+    "Buɗe LeetLogic",
+    "Mepee LeetLogic",
+    "Ṣí LeetLogic"
+  ],
+  [
+    "Keep your PIN secret. LeetLogic staff will never ask for your PIN over the phone or by SMS.",
+    "Keep your PIN secret. LeetLogic staff will never ask for your PIN over the phone or by SMS.",
+    "Ka ɓoye PIN ɗinka. Ma’aikatan LeetLogic ba za su nemi PIN ta waya ko SMS ba.",
+    "Zobe PIN gị. Ndị ọrụ LeetLogic agaghị ajụ gị PIN na ekwentị ma ọ bụ SMS.",
+    "Pa PIN rẹ mọ́. Òṣìṣẹ́ LeetLogic kò ní béèrè PIN rẹ lórí fóònù tàbí SMS."
+  ],
+  [
+    "You can still use your PIN.",
+    "You can still use your PIN.",
+    "Har yanzu kana iya amfani da PIN.",
+    "Ị ka nwere ike iji PIN gị.",
+    "O ṣì lè lo PIN rẹ."
+  ],
+  [
+    "Biometric unlock",
+    "Biometric unlock",
+    "Buɗewa da halittar jiki",
+    "Imepe site n’akụkụ ahụ",
+    "Ṣíṣí pẹ̀lú àmì ara"
+  ],
+  [
+    "Fingerprint",
+    "Fingerprint",
+    "Sawun yatsa",
+    "Akara mkpịsị aka",
+    "Ìtẹ̀ka"
+  ],
+  [
+    "Use Face ID",
+    "Use Face ID",
+    "Yi amfani da Face ID",
+    "Jiri Face ID",
+    "Lo Face ID"
+  ],
+  [
+    "Use fingerprint",
+    "Use fingerprint",
+    "Yi amfani da sawun yatsa",
+    "Jiri akara mkpịsị aka",
+    "Lo ìtẹ̀ka"
+  ],
+  [
+    "Enable Face ID",
+    "Enable Face ID",
+    "Kunna Face ID",
+    "Kwado Face ID",
+    "Mu Face ID ṣiṣẹ́"
+  ],
+  [
+    "Enable fingerprint",
+    "Enable fingerprint",
+    "Kunna sawun yatsa",
+    "Kwado akara mkpịsị aka",
+    "Mu ìtẹ̀ka ṣiṣẹ́"
+  ],
+  [
+    "Unlock your farmer account using your device. You can still use your PIN.",
+    "Unlock your farmer account using your device. You can still use your PIN.",
+    "Buɗe asusun manominka da na’urarka. Kana iya amfani da PIN.",
+    "Jiri ngwaọrụ gị mepee akaụntụ onye ọrụ ugbo gị. Ị ka nwere ike iji PIN.",
+    "Ṣí àkọọ́lẹ̀ àgbẹ̀ rẹ pẹ̀lú ẹ̀rọ rẹ. O ṣì lè lo PIN."
+  ],
+  [
+    "Set up biometrics in your device settings. You can continue with your PIN.",
+    "Set up biometrics in your device settings. You can continue with your PIN.",
+    "Saita halittar jiki a saitunan na’urarka. Kana iya ci gaba da PIN.",
+    "Hazie akara ahụ na ntọala ngwaọrụ gị. Ị nwere ike ịga n’ihu na PIN.",
+    "Ṣètò àmì ara nínú ètò ẹ̀rọ rẹ. O lè tẹ̀síwájú pẹ̀lú PIN."
+  ],
+  [
+    "Your PINs do not match. Enter the first PIN again.",
+    "Your PINs do not match. Enter the first PIN again.",
+    "PIN ɗin ba su dace ba. Sake shigar da na farko.",
+    "PIN gị adabaghị. Tinye PIN mbụ ọzọ.",
+    "PIN rẹ kò bá ara wọn mu. Tẹ èkíní lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "That PIN is incorrect. Please try again.",
+    "That PIN is incorrect. Please try again.",
+    "PIN ɗin ba daidai ba ne. Sake gwadawa.",
+    "PIN ahụ ezighi ezi. Gbalịa ọzọ.",
+    "PIN yẹn kò tọ́. Gbìyànjú lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "Too many attempts. Try again in a minute.",
+    "Too many attempts. Try again in a minute.",
+    "Ƙoƙari ya yi yawa. Sake gwadawa bayan minti ɗaya.",
+    "Ị nwara ọtụtụ ugboro. Gbalịa ọzọ n’otu nkeji.",
+    "Ìgbìyànjú ti pọ̀. Gbìyànjú ní ìṣẹ́jú kan."
+  ],
+  [
+    "Device authentication was not completed. You can use your PIN instead.",
+    "Device authentication was not completed. You can use your PIN instead.",
+    "Ba a kammala tantance na’ura ba. Yi amfani da PIN.",
+    "Emechaghị nkwenye ngwaọrụ. Jiri PIN gị.",
+    "Ìjẹ́rìí ẹ̀rọ kò parí. O lè lo PIN rẹ."
+  ],
+  [
+    "Face unlock",
+    "Face unlock",
+    "Buɗewa da fuska",
+    "Imepe site n’ihu",
+    "Ṣíṣí pẹ̀lú ojú"
+  ],
+  [
+    "Use face unlock",
+    "Use face unlock",
+    "Yi amfani da fuska",
+    "Jiri ihu mepee",
+    "Lo ojú láti ṣí"
+  ],
+  [
+    "Enable face unlock",
+    "Enable face unlock",
+    "Kunna buɗewa da fuska",
+    "Kwado imepe site n’ihu",
+    "Mu ṣíṣí pẹ̀lú ojú ṣiṣẹ́"
+  ],
+  [
+    "Back",
+    "Go back",
+    "Baya",
+    "Laghachi",
+    "Padà"
   ]
 ]
