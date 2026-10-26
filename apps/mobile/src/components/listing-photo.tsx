@@ -8,11 +8,23 @@ import { useApp } from "../state";
 import { Icon, Label, colors } from "./ui";
 /** Fetch through the session-aware API, then let the native Image read a local
  * file. Native remote-image requests do not participate in token refresh. */
-export function ListingPhoto({ item, height = 200 }: { item: Listing; height?: number }) {
+export function ListingPhoto({
+  item,
+  height = 200,
+  objectKey,
+  resizeMode = "cover",
+}: {
+  item: Listing;
+  height?: number;
+  objectKey?: string;
+  resizeMode?: "cover" | "contain";
+}) {
   const a = useApp();
-  const id = item.media
-    ?.find((media) => /^produce\/[a-f0-9-]{36}$/i.test(media.objectKey))
-    ?.objectKey.split("/")[1];
+  const selected =
+    objectKey ??
+    item.media?.find((media) => /^produce\/[a-f0-9-]{36}$/i.test(media.objectKey))?.objectKey;
+  const id =
+    selected && /^produce\/[a-f0-9-]{36}$/i.test(selected) ? selected.split("/")[1] : undefined;
   const identity = sessionVersion();
   const [uri, setUri] = useState<string | null>(null),
     [failed, setFailed] = useState(false),
@@ -66,7 +78,7 @@ export function ListingPhoto({ item, height = 200 }: { item: Listing; height?: n
         width: "100%",
         borderRadius: 14,
         overflow: "hidden",
-        backgroundColor: colors.mint,
+        backgroundColor: resizeMode === "contain" ? "#101a14" : colors.mint,
         justifyContent: "center",
         alignItems: "center",
       }}
@@ -75,7 +87,7 @@ export function ListingPhoto({ item, height = 200 }: { item: Listing; height?: n
         <Image
           source={{ uri }}
           accessibilityLabel={item.title}
-          resizeMode="cover"
+          resizeMode={resizeMode}
           style={{ width: "100%", height: "100%" }}
           onError={() => setFailed(true)}
         />

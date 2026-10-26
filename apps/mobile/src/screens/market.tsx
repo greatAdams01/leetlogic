@@ -1,3 +1,4 @@
+import { ListingGallery } from "../components/listing-gallery";
 import { ListingPhoto } from "../components/listing-photo";
 import { LocalizedText as Text } from "../localization";
 import React, { useState } from "react";
@@ -187,7 +188,7 @@ export function Product() {
       {r.error && <Notice text={r.error} error />}
       {item && (
         <>
-          <ListingPhoto item={item} height={270} />
+          <ListingGallery key={item.id} item={item} />
           <Card>
             <Heading>{item.title}</Heading>
             <Label>{translation || item.description || ""}</Label>

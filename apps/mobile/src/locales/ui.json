@@ -5696,5 +5696,33 @@
     "Baya",
     "Laghachi",
     "Padà"
+  ],
+  [
+    "Photo {index} of {total}",
+    "Photo {index} out of {total}",
+    "Hoto {index} cikin {total}",
+    "Foto {index} n’ime {total}",
+    "Fọ́tò {index} nínú {total}"
+  ],
+  [
+    "Open photo {index}",
+    "Open photo {index}",
+    "Buɗe hoto {index}",
+    "Mepee foto {index}",
+    "Ṣí fọ́tò {index}"
+  ],
+  [
+    "Tap to view full photo",
+    "Tap to see full photo",
+    "Taɓa don ganin cikakken hoto",
+    "Pịa ka ị hụ foto zuru ezu",
+    "Tẹ láti rí gbogbo fọ́tò"
+  ],
+  [
+    "Close photos",
+    "Close photos",
+    "Rufe hotuna",
+    "Mechie foto",
+    "Pa àwọn fọ́tò dé"
   ]
 ]

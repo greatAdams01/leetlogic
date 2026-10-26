@@ -53,6 +53,18 @@ describe("mobile listing photo preview", () => {
       "file:///cache/preview.jpg",
     );
   });
+  it("loads the selected gallery photo in full without cropping", async () => {
+    const objectKey = "produce/22222222-2222-4222-8222-222222222222";
+    await testRenderer.act(async () => {
+      renderer = testRenderer.create(
+        <ListingPhoto item={item} objectKey={objectKey} resizeMode="contain" />,
+      );
+    });
+    expect(h.api).toHaveBeenCalledWith("/listing-photos/22222222-2222-4222-8222-222222222222", {
+      imageResponse: true,
+    });
+    expect(renderer.root.findByType("Image" as never).props.resizeMode).toBe("contain");
+  });
   it("shows a retry action instead of a blank box when storage cannot be reached", async () => {
     h.api.mockRejectedValueOnce(new Error("storage unavailable"));
     await testRenderer.act(async () => {
