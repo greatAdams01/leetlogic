@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: Props) {
 export default async function AdminPage({ params }: Props) {
   const route = (await params).screen?.join("/") || "dashboard";
   const screen = adminScreens[route as keyof typeof adminScreens];
-  if (!screen && !["setup", "forgot-password"].includes(route)) notFound();
+  if (!screen && !["setup", "forgot-password", "categories"].includes(route)) notFound();
   return (
     <Suspense fallback={<p>Loading staff workspace…</p>}>
       <LiveAdmin route={route} title={titles[route] || screen?.title || "Staff account setup"} />
@@ -24,6 +24,7 @@ export default async function AdminPage({ params }: Props) {
 
 const titles: Record<string, string> = {
   dashboard: "Operations dashboard",
+  categories: "Listing categories",
   users: "User directory",
   logistics: "Logistics & dispatch",
   verification: "Farmer verification queue",

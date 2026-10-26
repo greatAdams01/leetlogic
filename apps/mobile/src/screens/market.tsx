@@ -1,8 +1,9 @@
+import { BuyerLocation, type BuyerArea } from "../components/buyer-location";
 import { ListingGallery } from "../components/listing-gallery";
 import { ListingPhoto } from "../components/listing-photo";
 import { LocalizedText as Text } from "../localization";
-import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import React, { useEffect, useState } from "react";
+import { AppState, View, Pressable } from "react-native";
 import { useApp, useResource } from "../state";
 import {
   Page,
@@ -23,13 +24,26 @@ export function Market() {
   const a = useApp(),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
-    [category, setCategory] = useState("");
+    [category, setCategory] = useState(""),
+    [area, setArea] = useState<BuyerArea>({ state: "", lga: "" });
   const r = useResource<{ items: Listing[] }>(
-      `/marketplace/listings?search=${encodeURIComponent(query)}${category ? "&categoryId=" + category : ""}`,
+      `/marketplace/listings?search=${encodeURIComponent(query)}${category ? "&categoryId=" + category : ""}${area.state ? "&state=" + encodeURIComponent(area.state) : ""}${area.lga ? "&lga=" + encodeURIComponent(area.lga) : ""}${area.latitude !== undefined && area.longitude !== undefined ? `&latitude=${area.latitude}&longitude=${area.longitude}&radiusKm=${area.radiusKm || 50}` : ""}`,
     ),
     c = useResource<{
       items: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
     }>("/marketplace/categories");
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void c.reload();
+        void r.reload();
+      }
+    });
+    return () => sub.remove();
+  }, [c.reload, r.reload]);
+  useEffect(() => {
+    if (c.data && category && !c.data.items.some((item) => item.id === category)) setCategory("");
+  }, [c.data, category]);
   return (
     <Page loading={r.loading}>
       <View style={s.between}>
@@ -61,6 +75,7 @@ export function Market() {
           <Label muted>Nigeria · Direct from verified farmers</Label>
         </>
       )}
+      <BuyerLocation onChange={setArea} />
       <Field
         label="Search produce"
         value={search}
@@ -106,36 +121,43 @@ export function Market() {
         </>
       )}
       {!r.loading && !r.error && !r.data?.items.length && (
-        <Notice text="No produce matches this search yet. Try another category or check back soon." />
+        <Notice
+          text={
+            area.latitude !== undefined
+              ? "No produce found within this distance. Try a wider distance or choose another area."
+              : "No produce matches this search yet. Try another category or check back soon."
+          }
+        />
       )}
-      {r.data?.items.map((item) => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={a.ui("View {title}", { title: item.title })}
-          key={item.id}
-          onPress={() => a.go("product", item.id)}
-        >
-          <Card>
-            <ListingPhoto item={item} />
-            <View style={s.between}>
-              <Label style={{ fontFamily: "NotoBold", flex: 1 }}>{item.title}</Label>
-              <Text style={s.badge}>Direct</Text>
-            </View>
-            <Label style={{ color: colors.green }}>
-              {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
-            </Label>
-            <Label muted style={s.small}>
-              {item.farmerProfile.farmName} · {item.locationAddress.state}
-            </Label>
-            <Label muted style={s.small}>
-              {a.ui("{quantity} {unit} available", {
-                quantity: Number(item.availableQuantity) - Number(item.reservedQuantity),
-                unit: a.unit(item.unitCode),
-              })}
-            </Label>
-          </Card>
-        </Pressable>
-      ))}
+      {!r.loading &&
+        r.data?.items.map((item) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={a.ui("View {title}", { title: item.title })}
+            key={item.id}
+            onPress={() => a.go("product", item.id)}
+          >
+            <Card>
+              <ListingPhoto item={item} />
+              <View style={s.between}>
+                <Label style={{ fontFamily: "NotoBold", flex: 1 }}>{item.title}</Label>
+                <Text style={s.badge}>Direct</Text>
+              </View>
+              <Label style={{ color: colors.green }}>
+                {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
+              </Label>
+              <Label muted style={s.small}>
+                {item.farmerProfile.farmName} · {item.locationAddress.state}
+              </Label>
+              <Label muted style={s.small}>
+                {a.ui("{quantity} {unit} available", {
+                  quantity: Number(item.availableQuantity) - Number(item.reservedQuantity),
+                  unit: a.unit(item.unitCode),
+                })}
+              </Label>
+            </Card>
+          </Pressable>
+        ))}
       {a.role === "SELLER" && (
         <Button title="My produce listings" onPress={() => a.go("myListings")} />
       )}

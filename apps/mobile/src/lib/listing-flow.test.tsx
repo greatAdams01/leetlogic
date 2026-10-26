@@ -66,7 +66,7 @@ vi.mock("../state", () => ({
   }),
 }));
 vi.mock("./api", () => ({ api: h.api, API_URL: "http://localhost:3000", authHeaders: () => ({}) }));
-vi.mock("./listing-art", () => ({ listingCategories: {} }));
+vi.mock("./listing-art", () => ({ listingCategories: { vegetables: "Vegetables" } }));
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
 vi.mock("../screens/market", () => ({ ListingPhoto: "ListingPhoto" }));
 vi.mock("../components/seller-listing-controls", () => ({ ListingControls: "ListingControls" }));
@@ -291,4 +291,26 @@ describe("seller listing wizard", () => {
     expect(JSON.stringify(renderer.toJSON())).toContain("PENDING_REVIEW");
     expect(button("My listings")).toBeDefined();
   });
+});
+
+it("uses the admin catalogue order and supports categories outside the bundled examples", async () => {
+  const original = h.catalogue.categories;
+  h.catalogue.categories = [
+    { id: "new", slug: "seasonal", translations: [{ locale: "en", name: "Seasonal crops" }] },
+    ...original,
+  ];
+  try {
+    await act(async () => {
+      renderer = create(<Sell />);
+    });
+    const radios = nodes("Pressable").filter((node) => node.props.accessibilityRole === "radio");
+    expect(radios.map((node) => node.props.accessibilityLabel)).toEqual([
+      "Seasonal crops",
+      "Vegetables",
+    ]);
+    await act(async () => radios[0]!.props.onPress());
+    expect(button("Continue").props.disabled).toBe(false);
+  } finally {
+    h.catalogue.categories = original;
+  }
 });

@@ -1,4 +1,5 @@
 "use client";
+import { Categories } from "./categories";
 import { ListingQueue, ListingReview } from "./listing-review";
 import { VerificationReview, verificationLabel } from "./verification-review";
 import { MoneyOperations } from "./money-operations";
@@ -21,6 +22,7 @@ const pages = [
   ["dashboard", "Dashboard", "orders.read"],
   ["verification", "Verification queue", "verification.read"],
   ["listings", "Listings queue", "catalog.manage"],
+  ["categories", "Listing categories", "catalog.manage"],
   ["orders", "Orders & escrow", "orders.read"],
   ["logistics", "Logistics & dispatch", "orders.read"],
   ["reconciliation", "Reconciliation", "payments.read"],
@@ -779,7 +781,10 @@ function Workspace({ route, title }: { route: string; title: string }) {
               </form>
             </section>
           )}
-          {!["dashboard", "reports", "settings"].includes(resource) && (
+          {resource === "categories" && can("catalog.manage") && Array.isArray(data.items) && (
+            <Categories items={data.items || []} request={api} reload={load} />
+          )}
+          {!["dashboard", "reports", "settings", "categories"].includes(resource) && (
             <section className="live-card">
               {resource === "listings" && (
                 <div className="listing-queue-heading">

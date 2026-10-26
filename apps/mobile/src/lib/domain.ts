@@ -30,6 +30,7 @@ export const safeHttps = (url: string) => {
   }
 };
 export type Listing = {
+  distanceKm?: number;
   id: string;
   title: string;
   description: string | null;

@@ -2110,3 +2110,38 @@
 .listing-queue td:nth-child(2) { min-width:150px; }
 .listing-queue td:nth-child(3) { min-width:145px; }
 .listing-queue td:nth-child(5) { min-width:125px; }
+
+.category-manager {
+  display: grid;
+  gap: 24px;
+}
+.category-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.category-fields label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+.category-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.category-manager table {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+}
+.category-manager th,
+.category-manager td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #e2ddd5;
+}
+.category-manager h2 {
+  margin-bottom: 8px;
+}
+.category-manager p {
+  margin-bottom: 20px;
+}

@@ -40,7 +40,10 @@ listingDraftRouter.get("/capabilities", (_req, res) =>
 );
 listingDraftRouter.get("/catalogue", async (req, res) => {
   const [categories, units, addresses, farmer] = await Promise.all([
-    prisma.category.findMany({ include: { translations: true }, orderBy: { sortOrder: "asc" } }),
+    prisma.category.findMany({
+      include: { translations: true },
+      orderBy: [{ sortOrder: "asc" }, { slug: "asc" }],
+    }),
     prisma.unit.findMany(),
     prisma.address.findMany({ where: { userId: req.auth!.sub, deletedAt: null } }),
     prisma.farmerProfile.findUnique({ where: { userId: req.auth!.sub } }),

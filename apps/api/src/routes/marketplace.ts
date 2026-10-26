@@ -22,7 +22,7 @@ const publicListing = {
   categoryId: true,
   shippingScope: true,
   farmerProfile: { select: { farmName: true, verificationStatus: true } },
-  locationAddress: { select: { state: true, city: true } },
+  locationAddress: { select: { state: true, city: true, lga: true } },
   media: {
     where: { status: "READY" as const, type: "IMAGE" as const },
     select: { objectKey: true },
@@ -41,14 +41,80 @@ marketplaceRouter.get("/categories", async (_req, res) =>
 );
 marketplaceRouter.get("/listings", async (req, res) => {
   const q = z
-    .object({ search: z.string().max(100).optional(), categoryId: uuid.optional() })
+    .object({
+      search: z.string().max(100).optional(),
+      categoryId: uuid.optional(),
+      state: z.string().trim().min(1).max(100).optional(),
+      lga: z.string().trim().min(1).max(100).optional(),
+      latitude: z.coerce.number().finite().min(-90).max(90).optional(),
+      longitude: z.coerce.number().finite().min(-180).max(180).optional(),
+      radiusKm: z.coerce.number().min(1).max(500).default(50),
+    })
+    .refine((q) => !q.lga || !!q.state, {
+      message: "Choose a state before a local government",
+      path: ["state"],
+    })
+    .refine((q) => (q.latitude === undefined) === (q.longitude === undefined), {
+      message: "Provide both latitude and longitude",
+      path: ["latitude"],
+    })
     .parse(req.query);
+  if (q.latitude !== undefined && q.longitude !== undefined) {
+    res.set("Cache-Control", "no-store");
+    const ranked = await prisma.$queryRaw<{ id: string; distanceKm: number }[]>(Prisma.sql`
+      SELECT id, distance AS "distanceKm" FROM (
+        SELECT l.id, l.created_at,
+          6371.0 * 2 * ASIN(SQRT(LEAST(1.0, GREATEST(0.0,
+            POWER(SIN(RADIANS(a.latitude::float8 - ${q.latitude}) / 2), 2) +
+            COS(RADIANS(${q.latitude}::float8)) * COS(RADIANS(a.latitude::float8)) *
+            POWER(SIN(RADIANS(a.longitude::float8 - ${q.longitude}) / 2), 2)
+          )))) AS distance
+        FROM listings l JOIN addresses a ON a.id = l.location_address_id
+        JOIN farmer_profiles f ON f.id = l.farmer_profile_id
+        WHERE l.status = 'ACTIVE' AND l.deleted_at IS NULL AND f.verification_status = 'APPROVED'
+          AND a.deleted_at IS NULL AND a.latitude IS NOT NULL AND a.longitude IS NOT NULL
+          AND a.latitude BETWEEN -90 AND 90 AND a.longitude BETWEEN -180 AND 180
+          ${q.categoryId ? Prisma.sql`AND l.category_id = ${q.categoryId}::uuid` : Prisma.empty}
+          ${q.state ? Prisma.sql`AND LOWER(a.state) = LOWER(${q.state})` : Prisma.empty}
+          ${q.lga ? Prisma.sql`AND LOWER(a.lga) = LOWER(${q.lga})` : Prisma.empty}
+          ${q.search ? Prisma.sql`AND (l.title ILIKE ${"%" + q.search + "%"} OR a.state ILIKE ${"%" + q.search + "%"} OR f.farm_name ILIKE ${"%" + q.search + "%"})` : Prisma.empty}
+      ) nearby WHERE distance <= ${q.radiusKm}
+      ORDER BY distance ASC, created_at DESC, id ASC LIMIT 50
+    `);
+    const records = await prisma.listing.findMany({
+      where: {
+        id: { in: ranked.map((row) => row.id) },
+        status: "ACTIVE",
+        deletedAt: null,
+        farmerProfile: { verificationStatus: "APPROVED" },
+      },
+      select: publicListing,
+    });
+    const byId = new Map(records.map((item) => [item.id, item]));
+    res.json(
+      serialize({
+        items: ranked.flatMap((row) => {
+          const item = byId.get(row.id);
+          return item ? [{ ...item, distanceKm: Math.round(row.distanceKm * 10) / 10 }] : [];
+        }),
+      }),
+    );
+    return;
+  }
   const items = await prisma.listing.findMany({
     where: {
       status: "ACTIVE",
       deletedAt: null,
       farmerProfile: { verificationStatus: "APPROVED" },
       ...(q.categoryId ? { categoryId: q.categoryId } : {}),
+      ...(q.state
+        ? {
+            locationAddress: {
+              state: { equals: q.state, mode: "insensitive" as const },
+              ...(q.lga ? { lga: { equals: q.lga, mode: "insensitive" as const } } : {}),
+            },
+          }
+        : {}),
       ...(q.search
         ? {
             OR: [

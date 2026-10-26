@@ -228,11 +228,7 @@ export function Sell() {
       setBusy(false);
     }
   };
-  const categories = [...(r.data?.categories || [])].sort((left, right) => {
-    const order = Object.keys(listingCategories);
-    const rank = (slug: string) => (order.includes(slug) ? order.indexOf(slug) : 99);
-    return rank(left.slug) - rank(right.slug);
-  });
+  const categories = r.data?.categories || [];
   return (
     <ListingPage
       step={step}

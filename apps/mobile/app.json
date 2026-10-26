@@ -12,7 +12,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Take a photo of the produce you want to list.",
         "NSPhotoLibraryUsageDescription": "Choose a photo of your produce.",
-        "NSLocationWhenInUseUsageDescription": "Use your location to help you confirm your farm\u2019s pickup point.",
+        "NSLocationWhenInUseUsageDescription": "Use your location to find nearby farmers and confirm your farm pickup point.",
         "NSMicrophoneUsageDescription": "Record a private voice note for your produce listing."
       }
     },
@@ -47,7 +47,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Use your location to help you confirm your farm\u2019s pickup point.",
+          "locationWhenInUsePermission": "Use your location to find nearby farmers and confirm your farm pickup point.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false,
           "isAndroidForegroundServiceEnabled": false,

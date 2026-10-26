@@ -63,3 +63,11 @@ describe("farm device location", () => {
     });
   });
 });
+
+it("gives buyers a manual-area fallback when location permission is denied", async () => {
+  vi.mocked(Location.requestForegroundPermissionsAsync).mockResolvedValue({
+    status: "denied",
+  } as never);
+  await expect(captureFarmPosition("buyer")).rejects.toThrow("Choose an area below");
+  expect(Location.getCurrentPositionAsync).not.toHaveBeenCalled();
+});

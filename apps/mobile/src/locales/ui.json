@@ -5724,5 +5724,131 @@
     "Rufe hotuna",
     "Mechie foto",
     "Pa àwọn fọ́tò dé"
+  ],
+  [
+    "Shop near you",
+    "Buy near you",
+    "Sayi a kusa da kai",
+    "Zụọ ihe nso gị",
+    "Ra nítòsí rẹ"
+  ],
+  [
+    "Choose an area to find produce from farmers there.",
+    "Choose area to see farmers produce for there.",
+    "Zaɓi yanki don ganin amfanin gonar manoman wurin.",
+    "Họrọ mpaghara ka ị hụ ihe ubi ndị ọrụ ugbo nọ ebe ahụ.",
+    "Yan agbègbè láti rí ohun ọ̀gbìn àwọn àgbẹ̀ níbẹ̀."
+  ],
+  [
+    "All Nigeria",
+    "All Nigeria",
+    "Duk Najeriya",
+    "Naịjirịa niile",
+    "Gbogbo Nàìjíríà"
+  ],
+  [
+    "All local governments",
+    "All local governments",
+    "Duk ƙananan hukumomi",
+    "Ọchịchị ime obodo niile",
+    "Gbogbo ìjọba ìbílẹ̀"
+  ],
+  [
+    "Local government",
+    "Local government",
+    "Ƙaramar hukuma",
+    "Ọchịchị ime obodo",
+    "Ìjọba ìbílẹ̀"
+  ],
+  [
+    "Showing farmers near your current location.",
+    "Na farmers near where you dey now.",
+    "Ana nuna manoman da ke kusa da inda kake yanzu.",
+    "A na-egosi ndị ọrụ ugbo nọ nso ebe ị nọ ugbu a.",
+    "Àwọn àgbẹ̀ nítòsí ibi tí o wà ni a ń fi hàn."
+  ],
+  [
+    "Use your device location to find nearby farmers.",
+    "Use where your phone dey to find farmers near you.",
+    "Yi amfani da wurin na’urarka don nemo manoma kusa.",
+    "Jiri ọnọdụ ngwaọrụ gị chọta ndị ọrụ ugbo nọ nso.",
+    "Lo ibi tí ẹ̀rọ rẹ wà láti wá àwọn àgbẹ̀ nítòsí."
+  ],
+  [
+    "Refresh my location",
+    "Update where I dey",
+    "Sabunta wurina",
+    "Melite ebe m nọ",
+    "Ṣe àtúnṣe ibi tí mo wà"
+  ],
+  [
+    "Search distance",
+    "How far to search",
+    "Nisan bincike",
+    "Ogologo ọchụchọ",
+    "Ìjìnnà àwárí"
+  ],
+  [
+    "Within {distance} km",
+    "Within {distance} km",
+    "Cikin kilomita {distance}",
+    "N’ime kilomita {distance}",
+    "Láàárín kìlómítà {distance}"
+  ],
+  [
+    "About {distance} km away",
+    "About {distance} km from you",
+    "Kimanin kilomita {distance} daga nan",
+    "Ihe dị ka kilomita {distance} site ebe a",
+    "Ó fẹ́rẹ̀ẹ́ jẹ́ kìlómítà {distance} síbí"
+  ],
+  [
+    "Hide area filters",
+    "Hide area filters",
+    "Ɓoye matatun yanki",
+    "Zoo nzacha mpaghara",
+    "Fi àlẹ̀mọ́ agbègbè pamọ́"
+  ],
+  [
+    "Choose a different area",
+    "Choose another area",
+    "Zaɓi wani yanki",
+    "Họrọ mpaghara ọzọ",
+    "Yan agbègbè mìíràn"
+  ],
+  [
+    "Location access was not allowed. Choose an area below or enable location in Settings.",
+    "Location no dey allowed. Choose area below or allow am for Settings.",
+    "Ba a ba da izinin wuri ba. Zaɓi yanki a ƙasa ko kunna wuri a Saituna.",
+    "Enweghị ikike ọnọdụ. Họrọ mpaghara n’okpuru ma ọ bụ kwado ọnọdụ na Ntọala.",
+    "A kò gba ààyè ibi. Yan agbègbè nísàlẹ̀ tàbí mú un ṣiṣẹ́ ní Ètò."
+  ],
+  [
+    "We couldn’t read your location. Try again outdoors or choose an area below.",
+    "We no fit find where you dey. Try outside or choose area below.",
+    "Ba mu iya gano wurinka ba. Sake gwadawa a waje ko zaɓi yanki a ƙasa.",
+    "Anyị enweghị ike ịchọta ebe ị nọ. Gbalịa n’èzí ma ọ bụ họrọ mpaghara n’okpuru.",
+    "A kò lè rí ibi tí o wà. Gbìyànjú níta tàbí yan agbègbè nísàlẹ̀."
+  ],
+  [
+    "We couldn’t find your location in time. Try again or choose an area below.",
+    "We no fit find your location in time. Try again or choose area below.",
+    "Ba mu gano wurinka cikin lokaci ba. Sake gwadawa ko zaɓi yanki a ƙasa.",
+    "Anyị achọtaghị ọnọdụ gị n’oge. Gbalịa ọzọ ma ọ bụ họrọ mpaghara n’okpuru.",
+    "A kò rí ibi rẹ lásìkò. Gbìyànjú tàbí yan agbègbè nísàlẹ̀."
+  ],
+  [
+    "Your location could not be confirmed. Try again or choose an area below.",
+    "We no fit confirm where you dey. Try again or choose area below.",
+    "Ba a tabbatar da wurinka ba. Sake gwadawa ko zaɓi yanki a ƙasa.",
+    "Enweghị ike ikwenye ọnọdụ gị. Gbalịa ọzọ ma ọ bụ họrọ mpaghara n’okpuru.",
+    "A kò lè jẹ́rìí ibi rẹ. Gbìyànjú tàbí yan agbègbè nísàlẹ̀."
+  ],
+  [
+    "No produce found within this distance. Try a wider distance or choose another area.",
+    "No produce for this distance. Search further or choose another area.",
+    "Ba a sami amfanin gona cikin wannan nisan ba. Ƙara nisa ko zaɓi wani yanki.",
+    "Achọtaghị ihe ubi n’ogologo a. Mee ka ogologo bawanye ma ọ bụ họrọ mpaghara ọzọ.",
+    "A kò rí ohun ọ̀gbìn ní ìjìnnà yìí. Fi ìjìnnà kún un tàbí yan agbègbè mìíràn."
   ]
 ]

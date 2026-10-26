@@ -44,6 +44,96 @@ operationsRouter.get("/dashboard", requirePermission("orders.read"), async (_req
   ]);
   res.json(json({ users, listings, orders, verifications, tickets, escrow: escrow._sum }));
 });
+const categoryBody = z
+  .object({
+    slug: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    isActive: z.boolean(),
+    sortOrder: z.number().int().min(0).max(10000),
+    translations: z
+      .array(
+        z
+          .object({
+            locale: z.enum(["en", "pcm", "ha", "ig", "yo"]),
+            name: z.string().trim().min(1).max(120),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5),
+  })
+  .strict()
+  .superRefine((body, ctx) => {
+    if (!body.translations.some((t) => t.locale === "en"))
+      ctx.addIssue({
+        code: "custom",
+        path: ["translations"],
+        message: "An English category name is required",
+      });
+    if (new Set(body.translations.map((t) => t.locale)).size !== body.translations.length)
+      ctx.addIssue({
+        code: "custom",
+        path: ["translations"],
+        message: "Each language may appear only once",
+      });
+  });
+operationsRouter.get("/categories", requirePermission("catalog.manage"), async (_req, res) => {
+  const items = await prisma.category.findMany({
+    include: { translations: true, _count: { select: { listings: true } } },
+    orderBy: [{ sortOrder: "asc" }, { slug: "asc" }],
+  });
+  res.json({ items, total: items.length });
+});
+operationsRouter.post("/categories", requirePermission("catalog.manage"), async (req, res) => {
+  const { translations, ...fields } = categoryBody.parse(req.body);
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.category.create({
+      data: { ...fields, translations: { create: translations } },
+      include: { translations: true },
+    });
+    await audit(
+      req,
+      { action: "category.created", entityType: "category", entityId: created.id, after: created },
+      tx,
+    );
+    return created;
+  });
+  res.status(201).json({ item });
+});
+operationsRouter.patch("/categories/:id", requirePermission("catalog.manage"), async (req, res) => {
+  const categoryId = id.parse(req.params.id);
+  const { translations, ...fields } = categoryBody.parse(req.body);
+  const item = await prisma.$transaction(async (tx) => {
+    const before = await tx.category.findUnique({
+      where: { id: categoryId },
+      include: { translations: true },
+    });
+    if (!before) throw new AppError(404, "CATEGORY_NOT_FOUND", "Category was not found");
+    const updated = await tx.category.update({
+      where: { id: categoryId },
+      data: { ...fields, translations: { deleteMany: {}, create: translations } },
+      include: { translations: true },
+    });
+    await audit(
+      req,
+      {
+        action: "category.updated",
+        entityType: "category",
+        entityId: categoryId,
+        before,
+        after: updated,
+      },
+      tx,
+    );
+    return updated;
+  });
+  res.json({ item });
+});
+
 // Resource queues are paginated in the database. No sample records are returned.
 const resources = {
   users: {

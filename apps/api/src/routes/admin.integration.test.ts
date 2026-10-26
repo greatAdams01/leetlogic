@@ -641,6 +641,133 @@ integration("admin PostgreSQL and Redis workflows", () => {
         .reservedMinor,
     ).toBe(0n);
   });
+  it("filters public produce by state and local government without requiring login", async () => {
+    const listing = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    const path = `/v1/marketplace/listings?categoryId=${listing.categoryId}`;
+    const nearby = await request(app).get(`${path}&state=lagos&lga=ikeja`);
+    expect(nearby.status).toBe(200);
+    expect(nearby.body.items.some((item: any) => item.id === listingId)).toBe(true);
+    expect(nearby.body.items.find((item: any) => item.id === listingId).locationAddress.lga).toBe(
+      "Ikeja",
+    );
+    const elsewhere = await request(app).get(`${path}&state=Abia`);
+    expect(elsewhere.body.items.some((item: any) => item.id === listingId)).toBe(false);
+    const otherLga = await request(app).get(`${path}&state=Lagos&lga=Epe`);
+    expect(otherLga.body.items.some((item: any) => item.id === listingId)).toBe(false);
+    expect((await request(app).get(`${path}&lga=Ikeja`)).status).toBe(422);
+  });
+  it("finds pinned farms within the buyer's radius and ranks by distance", async () => {
+    const source = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    const marker = `nearby-${randomUUID()}`;
+    const add = async (latitude: number | null, status: "ACTIVE" | "PAUSED" = "ACTIVE") => {
+      const address = await prisma.address.create({
+        data: {
+          userId: sellerId,
+          state: "Lagos",
+          city: "Lagos",
+          lga: "Ikeja",
+          line1: "GPS test farm",
+          latitude,
+          longitude: latitude === null ? null : 3.37,
+        },
+      });
+      return prisma.listing.create({
+        data: {
+          farmerProfileId: farmerId,
+          categoryId: source.categoryId,
+          unitCode: source.unitCode,
+          locationAddressId: address.id,
+          title: marker,
+          availableQuantity: "5",
+          unitPriceMinor: 10000n,
+          shippingScope: "LOCAL",
+          status,
+        },
+      });
+    };
+    const nearest = await add(6.52);
+    const nearby = await add(6.54);
+    const far = await add(7.52);
+    await add(null);
+    await add(6.52, "PAUSED");
+    const path = `/v1/marketplace/listings?search=${marker}&latitude=6.52&longitude=3.37`;
+    const result = await request(app).get(`${path}&radiusKm=5`);
+    expect(result.status, JSON.stringify(result.body)).toBe(200);
+    expect(result.body.items.map((row: any) => row.id)).toEqual([nearest.id, nearby.id]);
+    expect(result.body.items[0].distanceKm).toBe(0);
+    expect(result.body.items[1].distanceKm).toBeGreaterThan(2);
+    expect(result.body.items[0].locationAddress).not.toHaveProperty("latitude");
+    const wider = await request(app).get(`${path}&radiusKm=200`);
+    expect(wider.body.items.map((row: any) => row.id)).toEqual([nearest.id, nearby.id, far.id]);
+    expect((await request(app).get(`${path}&radiusKm=501`)).status).toBe(422);
+    expect((await request(app).get("/v1/marketplace/listings?latitude=6.52")).status).toBe(422);
+    expect(
+      (await request(app).get("/v1/marketplace/listings?latitude=91&longitude=3")).status,
+    ).toBe(422);
+  });
+  it("manages category names, order and availability with catalog permission and audit history", async () => {
+    const body = {
+      slug: `produce-${randomUUID()}`,
+      sortOrder: 15,
+      isActive: true,
+      translations: [
+        { locale: "en", name: "Seasonal produce" },
+        { locale: "ig", name: "Ihe ubi" },
+      ],
+    };
+    expect((await request(app).post("/v1/admin/categories").send(body)).status).toBe(401);
+    const created = await request(app).post("/v1/admin/categories").set(auth()).send(body);
+    expect(created.status).toBe(201);
+    const categoryId = created.body.item.id;
+    expect((await request(app).post("/v1/admin/categories").set(auth()).send(body)).status).toBe(
+      409,
+    );
+    expect(
+      (
+        await request(app)
+          .patch(`/v1/admin/categories/${categoryId}`)
+          .set(auth())
+          .send({ ...body, translations: [{ locale: "ig", name: "Ihe ubi" }] })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await request(app)
+          .patch(`/v1/admin/categories/${categoryId}`)
+          .set(auth())
+          .send({ ...body, translations: [body.translations[0], body.translations[0]] })
+      ).status,
+    ).toBe(422);
+    const updated = await request(app)
+      .patch(`/v1/admin/categories/${categoryId}`)
+      .set(auth())
+      .send({
+        ...body,
+        isActive: false,
+        sortOrder: 2,
+        translations: [{ locale: "en", name: "Seasonal crops" }],
+      });
+    expect(updated.status).toBe(200);
+    expect(updated.body.item.translations).toHaveLength(1);
+    const catalogue = await request(app).get("/v1/marketplace/categories");
+    expect(catalogue.body.items.some((item: any) => item.id === categoryId)).toBe(false);
+    const staffList = await request(app).get("/v1/admin/categories").set(auth());
+    expect(staffList.body.items.find((item: any) => item.id === categoryId)).toMatchObject({
+      isActive: false,
+      sortOrder: 2,
+    });
+    expect(await prisma.auditLog.count({ where: { entityId: categoryId } })).toBe(2);
+    const grant = await prisma.permission.findUniqueOrThrow({ where: { code: "catalog.manage" } });
+    await prisma.rolePermission.delete({
+      where: { roleId_permissionId: { roleId, permissionId: grant.id } },
+    });
+    expect((await request(app).get("/v1/admin/categories").set(auth())).status).toBe(403);
+    expect(
+      (await request(app).patch(`/v1/admin/categories/${categoryId}`).set(auth()).send(body))
+        .status,
+    ).toBe(403);
+    await prisma.rolePermission.create({ data: { roleId, permissionId: grant.id } });
+  });
   it("enforces changed grants and revokes access on logout", async () => {
     const grant = await prisma.permission.findUniqueOrThrow({ where: { code: "content.manage" } });
     await prisma.rolePermission.delete({

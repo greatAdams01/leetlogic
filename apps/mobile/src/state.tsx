@@ -276,7 +276,9 @@ export function useResource<T>(path: string, enabled = true) {
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
+  const request = useRef(0);
   const reload = useCallback(async () => {
+    const current = ++request.current;
     if (!enabled) {
       setData(null);
       setError("");
@@ -286,15 +288,19 @@ export function useResource<T>(path: string, enabled = true) {
     setLoading(true);
     setError("");
     try {
-      setData(await api<T>(path));
+      const result = await api<T>(path);
+      if (request.current === current) setData(result);
     } catch (e) {
-      setError(localizedError(locale, e));
+      if (request.current === current) setError(localizedError(locale, e));
     } finally {
-      setLoading(false);
+      if (request.current === current) setLoading(false);
     }
   }, [path, locale, enabled]);
   useEffect(() => {
     void reload();
+    return () => {
+      request.current++;
+    };
   }, [reload]);
   return { data, error, loading, reload };
 }
