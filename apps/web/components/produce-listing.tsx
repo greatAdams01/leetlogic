@@ -53,6 +53,15 @@ export function ProduceListing() {
         addressId: f.get("addressId"),
         sourceLocale: locale,
         unitPriceMinor,
+        packaging: {
+          unitsPerPackage: Number(f.get("unitsPerPackage")),
+          weightKg: Number(f.get("weightKg")),
+          length: Number(f.get("length")),
+          width: Number(f.get("width")),
+          height: Number(f.get("height")),
+          handling: f.get("handling"),
+          notes: String(f.get("notes") || ""),
+        },
         ...(photo ? { photoId: photo.id } : {}),
       });
       setDraft(result);
@@ -140,6 +149,31 @@ export function ProduceListing() {
                   ))}
                 </select>
               </label>
+              <fieldset>
+                <legend>{t("sell.packing")}</legend>
+                <p>{t("sell.packingIntro")}</p>
+                {(["unitsPerPackage", "weightKg", "length", "width", "height"] as const).map(
+                  (key) => (
+                    <label key={key}>
+                      {t(`sell.${key}`)}
+                      <input name={key} type="number" min="0.001" step="0.001" required />
+                    </label>
+                  ),
+                )}
+                <label>
+                  {t("sell.handling")}
+                  <select name="handling">
+                    <option value="STANDARD">{t("delivery.handling.STANDARD")}</option>
+                    <option value="PERISHABLE">{t("delivery.handling.PERISHABLE")}</option>
+                    <option value="COLD_CHAIN">{t("delivery.handling.COLD_CHAIN")}</option>
+                    <option value="BULK">{t("delivery.handling.BULK")}</option>
+                  </select>
+                </label>
+                <label>
+                  {t("delivery.instructions")}
+                  <textarea name="notes" maxLength={500} />
+                </label>
+              </fieldset>
               <label>
                 {t("sell.photo")}
                 <input
@@ -193,6 +227,17 @@ export function ProduceListing() {
                   </div>
                 ))}
               </dl>
+              {draft.fields.packaging && (
+                <section>
+                  <h3>{t("sell.packing")}</h3>
+                  <p>
+                    {draft.fields.packaging.unitsPerPackage} · {draft.fields.packaging.weightKg} kg
+                    · {draft.fields.packaging.length} × {draft.fields.packaging.width} ×{" "}
+                    {draft.fields.packaging.height} cm
+                  </p>
+                  <p>{draft.fields.packaging.notes}</p>
+                </section>
+              )}
               <label>
                 <input
                   type="checkbox"

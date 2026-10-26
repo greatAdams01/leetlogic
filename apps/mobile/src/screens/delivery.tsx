@@ -440,6 +440,14 @@ export function Quotes() {
               }
               if (!Number.isInteger(Number(parcel.packageCount)))
                 throw new Error("The number of parcels must be a whole number.");
+              if (
+                Math.max(Number(parcel.length), Number(parcel.width), Number(parcel.height)) >
+                  1000 ||
+                Number(parcel.weightKg) > 1_000_000
+              )
+                throw new Error(
+                  "Use positive measurements: dimensions up to 1,000 cm and weight up to 1,000,000 kg.",
+                );
               const p = r.data!.order.suggestedPickup;
               await api(`/orders/${a.route.id}/delivery/quotes`, {
                 method: "POST",

@@ -8,6 +8,20 @@ export const languageNames: Record<Locale, string> = {
   yo: "Yorùbá",
 };
 export const en = {
+  "delivery.handling.STANDARD": "Standard",
+  "delivery.handling.PERISHABLE": "Perishable",
+  "delivery.handling.COLD_CHAIN": "Cold chain",
+  "delivery.handling.BULK": "Bulk",
+
+  "sell.packing": "Packing and handling",
+  "sell.packingIntro": "Describe one fully packed box, bag or basket, including its packaging.",
+  "sell.unitsPerPackage": "Units in one package",
+  "sell.weightKg": "Packed weight (kg)",
+  "sell.length": "Package length (cm)",
+  "sell.width": "Package width (cm)",
+  "sell.height": "Package height (cm)",
+  "sell.handling": "Required handling",
+
   "delivery.parcelCount": "Final parcel count",
   "delivery.instructions": "Handling instructions",
   "delivery.packingEstimate": "Farmer’s packing estimate",
@@ -105,6 +119,20 @@ export const en = {
 } as const;
 export type MessageKey = keyof typeof en;
 const pcm: Partial<Record<MessageKey, string>> = {
+  "delivery.handling.STANDARD": "Standard",
+  "delivery.handling.PERISHABLE": "Produce wey fit spoil",
+  "delivery.handling.COLD_CHAIN": "Cold delivery",
+  "delivery.handling.BULK": "Bulk load",
+
+  "sell.packing": "Packing and how to handle am",
+  "sell.packingIntro": "Describe one full box, bag or basket with the packing.",
+  "sell.unitsPerPackage": "How many units inside one package",
+  "sell.weightKg": "Weight with packing (kg)",
+  "sell.length": "Package length (cm)",
+  "sell.width": "Package width (cm)",
+  "sell.height": "Package height (cm)",
+  "sell.handling": "How dem must handle am",
+
   "delivery.parcelCount": "Final number of packages",
   "delivery.instructions": "How to handle am",
   "delivery.packingEstimate": "Farmer packing estimate",
@@ -142,6 +170,20 @@ const pcm: Partial<Record<MessageKey, string>> = {
   "status.CANCELLED": "Cancelled",
 };
 const ha: Partial<Record<MessageKey, string>> = {
+  "delivery.handling.STANDARD": "Na yau da kullum",
+  "delivery.handling.PERISHABLE": "Mai saurin lalacewa",
+  "delivery.handling.COLD_CHAIN": "Jigilar sanyi",
+  "delivery.handling.BULK": "Babban kaya",
+
+  "sell.packing": "Shiryawa da kulawa",
+  "sell.packingIntro": "Bayyana akwati, buhu ko kwando ɗaya da aka cika tare da marufinsa.",
+  "sell.unitsPerPackage": "Adadin raka’a a kunshi ɗaya",
+  "sell.weightKg": "Nauyi tare da marufi (kg)",
+  "sell.length": "Tsawon kunshi (cm)",
+  "sell.width": "Faɗin kunshi (cm)",
+  "sell.height": "Tsayin kunshi (cm)",
+  "sell.handling": "Kulawar da ake buƙata",
+
   "delivery.parcelCount": "Adadin kunshi na ƙarshe",
   "delivery.instructions": "Umarnin kulawa",
   "delivery.packingEstimate": "Ƙiyasin kunshin manomi",
@@ -184,6 +226,20 @@ const ha: Partial<Record<MessageKey, string>> = {
   "status.CANCELLED": "An soke",
 };
 const ig: Partial<Record<MessageKey, string>> = {
+  "delivery.handling.STANDARD": "Nke nkịtị",
+  "delivery.handling.PERISHABLE": "Ihe na-emebi ngwa ngwa",
+  "delivery.handling.COLD_CHAIN": "Nnyefe oyi",
+  "delivery.handling.BULK": "Nnukwu ibu",
+
+  "sell.packing": "Nkwakọ na nlekọta",
+  "sell.packingIntro": "Kọwaa otu igbe, akpa ma ọ bụ nkata juru eju tinyere ihe e ji kwakọta ya.",
+  "sell.unitsPerPackage": "Nkeji dị n’otu ngwugwu",
+  "sell.weightKg": "Ibu tinyere nkwakọ (kg)",
+  "sell.length": "Ogologo ngwugwu (cm)",
+  "sell.width": "Obosara ngwugwu (cm)",
+  "sell.height": "Ịdị elu ngwugwu (cm)",
+  "sell.handling": "Nlekọta achọrọ",
+
   "delivery.parcelCount": "Ọnụọgụ ngwugwu ikpeazụ",
   "delivery.instructions": "Ntuziaka nlekọta",
   "delivery.packingEstimate": "Atụmatụ nkwakọ onye ọrụ ugbo",
@@ -226,6 +282,20 @@ const ig: Partial<Record<MessageKey, string>> = {
   "status.CANCELLED": "Akagbuola",
 };
 const yo: Partial<Record<MessageKey, string>> = {
+  "delivery.handling.STANDARD": "Ìtọ́jú déédéé",
+  "delivery.handling.PERISHABLE": "Ohun tó lè bàjẹ́",
+  "delivery.handling.COLD_CHAIN": "Ìfijiṣẹ́ tútù",
+  "delivery.handling.BULK": "Ẹrù púpọ̀",
+
+  "sell.packing": "Ìdìpọ̀ àti ìtọ́jú",
+  "sell.packingIntro": "Ṣàpèjúwe àpótí, àpò tàbí apẹ̀rẹ̀ kan tó kún pẹ̀lú ohun ìdìpọ̀ rẹ̀.",
+  "sell.unitsPerPackage": "Iye ẹyọ inú ìdìpọ̀ kan",
+  "sell.weightKg": "Ìwọ̀n pẹ̀lú ìdìpọ̀ (kg)",
+  "sell.length": "Gígùn ìdìpọ̀ (cm)",
+  "sell.width": "Fífẹ̀ ìdìpọ̀ (cm)",
+  "sell.height": "Gíga ìdìpọ̀ (cm)",
+  "sell.handling": "Ìtọ́jú tí a nílò",
+
   "delivery.parcelCount": "Iye ìdìpọ̀ ìkẹyìn",
   "delivery.instructions": "Ìtọ́ni ìtọ́jú",
   "delivery.packingEstimate": "Ìṣírò ìdìpọ̀ àgbẹ̀",

@@ -1,5 +1,5 @@
 import { PackingFieldsForm } from "../components/packing-fields";
-import { emptyPacking } from "../lib/packaging";
+import { emptyPacking, packingError } from "../lib/packaging";
 import { ListingVoiceNote } from "../components/listing-voice-note";
 import { AppSheet } from "../components/app-sheet";
 import { Select } from "../components/Select";
@@ -725,6 +725,7 @@ export function Review() {
               !form ||
               !canSubmit ||
               !form.photos.length ||
+              !!packingError(form.packaging) ||
               !!r.data?.listingId
             }
             icon="listingSubmit"
@@ -744,6 +745,9 @@ export function Review() {
         <Text style={listingStyles.title}>Check this.</Text>
         <Label muted>Review your produce details before submitting.</Label>
       </View>
+      {form && packingError(form.packaging) && (
+        <Notice text="Add the packed weight, dimensions and handling before submitting this listing." />
+      )}
       <View style={{ gap: 8 }}>
         <Label style={{ fontFamily: "NotoBold" }}>Uploaded photos</Label>
         {image}

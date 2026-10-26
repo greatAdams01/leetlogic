@@ -74,6 +74,16 @@ Integration commands require local PostgreSQL/Redis and create isolated integrat
 
 Before live use, obtain Bachs approval for platform collection and delayed farmer settlement, verify production capability/fee/refund rules, confirm courier commodities/routes, provision reconciliation/incident ownership, then explicitly enable live collection and money switches. This implementation does not assert regulated escrow custody or declare the provider pilot complete.
 
+## Listing packing and buyer delivery review
+
+New listing submissions require the number of selling units in one package, its packed weight in kilograms, dimensions in centimetres, handling and optional instructions. Weight includes the packaging. Existing drafts remain editable; add these details before submitting them.
+
+An order snapshots the listing's packing data. Its estimate rounds package count up and includes the full weight of a partly filled final package. For several packages, buyers must enter the actual packed dimensions; dimensions are never multiplied to invent a combined box. Buyers can edit package count, weight, dimensions and instructions before requesting a quote, but cannot remove required handling. Saved buyer measurements take precedence when reopening delivery review.
+
+Only eligible single standard parcels receive automatic courier quotes. Multiple parcels, oversized packages and special handling go to staff review. Changing a delivery request invalidates its old quotes and clears any selected shipping charge. Payment locks prevent later edits. Shipping remains separate from produce value and escrow release.
+
+Apply migration `20261028140000_listing_packaging` before deploying. Legacy listings without measurements require buyer confirmation; new orders record when source measurements were unavailable so later listing edits do not silently change their estimate.
+
 ## Provider references
 
 - [Bachs separate charges and transfers](https://docs.bachs.io/connect/split-payments/separate-transfers)

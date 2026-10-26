@@ -168,6 +168,12 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         "PACKED_WEIGHT_TOO_LOW",
         "Packed weight must include the produce weight and its packaging.",
       );
+    if (!body.packaging)
+      throw new AppError(
+        422,
+        "PACKING_REQUIRED",
+        "Add the packed weight, dimensions and handling before submitting this listing.",
+      );
     const photoIds = body.photoIds ?? (body.photoId ? [body.photoId] : []);
     if (!photoIds.length)
       throw new AppError(

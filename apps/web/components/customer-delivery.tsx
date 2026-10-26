@@ -219,10 +219,10 @@ export function CustomerDelivery({
             <label>
               {t("delivery.handling")}
               <select name="handling" defaultValue={packing?.handling || "STANDARD"}>
-                <option value="STANDARD">Standard parcel</option>
-                <option value="PERISHABLE">Perishable produce</option>
-                <option value="COLD_CHAIN">Cold chain</option>
-                <option value="BULK">Bulk load</option>
+                <option value="STANDARD">{t("delivery.handling.STANDARD")}</option>
+                <option value="PERISHABLE">{t("delivery.handling.PERISHABLE")}</option>
+                <option value="COLD_CHAIN">{t("delivery.handling.COLD_CHAIN")}</option>
+                <option value="BULK">{t("delivery.handling.BULK")}</option>
               </select>
             </label>
             <label>

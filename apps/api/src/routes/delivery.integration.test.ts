@@ -909,6 +909,15 @@ suite("delivery and language database workflows", () => {
       .post("/v1/listing-drafts")
       .set({ Authorization: `Bearer ${seller}` })
       .send({
+        packaging: {
+          unitsPerPackage: 1,
+          weightKg: 2,
+          length: 40,
+          width: 30,
+          height: 25,
+          handling: "STANDARD",
+          notes: "Keep dry",
+        },
         title: "Beans",
         description: "Dry beans",
         quantity: "2",
@@ -979,6 +988,15 @@ suite("delivery and language database workflows", () => {
       },
     });
     const fields = {
+      packaging: {
+        unitsPerPackage: 1,
+        weightKg: 2,
+        length: 40,
+        width: 30,
+        height: 25,
+        handling: "PERISHABLE",
+        notes: "Keep upright",
+      },
       title: "Fresh tomatoes",
       description: "Harvested this morning",
       sourceLocale: "en",
@@ -995,6 +1013,11 @@ suite("delivery and language database workflows", () => {
     const submit = () =>
       request(app).post(`${path}/submit`).set(sellerAuth).send({ confirmed: true });
     expect((await submit()).body.error.code).toBe("WHOLE_UNIT_REQUIRED");
+    await request(app)
+      .patch(path)
+      .set(sellerAuth)
+      .send({ ...fields, quantity: "2", packaging: undefined });
+    expect((await submit()).body.error.code).toBe("PACKING_REQUIRED");
     await request(app)
       .patch(path)
       .set(sellerAuth)
@@ -1229,6 +1252,15 @@ suite("delivery and language database workflows", () => {
     });
     const fields = {
       photoIds: [photo.id],
+      packaging: {
+        unitsPerPackage: 1,
+        weightKg: 2,
+        length: 40,
+        width: 30,
+        height: 25,
+        handling: "STANDARD",
+        notes: "Keep dry",
+      },
       title: "Saved beans",
       description: "",
       sourceLocale: "en",
