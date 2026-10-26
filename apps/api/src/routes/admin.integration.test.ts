@@ -188,6 +188,20 @@ integration("admin PostgreSQL and Redis workflows", () => {
       expect((await request(app).get(`/v1/admin/${path}`).set(auth())).status, path).toBe(200);
     }
   });
+  it("provides listing review context without losing authenticated queue access", async () => {
+    const result = await request(app)
+      .get("/v1/admin/listings?search=Integration%20Tomatoes")
+      .set(auth());
+    expect(result.status).toBe(200);
+    const listing = result.body.items.find((item: { id: string }) => item.id === listingId);
+    expect(listing).toBeDefined();
+    expect(listing.unit.name).toBe("Kilogram");
+    expect(listing.locationAddress.line1).toBe("Test farm");
+    expect(listing.locationAddress.state).toBe("Lagos");
+    expect(listing.category.translations).toEqual(expect.any(Array));
+    expect(listing.media).toEqual(expect.any(Array));
+    expect(listing.farmerProfile.verificationStatus).toBe("APPROVED");
+  });
   it("consumes account setup links once and enrolls authenticators", async () => {
     const invited = await prisma.adminAccount.create({
       data: { email: `setup-${randomUUID()}@example.test`, fullName: "Invited Test" },

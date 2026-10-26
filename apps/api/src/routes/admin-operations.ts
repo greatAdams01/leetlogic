@@ -56,8 +56,10 @@ const resources = {
     delegate: prisma.listing,
     include: {
       farmerProfile: { include: { user: { include: { profile: true } } } },
-      category: true,
-      media: true,
+      category: { include: { translations: true } },
+      unit: true,
+      locationAddress: true,
+      media: { orderBy: { displayOrder: "asc" } },
     },
   },
   orders: {
@@ -663,7 +665,12 @@ operationsRouter.post(
         return previous;
       }
       const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
-      if (order.fundsProvider === "bachs") throw new AppError(409,"PROVIDER_PAYMENT_REQUIRED","Use the provider payment controls for this order.");
+      if (order.fundsProvider === "bachs")
+        throw new AppError(
+          409,
+          "PROVIDER_PAYMENT_REQUIRED",
+          "Use the provider payment controls for this order.",
+        );
       const delivery = await tx.delivery.findUnique({ where: { orderId } });
       if (body.kind === "FUND" && delivery && delivery.status !== "MANUAL_REVIEW") {
         const quote = delivery.selectedQuoteId
@@ -866,7 +873,16 @@ operationsRouter.post(
         accountLastFour: z.string().regex(/^\d{4}$/),
       })
       .parse(req.body);
-    if(await prisma.tradeOrder.count({where:{farmerProfileId:body.farmerProfileId,fundsProvider:"bachs"}}))throw new AppError(409,"PROVIDER_PAYMENT_REQUIRED","Use provider withdrawals for this farmer.");
+    if (
+      await prisma.tradeOrder.count({
+        where: { farmerProfileId: body.farmerProfileId, fundsProvider: "bachs" },
+      })
+    )
+      throw new AppError(
+        409,
+        "PROVIDER_PAYMENT_REQUIRED",
+        "Use provider withdrawals for this farmer.",
+      );
     const item = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "farmerProfileId" FROM farmer_wallets WHERE "farmerProfileId" = ${body.farmerProfileId}::uuid FOR UPDATE`;
       const wallet = await tx.farmerWallet.findUniqueOrThrow({

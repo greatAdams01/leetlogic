@@ -1,4 +1,5 @@
 "use client";
+import { ListingQueue, ListingReview } from "./listing-review";
 import { VerificationReview, verificationLabel } from "./verification-review";
 import { MoneyOperations } from "./money-operations";
 import { CustomerDelivery } from "../customer-delivery";
@@ -387,6 +388,13 @@ function Workspace({ route, title }: { route: string; title: string }) {
     extra?: Row;
   }>();
   const dialog = useRef<HTMLDialogElement>(null);
+  const reviewPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (resource === "listings" && selected) {
+      reviewPanel.current?.focus({ preventScroll: true });
+      reviewPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [resource, selected?.id]);
   const can = (permission: string) => staff?.permissions.includes(permission);
   const load = useCallback(async () => {
     setBusy(true);
@@ -773,6 +781,15 @@ function Workspace({ route, title }: { route: string; title: string }) {
           )}
           {!["dashboard", "reports", "settings"].includes(resource) && (
             <section className="live-card">
+              {resource === "listings" && (
+                <div className="listing-queue-heading">
+                  <div>
+                    <h2>Produce listings</h2>
+                    <p>Review produce photos, stock and farmer details before publishing.</p>
+                  </div>
+                  <span>{data.total ?? 0} matching listings</span>
+                </div>
+              )}
               <form
                 className="live-search"
                 onSubmit={(event) => {
@@ -782,10 +799,12 @@ function Workspace({ route, title }: { route: string; title: string }) {
                 }}
               >
                 <input
-                  aria-label="Search records"
+                  aria-label={resource === "listings" ? "Search produce titles" : "Search records"}
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search records…"
+                  placeholder={
+                    resource === "listings" ? "Search produce titles…" : "Search records…"
+                  }
                 />
                 {statuses[resource] && (
                   <select
@@ -799,97 +818,108 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     <option value="ALL">All statuses</option>
                     {statuses[resource]!.map((value) => (
                       <option key={value} value={value}>
-                        {resource === "verification" ? verificationLabel(value) : value}
+                        {["verification", "listings"].includes(resource)
+                          ? verificationLabel(value)
+                          : value}
                       </option>
                     ))}
                   </select>
                 )}
                 <button className="secondary">Search</button>
               </form>
-              <div className="live-table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{resource === "verification" ? "Farm / applicant" : "Record"}</th>
-                      <th>
-                        {resource === "verification" ? "Application status" : "Status / action"}
-                      </th>
-                      <th>{resource === "verification" ? "Farm details" : "Details"}</th>
-                      <th>{resource === "verification" ? "Submitted" : "Created"}</th>
-                      <th>Review</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((row) => (
-                      <tr key={row.id}>
-                        <td>
-                          <strong>{rowLabel(row)}</strong>
-                          <small>
-                            {resource === "verification"
-                              ? [
-                                  row.farmerProfile?.user?.profile?.fullName ||
-                                    row.farmerProfile?.user?.profile?.displayName,
-                                  row.farmerProfile?.user?.phoneE164,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ") || "Applicant details not provided"
-                              : row.email || row.phoneE164 || row.id}
-                          </small>
-                        </td>
-                        <td>
-                          <span className="live-badge">
-                            {(resource === "verification"
-                              ? verificationLabel(row.status)
-                              : row.status) ||
-                              row.action ||
-                              (row.balanced === undefined
-                                ? "—"
-                                : row.balanced
-                                  ? "Balanced"
-                                  : "Mismatch")}
-                          </span>
-                        </td>
-                        <td>
-                          {resource === "verification" ? (
-                            <>
-                              {row.farmerProfile?.farmType || "Farmer type not provided"}
-                              <small>
-                                {row._count?.documents || 0} documents · {row._count?.evidence || 0}{" "}
-                                evidence entries
-                              </small>
-                            </>
-                          ) : row.totalMinor ? (
-                            money(row.totalMinor)
-                          ) : row.amountMinor ? (
-                            money(row.amountMinor)
-                          ) : (
-                            row.locale ||
-                            row.priority ||
-                            row.severity ||
-                            row.roleCode ||
-                            row.farmerProfile?.user?.profile?.fullName ||
-                            "—"
-                          )}
-                        </td>
-                        <td>
-                          {resource === "verification"
-                            ? row.submittedAt
-                              ? new Date(row.submittedAt).toLocaleString()
-                              : "Not submitted"
-                            : row.createdAt
-                              ? new Date(row.createdAt).toLocaleString()
-                              : "—"}
-                        </td>
-                        <td>
-                          <button className="secondary" onClick={() => void review(row)}>
-                            Review →
-                          </button>
-                        </td>
+              {resource === "listings" ? (
+                <ListingQueue
+                  items={items}
+                  busy={busy}
+                  selectedId={selected?.id}
+                  onReview={(row) => void review(row)}
+                />
+              ) : (
+                <div className="live-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{resource === "verification" ? "Farm / applicant" : "Record"}</th>
+                        <th>
+                          {resource === "verification" ? "Application status" : "Status / action"}
+                        </th>
+                        <th>{resource === "verification" ? "Farm details" : "Details"}</th>
+                        <th>{resource === "verification" ? "Submitted" : "Created"}</th>
+                        <th>Review</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {items.map((row) => (
+                        <tr key={row.id}>
+                          <td>
+                            <strong>{rowLabel(row)}</strong>
+                            <small>
+                              {resource === "verification"
+                                ? [
+                                    row.farmerProfile?.user?.profile?.fullName ||
+                                      row.farmerProfile?.user?.profile?.displayName,
+                                    row.farmerProfile?.user?.phoneE164,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ") || "Applicant details not provided"
+                                : row.email || row.phoneE164 || row.id}
+                            </small>
+                          </td>
+                          <td>
+                            <span className="live-badge">
+                              {(resource === "verification"
+                                ? verificationLabel(row.status)
+                                : row.status) ||
+                                row.action ||
+                                (row.balanced === undefined
+                                  ? "—"
+                                  : row.balanced
+                                    ? "Balanced"
+                                    : "Mismatch")}
+                            </span>
+                          </td>
+                          <td>
+                            {resource === "verification" ? (
+                              <>
+                                {row.farmerProfile?.farmType || "Farmer type not provided"}
+                                <small>
+                                  {row._count?.documents || 0} documents ·{" "}
+                                  {row._count?.evidence || 0} evidence entries
+                                </small>
+                              </>
+                            ) : row.totalMinor ? (
+                              money(row.totalMinor)
+                            ) : row.amountMinor ? (
+                              money(row.amountMinor)
+                            ) : (
+                              row.locale ||
+                              row.priority ||
+                              row.severity ||
+                              row.roleCode ||
+                              row.farmerProfile?.user?.profile?.fullName ||
+                              "—"
+                            )}
+                          </td>
+                          <td>
+                            {resource === "verification"
+                              ? row.submittedAt
+                                ? new Date(row.submittedAt).toLocaleString()
+                                : "Not submitted"
+                              : row.createdAt
+                                ? new Date(row.createdAt).toLocaleString()
+                                : "—"}
+                          </td>
+                          <td>
+                            <button className="secondary" onClick={() => void review(row)}>
+                              Review →
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               {!busy && !items.length && (
                 <div className="live-empty">
                   <h2>{query ? "No matching records" : "No records yet"}</h2>
@@ -922,12 +952,15 @@ function Workspace({ route, title }: { route: string; title: string }) {
             </section>
           )}
           {selected && (
-            <section className="live-card live-detail">
+            <section className="live-card live-detail" ref={reviewPanel} tabIndex={-1}>
               <div className="live-page-heading">
                 <div>
                   <h2>{rowLabel(selected)}</h2>
                   {resource === "verification" && (
                     <p>Review the applicant, farm details and supporting evidence.</p>
+                  )}
+                  {resource === "listings" && (
+                    <p>Review the produce, photos and farmer details before making a decision.</p>
                   )}
                 </div>
                 <button className="secondary" onClick={() => setSelected(undefined)}>
@@ -949,6 +982,21 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     )
                   }
                 />
+              ) : resource === "listings" ? (
+                <ListingReview
+                  key={selected.id}
+                  record={selected}
+                  busy={busy}
+                  canDecide={!!can("catalog.manage")}
+                  onStatus={(status) =>
+                    open(
+                      `${status === "ACTIVE" ? "Approve" : status === "REJECTED" ? "Reject" : status === "PAUSED" ? "Pause" : "Archive"} listing`,
+                      `listings/${selected.id}/status`,
+                      [reason],
+                      { extra: { status } },
+                    )
+                  }
+                />
               ) : (
                 <dl>
                   {Object.entries(selected)
@@ -961,7 +1009,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     ))}
                 </dl>
               )}
-              {resource !== "verification" && selected.farmerProfile && (
+              {!["verification", "listings"].includes(resource) && selected.farmerProfile && (
                 <div className="live-record-context">
                   <h3>{selected.farmerProfile.farmName}</h3>
                   <p>
@@ -999,18 +1047,6 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     )}
                   </div>
                 ))}
-              {resource === "listings" &&
-                selected.media?.map(
-                  (media: Row) =>
-                    media.objectKey?.startsWith("produce/") && (
-                      <img
-                        key={media.id}
-                        src={`/api/admin/produce-photos/${media.objectKey.split("/")[1]}`}
-                        alt="Farmer produce"
-                        style={{ maxWidth: 300 }}
-                      />
-                    ),
-                )}
               {resource === "audit" && (
                 <pre className="live-audit-change">
                   {JSON.stringify(
@@ -1060,18 +1096,6 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     }
                   >
                     Change account status
-                  </button>
-                )}
-                {resource === "listings" && can("catalog.manage") && (
-                  <button
-                    onClick={() =>
-                      open("Moderate listing", `listings/${selected.id}/status`, [
-                        select("status", "Status", ["ACTIVE", "REJECTED", "PAUSED", "ARCHIVED"]),
-                        reason,
-                      ])
-                    }
-                  >
-                    Moderate listing
                   </button>
                 )}
                 {resource === "orders" &&
@@ -1298,7 +1322,7 @@ function money(value: unknown) {
 const statuses: Record<string, string[]> = {
   users: ["ACTIVE", "SUSPENDED", "CLOSED"],
   verification: ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "RESUBMISSION_REQUIRED"],
-  listings: ["PENDING_REVIEW", "ACTIVE", "PAUSED", "REJECTED", "ARCHIVED"],
+  listings: ["PENDING_REVIEW", "ACTIVE", "PAUSED", "SOLD_OUT", "REJECTED", "ARCHIVED", "DRAFT"],
   orders: ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED"],
   logistics: ["ASSIGNED", "IN_TRANSIT", "DELIVERED"],
   withdrawals: ["REQUESTED", "AUTHORIZED", "REJECTED"],
