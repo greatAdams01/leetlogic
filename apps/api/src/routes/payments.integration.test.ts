@@ -1,3 +1,4 @@
+import * as mediaStorage from "../services/storage/private-media.js";
 import { randomUUID, createHmac } from "node:crypto";
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
 import request from "supertest";
@@ -244,9 +245,77 @@ suite("provider-backed payment safeguards", () => {
       where: { id: o.id },
       data: { deliveryConfirmedAt: new Date(), status: "DELIVERED" },
     });
-    const ticket = await prisma.supportTicket.create({
-      data: { userId: buyer, orderId: o.id, kind: "DISPUTE", subject: "Not received" },
+    const heldBefore = (
+      await request(app).get("/v1/orders/escrow-summary").set("Authorization", `Bearer ${token}`)
+    ).body.heldMinor;
+    expect(BigInt(heldBefore)).toBeGreaterThanOrEqual(10000n);
+    const baseDispatch = (
+      await request(app).get("/v1/orders/escrow-summary").set("Authorization", `Bearer ${token}`)
+    ).body.activeDispatch;
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "IN_TRANSIT" } });
+    expect(
+      (await request(app).get("/v1/orders/escrow-summary").set("Authorization", `Bearer ${token}`))
+        .body.activeDispatch,
+    ).toBe(baseDispatch + 1);
+    const outsiderSummary = await request(app)
+      .get("/v1/orders/escrow-summary")
+      .set("Authorization", `Bearer ${outsider}`);
+    expect(outsiderSummary.body).toMatchObject({ heldMinor: "0", activeDispatch: 0 });
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: d.status } });
+
+    expect(
+      (
+        await request(app)
+          .get(`/v1/orders/${o.id}/disputes`)
+          .set("Authorization", `Bearer ${outsider}`)
+      ).status,
+    ).toBe(404);
+    const responses = await Promise.all(
+      [0, 1].map(() =>
+        request(app)
+          .post(`/v1/orders/${o.id}/disputes`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ reason: "QUALITY", description: "The produce arrived damaged." }),
+      ),
+    );
+    expect(responses.map((r) => r.status)).toEqual([201, 201]);
+    expect(responses[0]!.body.item.id).toBe(responses[1]!.body.item.id);
+    const ticket = responses[0]!.body.item;
+    await prisma.supportMessage.create({
+      data: { ticketId: ticket.id, authorId: seller, body: "Private staff note", internal: true },
     });
+    const visible = await request(app)
+      .get(`/v1/orders/${o.id}/disputes`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(visible.body.items[0].messages.map((m: any) => m.body)).toEqual([
+      "The produce arrived damaged.",
+    ]);
+    vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`disputes/${randomUUID()}`);
+    vi.spyOn(mediaStorage, "readMedia").mockResolvedValue(
+      Buffer.from([255, 216, 255, ...Array(20).fill(0)]),
+    );
+    const upload = await request(app)
+      .post(`/v1/orders/${o.id}/disputes/${ticket.id}/evidence`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Content-Type", "image/jpeg")
+      .send(Buffer.from([255, 216, 255, ...Array(20).fill(0)]));
+    expect(upload.status).toBe(201);
+    const photoUrl = `/v1/orders/${o.id}/disputes/${ticket.id}/evidence/${upload.body.item.id}`;
+    expect((await request(app).get(photoUrl).set("Authorization", `Bearer ${token}`)).status).toBe(
+      200,
+    );
+    expect(
+      (await request(app).get(photoUrl).set("Authorization", `Bearer ${outsider}`)).status,
+    ).toBe(404);
+    expect((await request(app).get(photoUrl)).status).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/disputes`)
+          .set("Authorization", `Bearer ${outsider}`)
+          .send({ reason: "QUALITY", description: "Not my order cannot access." })
+      ).status,
+    ).toBe(404);
     await expect(requestRelease(o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
     await prisma.supportTicket.update({ where: { id: ticket.id }, data: { status: "RESOLVED" } });
     vi.spyOn(bachs, "account").mockResolvedValue({
@@ -258,6 +327,12 @@ suite("provider-backed payment safeguards", () => {
       { currency: "NGN", available_balance: "100000.00" },
     ]);
     const release = await requestRelease(o.id, req());
+    const tooLate = await request(app)
+      .post(`/v1/orders/${o.id}/disputes`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ reason: "OTHER", description: "A settlement is in progress." });
+    expect(tooLate.status).toBe(409);
+    expect(tooLate.body.error.code).toBe("SETTLEMENT_STARTED");
     vi.spyOn(bachs, "call").mockImplementation(async (path, body: any) => {
       if (path === "/transfers")
         return {
@@ -274,6 +349,15 @@ suite("provider-backed payment safeguards", () => {
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).status).toBe(
       "COMPLETED",
     );
+    expect(
+      BigInt(
+        (
+          await request(app)
+            .get("/v1/orders/escrow-summary")
+            .set("Authorization", `Bearer ${token}`)
+        ).body.heldMinor,
+      ),
+    ).toBe(BigInt(heldBefore) - 10000n);
     expect((await availableEarnings(seller)).balanceMinor).toBe(9400n);
     const withdrawals = await Promise.all([
       requestWithdrawal(seller, destination, 1000n, randomUUID()),

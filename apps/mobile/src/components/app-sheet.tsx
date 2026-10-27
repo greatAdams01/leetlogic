@@ -19,6 +19,7 @@ export function AppSheet({
   title,
   subtitle,
   onClose,
+  onShow,
   busy = false,
   footer,
   children,
@@ -31,6 +32,7 @@ export function AppSheet({
   title: string;
   subtitle?: string;
   onClose: () => void;
+  onShow?: () => void;
   busy?: boolean;
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -58,6 +60,7 @@ export function AppSheet({
       animationType="slide"
       statusBarTranslucent
       onRequestClose={close}
+      onShow={onShow}
       testID={testID}
     >
       <KeyboardAvoidingView

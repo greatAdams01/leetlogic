@@ -169,7 +169,11 @@ const resources = {
     permission: "disputes.manage",
     delegate: prisma.supportTicket,
     where: { kind: "DISPUTE" },
-    include: { messages: true, order: true },
+    include: {
+      messages: true,
+      order: true,
+      evidence: { select: { id: true, mimeType: true, createdAt: true } },
+    },
   },
   faq: { permission: "content.manage", delegate: prisma.faqArticle },
   translations: { permission: "content.manage", delegate: prisma.translationEntry },

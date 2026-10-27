@@ -1,6 +1,9 @@
+import { BuyerSearch } from "../components/buyer-search";
+import { BuyerEscrow } from "../components/buyer-escrow";
 import {
   CategoryTiles,
   ProduceGrid,
+  FeaturedProduce,
   categoryTitle,
   type BuyerCategory,
 } from "../components/buyer-discovery";
@@ -29,8 +32,7 @@ import { money, quantity, type Listing, type Order } from "../lib/domain";
 export { ListingPhoto } from "../components/listing-photo";
 export function Market() {
   const a = useApp(),
-    [search, setSearch] = useState(""),
-    [query, setQuery] = useState(""),
+    [query, setQuery] = useState(a.route.query || ""),
     [category, setCategory] = useState(a.route.id || ""),
     [maxPrice, setMaxPrice] = useState("");
   const { area, busy: locating } = useBuyerLocation();
@@ -40,6 +42,14 @@ export function Market() {
     c = useResource<{
       items: BuyerCategory[];
     }>("/marketplace/categories");
+  useEffect(() => {
+    setCategory(a.route.id || "");
+    setQuery(a.route.query || "");
+  }, [a.route.name, a.route.id, a.route.query]);
+  const searchProduce = (value: string) => {
+    setQuery(value);
+    if (a.route.name === "home") a.go("search", category || undefined, value);
+  };
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
@@ -53,7 +63,7 @@ export function Market() {
     if (c.data && category && !c.data.items.some((item) => item.id === category)) setCategory("");
   }, [c.data, category]);
   return (
-    <Page loading={r.loading}>
+    <Page loading={r.loading} contentStyle={{ paddingHorizontal: 24, paddingTop: 16, gap: 24 }}>
       {a.route.name !== "home" ? (
         <View style={s.between}>
           <View style={s.row}>
@@ -84,7 +94,9 @@ export function Market() {
             <Icon name="leaf" nativeSize={{ width: 36, height: 36 }} />
             <View>
               <Label muted>Leetlogic Farmlink</Label>
-              <Label style={{ color: colors.green, fontFamily: "NotoBold" }}>● Direct trade</Label>
+              <Label style={{ color: colors.green, fontFamily: "NotoBold" }}>
+                ● Direct trade live
+              </Label>
             </View>
           </View>
           <Pressable
@@ -115,18 +127,20 @@ export function Market() {
           </Pressable>
           <View style={{ flex: 1 }}>
             <Label style={{ fontFamily: "Montserrat", fontSize: 22 }}>
-              {category
-                ? categoryTitle(
-                    c.data?.items.find((item) => item.id === category) || {
-                      id: category,
-                      slug: "",
-                      translations: [],
-                    },
-                    a.locale,
-                  )
-                : a.ui("Fresh from the farm")}
+              {query ||
+                (category
+                  ? categoryTitle(
+                      c.data?.items.find((item) => item.id === category) || {
+                        id: category,
+                        slug: "",
+                        translations: [],
+                      },
+                      a.locale,
+                    )
+                  : a.ui("Fresh from the farm"))}
             </Label>
           </View>
+          <BuyerSearch compact value={query} onSearch={searchProduce} />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={a.ui("Change shopping location")}
@@ -146,70 +160,69 @@ export function Market() {
       )}
       {a.route.name === "home" && (
         <>
-          <Label style={{ fontFamily: "Montserrat", fontSize: 21 }}>
-            {a.ui("Hello, {name}.", {
-              name:
-                a.user?.profile?.displayName ||
-                a.user?.profile?.fullName?.split(" ")[0] ||
-                a.ui("there"),
-            })}
-          </Label>
+          <View style={{ gap: 6 }}>
+            <Label style={{ fontFamily: "Montserrat", fontSize: 21, lineHeight: 30 }}>
+              {a.ui("Hello, {name}.", {
+                name:
+                  a.user?.profile?.displayName ||
+                  a.user?.profile?.fullName?.split(" ")[0] ||
+                  a.ui("there"),
+              })}
+            </Label>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={a.ui("Change shopping location")}
+                onPress={() => a.go("shoppingLocation")}
+                style={{ flexDirection: "row", alignItems: "center", gap: 6, minHeight: 32 }}
+              >
+                <Icon name="pin" nativeSize={{ width: 22, height: 22 }} />
+                <Label>
+                  {locating
+                    ? "Finding your location…"
+                    : area.latitude !== undefined
+                      ? "Using current location"
+                      : area.state
+                        ? [area.lga, area.state].filter(Boolean).join(", ")
+                        : "Set shopping location"}
+                </Label>
+              </Pressable>
+              {a.user?.phoneVerifiedAt && (
+                <View
+                  style={{
+                    backgroundColor: "#fff0ce",
+                    borderRadius: 999,
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                  }}
+                >
+                  <Label style={{ color: "#6b4a2f", fontSize: 14 }}>Verified buyer</Label>
+                </View>
+              )}
+            </View>
+          </View>
+          <BuyerSearch value={query} onSearch={searchProduce} />
+          <BuyerEscrow />
         </>
       )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={a.ui("Change shopping location")}
-        onPress={() => a.go("shoppingLocation")}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          alignSelf: "flex-start",
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          borderRadius: 20,
-          backgroundColor: colors.mint,
-        }}
-      >
-        <Icon name="pin" nativeSize={{ width: 22, height: 22 }} />
-        <Label style={{ color: colors.green, fontSize: 13 }}>
-          {locating
-            ? "Finding your location…"
-            : area.latitude !== undefined
-              ? "Using current location"
-              : area.state
-                ? [area.lga, area.state].filter(Boolean).join(", ")
-                : "Set shopping location"}
-        </Label>
-        <Icon name="chevron" size={14} />
-      </Pressable>
-      <Field
-        label="Search produce"
-        hideLabel
-        style={{ borderRadius: 999, backgroundColor: "white", height: 54 }}
-        value={search}
-        onChangeText={setSearch}
-        placeholder="Produce, farmer, state..."
-        returnKeyType="search"
-        onSubmitEditing={() => setQuery(search)}
-      />
-      <Button title="Search" secondary onPress={() => setQuery(search)} />
-      <View style={s.between}>
-        <Text style={s.sectionTitle}>Categories</Text>
-        <Pressable accessibilityRole="button" onPress={() => a.go("categories")}>
-          <Label style={s.link}>See all</Label>
-        </Pressable>
+      <View style={{ gap: 16 }}>
+        <View style={s.between}>
+          <Text style={s.sectionTitle}>Categories</Text>
+          <Pressable accessibilityRole="button" onPress={() => a.go("categories")}>
+            <Label style={s.link}>See all</Label>
+          </Pressable>
+        </View>
+        <CategoryTiles
+          items={a.route.name === "home" ? (c.data?.items || []).slice(0, 4) : c.data?.items || []}
+          selected={category}
+          compact
+          chips={a.route.name === "search"}
+          onChoose={(id) => {
+            if (a.route.name === "home") a.go("search", id);
+            else setCategory(id);
+          }}
+        />
       </View>
-      <CategoryTiles
-        items={a.route.name === "home" ? (c.data?.items || []).slice(0, 4) : c.data?.items || []}
-        selected={category}
-        compact
-        chips={a.route.name === "search"}
-        onChoose={(id) => {
-          if (a.route.name === "home") a.go("search", id);
-          else setCategory(id);
-        }}
-      />
       {a.route.name === "search" && (
         <>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -228,25 +241,44 @@ export function Market() {
           </View>
         </>
       )}
-      <Text style={s.sectionTitle}>Fresh from the farm</Text>
-      {r.error && (
-        <>
-          <Notice text={r.error} error />
-          <Button title="Try again" secondary onPress={() => void r.reload()} />
-        </>
-      )}
-      {!r.loading && !r.error && !r.data?.items.length && (
-        <Notice
-          text={
-            area.latitude !== undefined
-              ? "No produce found within this distance. Try a wider distance or choose another area."
-              : "No produce matches this search yet. Try another category or check back soon."
-          }
-        />
-      )}
-      {!r.loading && (
-        <ProduceGrid items={r.data?.items || []} compact={a.route.name === "search"} />
-      )}
+      <View style={{ gap: 14 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+          <Text style={{ ...s.sectionTitle, fontSize: 21 }}>Fresh from the farm</Text>
+          {a.route.name === "home" && (
+            <View
+              style={{
+                backgroundColor: colors.mint,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 999,
+              }}
+            >
+              <Label style={{ color: colors.green, fontSize: 14 }}>Direct</Label>
+            </View>
+          )}
+        </View>
+        {r.error && (
+          <>
+            <Notice text={r.error} error />
+            <Button title="Try again" secondary onPress={() => void r.reload()} />
+          </>
+        )}
+        {!r.loading && !r.error && !r.data?.items.length && (
+          <Notice
+            text={
+              area.latitude !== undefined
+                ? "No produce found within this distance. Try a wider distance or choose another area."
+                : "No produce matches this search yet. Try another category or check back soon."
+            }
+          />
+        )}
+        {!r.loading &&
+          (a.route.name === "home" ? (
+            <FeaturedProduce items={r.data?.items || []} />
+          ) : (
+            <ProduceGrid items={r.data?.items || []} />
+          ))}
+      </View>
       {a.role === "SELLER" && (
         <Button title="My produce listings" onPress={() => a.go("myListings")} />
       )}

@@ -107,7 +107,7 @@ export function CategoryTiles({
           numberOfLines={compact ? 2 : undefined}
           style={{
             fontFamily: "NotoBold",
-            fontSize: compact ? 13 : 16,
+            fontSize: compact ? 14 : 16,
             textAlign: compact ? "center" : "left",
             color: selected === item.id ? colors.action : colors.ink,
           }}
@@ -131,7 +131,12 @@ export function CategoryTiles({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 18, paddingVertical: 2 }}
+      contentContainerStyle={{
+        gap: 18,
+        paddingVertical: 2,
+        flexGrow: 1,
+        justifyContent: "space-between",
+      }}
     >
       {entries}
     </ScrollView>
@@ -141,9 +146,9 @@ export function CategoryTiles({
 }
 export function ProduceGrid({ items, compact = false }: { items: Listing[]; compact?: boolean }) {
   const a = useApp();
-  const width = (useWindowDimensions().width - 60) / 2;
+
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
       {items.map((item) => (
         <Pressable
           key={item.id}
@@ -151,7 +156,7 @@ export function ProduceGrid({ items, compact = false }: { items: Listing[]; comp
           accessibilityLabel={a.ui("View {title}", { title: item.title })}
           onPress={() => a.go("product", item.id)}
           style={{
-            width: compact ? width : "100%",
+            width: "100%",
             backgroundColor: "white",
             borderRadius: 16,
             overflow: "hidden",
@@ -221,6 +226,61 @@ export function ProduceGrid({ items, compact = false }: { items: Listing[]; comp
                 View produce
               </Label>
             </View>
+          </View>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/** Home's compact photo-led cards; catalogue text and stock remain real. */
+export function FeaturedProduce({ items }: { items: Listing[] }) {
+  const a = useApp();
+  return (
+    <View style={{ gap: 16 }}>
+      {items.map((item) => (
+        <Pressable
+          key={item.id}
+          accessibilityRole="button"
+          accessibilityLabel={a.ui("View {title}", { title: item.title })}
+          onPress={() => a.go("product", item.id)}
+          style={{
+            backgroundColor: "white",
+            borderRadius: 16,
+            overflow: "hidden",
+            paddingTop: 16,
+            minHeight: 330,
+          }}
+        >
+          <View>
+            <ListingPhoto item={item} height={220} radius={10} />
+            <View
+              style={{
+                position: "absolute",
+                left: 12,
+                bottom: 12,
+                backgroundColor: colors.mint,
+                borderRadius: 999,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+              }}
+            >
+              <Label style={{ color: colors.green, fontSize: 14 }}>
+                {item.shippingScope === "LOCAL" ? "Local delivery" : "Sells in Nigeria"}
+              </Label>
+            </View>
+          </View>
+          <View style={{ padding: 16, gap: 4 }}>
+            <Label style={{ fontFamily: "NotoBold", fontSize: 16 }}>{item.title}</Label>
+            <Label>
+              {a.ui("{quantity} {unit} available", {
+                quantity: Math.max(
+                  0,
+                  Number(item.availableQuantity) - Number(item.reservedQuantity),
+                ),
+                unit: a.unit(item.unitCode),
+              })}
+            </Label>
           </View>
         </Pressable>
       ))}

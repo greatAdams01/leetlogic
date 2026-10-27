@@ -1070,6 +1070,21 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     </a>
                   </p>
                 ))}
+              {resource === "disputes" && selected.evidence?.length > 0 && (
+                <div className="verification-evidence">
+                  <h3>Private evidence photos</h3>
+                  {selected.evidence.map((file: Row, index: number) => (
+                    <a
+                      key={file.id}
+                      href={`/api/admin/dispute-evidence/${file.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View evidence photo {index + 1}
+                    </a>
+                  ))}
+                </div>
+              )}
               {selected.messages && (
                 <div className="live-messages">
                   <h3>Conversation</h3>
@@ -1077,8 +1092,12 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     selected.messages.map((message: Row) => (
                       <article key={message.id}>
                         <small>
-                          {message.internal ? "Internal note" : "Staff reply"} ·{" "}
-                          {new Date(message.createdAt).toLocaleString()}
+                          {message.internal
+                            ? "Internal note"
+                            : message.authorId === selected.userId
+                              ? "Buyer"
+                              : "Staff reply"}{" "}
+                          · {new Date(message.createdAt).toLocaleString()}
                         </small>
                         <p>{message.body}</p>
                       </article>

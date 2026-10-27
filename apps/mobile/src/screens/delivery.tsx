@@ -1,3 +1,4 @@
+import { OrderDisputes } from "../components/order-disputes";
 import { OrderPayment } from "../components/order-payment";
 import { Select } from "../components/Select";
 import { nigeriaStates } from "../lib/locations";
@@ -78,6 +79,7 @@ export function Delivery() {
               Produce and shipping are accounted for separately.
             </Label>
           </Card>
+          {data.order.isBuyer && <OrderDisputes orderId={a.route.id!} />}
           <Card>
             <Heading>Pickup location</Heading>
             <Label>

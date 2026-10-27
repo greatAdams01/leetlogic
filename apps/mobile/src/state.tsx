@@ -38,7 +38,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const localeWrites = useRef<Promise<void>>(Promise.resolve());
   const route = stack[stack.length - 1]!;
   const go = useCallback(
-    (name: Route["name"], id?: string) => setStack((v) => [...v, { name, id }]),
+    (name: Route["name"], id?: string, query?: string) =>
+      setStack((v) => [...v, { name, id, ...(query !== undefined ? { query } : {}) }]),
     [],
   );
   const reset = useCallback((name: Route["name"]) => setStack([{ name }]), []);
@@ -244,7 +245,7 @@ export function useApp() {
     canGoBack: boolean;
     openLanguage: (introStep?: number) => void;
     finishLanguage: () => void;
-    go: (name: Route["name"], id?: string) => void;
+    go: (name: Route["name"], id?: string, query?: string) => void;
     back: () => void;
     reset: (name: Route["name"]) => void;
     locale: Locale;

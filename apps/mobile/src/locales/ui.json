@@ -6207,5 +6207,243 @@
     "Ƙara nauyi, girma da kulawar kunshi kafin aika wannan talla.",
     "Tinye ibu, nha na nlekọta nkwakọ tupu izipu ndepụta a.",
     "Fi ìwọ̀n, gígùn àti ìtọ́jú ìdìpọ̀ kún un kí o tó fi àkọsílẹ̀ yìí ránṣẹ́."
+  ],
+  [
+    "Funds in escrow",
+    "Money wey escrow dey hold",
+    "Kuɗin da ke ajiye a escrow",
+    "Ego dị na escrow",
+    "Owó tó wà ní escrow"
+  ],
+  [
+    "Produce payments held for your orders. Delivery charges are separate.",
+    "Na produce money we dey hold for your orders. Delivery money dey separate.",
+    "Kuɗin amfanin gona da aka riƙe don odarku. Kuɗin isarwa daban ne.",
+    "Ego ihe ubi e jidere maka ọda gị. Ego nnyefe dị iche.",
+    "Owó èso oko tí a di mú fún àwọn ọ̀dà rẹ. Owó ìfiránṣẹ́ yàtọ̀."
+  ],
+  [
+    "Refresh balance",
+    "Check money again",
+    "Sabunta ma’auni",
+    "Melite ego fọdụrụ",
+    "Ṣàtúnṣe iye owó"
+  ],
+  [
+    "Help with this order",
+    "Help for this order",
+    "Taimako kan wannan oda",
+    "Enyemaka maka ọda a",
+    "Ìrànlọ́wọ́ fún ọ̀dà yìí"
+  ],
+  [
+    "Open a dispute if something is wrong with your order. Unresolved disputes block release of held produce payments.",
+    "Open dispute if problem dey your order. We no go release produce money until dispute settle.",
+    "Buɗe ƙorafi idan akwai matsala da odarku. Ba za a saki kuɗin amfanin gona ba sai an warware ƙorafin.",
+    "Mepee mkpesa ma ọ bụrụ na nsogbu dị n’ọda gị. A gaghị ahapụ ego ihe ubi ruo mgbe edoziri mkpesa.",
+    "Ṣí ẹ̀sùn bí ìṣòro bá wà pẹ̀lú ọ̀dà rẹ. A kì yóò tú owó èso oko sílẹ̀ títí a ó fi yanjú ẹ̀sùn."
+  ],
+  [
+    "Open Dispute",
+    "Open dispute",
+    "Buɗe ƙorafi",
+    "Mepee mkpesa",
+    "Ṣí ẹ̀sùn"
+  ],
+  [
+    "Submit dispute",
+    "Send dispute",
+    "Aika ƙorafi",
+    "Ziga mkpesa",
+    "Fi ẹ̀sùn ránṣẹ́"
+  ],
+  [
+    "Order not received",
+    "Order never reach",
+    "Ba a karɓi oda ba",
+    "Anataghị ọda",
+    "A kò gba ọ̀dà"
+  ],
+  [
+    "Produce quality",
+    "How produce be",
+    "Ingancin amfanin gona",
+    "Ọdịdị ihe ubi",
+    "Dídára èso oko"
+  ],
+  [
+    "Wrong produce",
+    "Wrong produce",
+    "Amfanin gona marar dacewa",
+    "Ihe ubi na-ezighi ezi",
+    "Èso oko tí kò tọ́"
+  ],
+  [
+    "Incorrect quantity",
+    "Quantity no correct",
+    "Adadi marar dacewa",
+    "Ọnụọgụ na-ezighi ezi",
+    "Iye tí kò tọ́"
+  ],
+  [
+    "Other issue",
+    "Another problem",
+    "Wata matsala",
+    "Nsogbu ọzọ",
+    "Ìṣòro mìíràn"
+  ],
+  [
+    "Order dispute",
+    "Order dispute",
+    "Ƙorafin oda",
+    "Mkpesa ọda",
+    "Ẹ̀sùn ọ̀dà"
+  ],
+  [
+    "Dispute submitted",
+    "Dispute don enter",
+    "An aika ƙorafi",
+    "E zigala mkpesa",
+    "A ti fi ẹ̀sùn ránṣẹ́"
+  ],
+  [
+    "{count} evidence photos attached",
+    "{count} proof photos don attach",
+    "An haɗa hotunan shaida {count}",
+    "Etinyere foto ihe akaebe {count}",
+    "A so fọ́tò ẹ̀rí {count} mọ́ ọn"
+  ],
+  [
+    "Add evidence photo",
+    "Add proof photo",
+    "Ƙara hoton shaida",
+    "Tinye foto ihe akaebe",
+    "Fi fọ́tò ẹ̀rí kún un"
+  ],
+  [
+    "View evidence photo {number}",
+    "See proof photo {number}",
+    "Duba hoton shaida {number}",
+    "Lee foto ihe akaebe {number}",
+    "Wo fọ́tò ẹ̀rí {number}"
+  ],
+  [
+    "Refresh dispute status",
+    "Check dispute again",
+    "Sabunta matsayin ƙorafi",
+    "Melite ọnọdụ mkpesa",
+    "Ṣàyẹ̀wò ipò ẹ̀sùn lẹ́ẹ̀kan sí i"
+  ],
+  [
+    "Describe the issue",
+    "Tell us wetin happen",
+    "Bayyana matsalar",
+    "Kọwaa nsogbu ahụ",
+    "Ṣàlàyé ìṣòro náà"
+  ],
+  [
+    "Describe what went wrong in at least 10 characters.",
+    "Use at least 10 letters tell us wetin go wrong.",
+    "Bayyana abin da ya faru da aƙalla haruffa 10.",
+    "Jiri opekata mpe mkpụrụedemede 10 kọwaa ihe mere.",
+    "Lo ó kéré tán àmì 10 láti ṣàlàyé ohun tó ṣẹlẹ̀."
+  ],
+  [
+    "You can attach up to five evidence photos after submitting your dispute.",
+    "After you send dispute, you fit add up to five proof photos.",
+    "Kuna iya haɗa hotunan shaida har biyar bayan aika ƙorafi.",
+    "Ị nwere ike itinye foto ihe akaebe ruru ise mgbe izigara mkpesa gị.",
+    "O lè fi fọ́tò ẹ̀rí márùn-ún kún un lẹ́yìn fífi ẹ̀sùn ránṣẹ́."
+  ],
+  [
+    "Reason",
+    "Reason",
+    "Dalili",
+    "Ihe kpatara ya",
+    "Ìdí"
+  ],
+  [
+    "View orders",
+    "See orders",
+    "Duba ododi",
+    "Lee ọda",
+    "Wo àwọn ọ̀dà"
+  ],
+  [
+    "This order has no funds held in escrow. Contact support for help.",
+    "Escrow no hold money for this order. Contact support for help.",
+    "Babu kuɗin wannan oda a escrow. Tuntuɓi tallafi don taimako.",
+    "Enweghị ego ọda a na escrow. Kpọtụrụ ndị enyemaka.",
+    "Kò sí owó ọ̀dà yìí ní escrow. Kan sí ìrànlọ́wọ́."
+  ],
+  [
+    "Payment settlement has already started. Contact support immediately for help with this order.",
+    "Payment don start to settle. Contact support now for help with this order.",
+    "An riga an fara biyan kuɗi. Tuntuɓi tallafi nan da nan don taimakon wannan oda.",
+    "A malitelarị ịkwụ ụgwọ. Kpọtụrụ ndị enyemaka ozugbo maka ọda a.",
+    "A ti bẹ̀rẹ̀ sí san owó náà. Kan sí ìrànlọ́wọ́ lẹ́sẹ̀kẹsẹ̀ fún ọ̀dà yìí."
+  ],
+  [
+    "Open a dispute before adding evidence. Resolved disputes cannot be changed.",
+    "Open dispute before you add proof. You no fit change settled dispute.",
+    "Buɗe ƙorafi kafin ƙara shaida. Ba za a canza ƙorafin da aka warware ba.",
+    "Mepee mkpesa tupu itinye ihe akaebe. Enweghị ike ịgbanwe mkpesa e doziri.",
+    "Ṣí ẹ̀sùn kí o tó fi ẹ̀rí kún un. A kò lè yí ẹ̀sùn tí a ti yanjú padà."
+  ],
+  [
+    "You can add up to five photos to a dispute.",
+    "You fit add up to five photos for one dispute.",
+    "Kuna iya ƙara hotuna har biyar ga ƙorafi.",
+    "Ị nwere ike itinye foto ruru ise na mkpesa.",
+    "O lè fi fọ́tò márùn-ún kún ẹ̀sùn kan."
+  ],
+  [
+    "Choose a JPEG or PNG photo.",
+    "Choose JPEG or PNG photo.",
+    "Zaɓi hoton JPEG ko PNG.",
+    "Họrọ foto JPEG ma ọ bụ PNG.",
+    "Yan fọ́tò JPEG tàbí PNG."
+  ],
+  [
+    "Active dispatch",
+    "Delivery wey dey road",
+    "Isarwar da ke gudana",
+    "Nnyefe na-aga n’ihu",
+    "Ìfiránṣẹ́ tó ń lọ lọ́wọ́"
+  ],
+  [
+    "Trade escrow",
+    "Trade escrow",
+    "Escrow na ciniki",
+    "Escrow azụmahịa",
+    "Escrow òwò"
+  ],
+  [
+    "Search produce, farmer, state...",
+    "Find produce, farmer, state...",
+    "Nemi amfanin gona, manomi, jiha...",
+    "Chọọ ihe ubi, onye ọrụ ugbo, steeti...",
+    "Wá èso oko, àgbẹ̀, ìpínlẹ̀..."
+  ],
+  [
+    "Verified buyer",
+    "Buyer wey we don verify",
+    "Tabbataccen mai saya",
+    "Onye zụrụ ahịa a kwadoro",
+    "Olùrajà tí a ti fìdí rẹ̀ múlẹ̀"
+  ],
+  [
+    "{count} Shipments",
+    "{count} Deliveries",
+    "Isarwa {count}",
+    "Nnyefe {count}",
+    "Ìfiránṣẹ́ {count}"
+  ],
+  [
+    "● Direct trade live",
+    "● Direct trade dey live",
+    "● Ciniki kai tsaye yana gudana",
+    "● Azụmahịa ozugbo na-arụ ọrụ",
+    "● Òwò tààrà ń ṣiṣẹ́"
   ]
 ]

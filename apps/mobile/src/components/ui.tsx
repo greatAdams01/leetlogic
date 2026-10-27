@@ -155,13 +155,15 @@ export function Button({
 export function Field({
   label,
   hideLabel = false,
+  inputRef,
   ...props
-}: TextInputProps & { label: string; hideLabel?: boolean }) {
+}: TextInputProps & { label: string; hideLabel?: boolean; inputRef?: React.Ref<TextInput> }) {
   const tr = useUI();
   return (
     <View style={{ gap: 8 }}>
       {!hideLabel && <Text style={s.fieldLabel}>{label}</Text>}
       <TextInput
+        ref={inputRef}
         placeholderTextColor="#96948d"
         {...props}
         placeholder={props.placeholder ? tr(props.placeholder) : undefined}

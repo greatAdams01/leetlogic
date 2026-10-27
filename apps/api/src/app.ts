@@ -1,4 +1,8 @@
 import {
+  buyerTransactionsRouter,
+  disputeEvidenceAdminRouter,
+} from "./routes/buyer-transactions.js";
+import {
   paymentsRouter,
   financialRouter,
   moneyAdminRouter,
@@ -92,6 +96,8 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.use("/v1/admin/verifications/documents", adminDocumentsRouter);
   app.use("/v1/admin/produce-photos", staffProducePhotosRouter);
   app.use("/v1/listing-photos", producePhotosRouter);
+  app.use("/v1/orders", buyerTransactionsRouter);
+  app.use("/v1/admin/dispute-evidence", disputeEvidenceAdminRouter);
   app.use("/v1/orders", paymentsRouter);
   app.use("/v1/financial", financialRouter);
   app.use("/v1/admin/money", moneyAdminRouter);

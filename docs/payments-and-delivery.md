@@ -74,6 +74,16 @@ Integration commands require local PostgreSQL/Redis and create isolated integrat
 
 Before live use, obtain Bachs approval for platform collection and delayed farmer settlement, verify production capability/fee/refund rules, confirm courier commodities/routes, provision reconciliation/incident ownership, then explicitly enable live collection and money switches. This implementation does not assert regulated escrow custody or declare the provider pilot complete.
 
+## Buyer escrow summary and disputes
+
+Buyer Home reads `/v1/orders/escrow-summary`, summing the authenticated buyer's positive `TradeOrder.heldMinor` balances. These are confirmed produce funds, including disputed orders; delivery charges are separate. Refunds and releases reduce the balance only after confirmed accounting updates. The app refreshes on entry, foreground and every 30 seconds while mounted. Guests do not request or see an invented balance.
+
+Order details provide **Open Dispute** for orders with held funds. Buyers submit a reason and description, then can attach up to five private JPEG/PNG evidence photos (10 MB each), view submitted evidence, and follow public replies, resolution and status. Staff view these photos from the admin dispute record. Internal staff notes and storage keys are excluded from the buyer response. Ownership is checked for every dispute and photo operation.
+
+Dispute creation locks the order using the same lock as release requests and reuses an existing unresolved dispute on duplicate submission. Existing unresolved-ticket checks block both provider releases and manual escrow release. If settlement has already started, the request directs the buyer to support instead of claiming that funds can still be frozen. Apply migration `20261028150000_buyer_dispute_evidence` before deployment; images use the existing private media storage provider.
+
+Endpoints: `GET /v1/orders/:id/disputes`, `POST /v1/orders/:id/disputes`, `POST /v1/orders/:id/disputes/:ticketId/evidence`, and authenticated evidence reads under that path. Staff evidence reads use `/v1/admin/dispute-evidence/:id` with `disputes.manage`.
+
 ## Listing packing and buyer delivery review
 
 New listing submissions require the number of selling units in one package, its packed weight in kilograms, dimensions in centimetres, handling and optional instructions. Weight includes the packaging. Existing drafts remain editable; add these details before submitting them.

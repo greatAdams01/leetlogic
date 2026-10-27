@@ -3,6 +3,9 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   paths: [] as string[],
+  dismiss: vi.fn(),
+  go: vi.fn(),
+  route: { name: "search" } as { name: string; query?: string; id?: string },
   setArea: null as any,
   categories: {
     items: [
@@ -15,6 +18,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("react-native", () => ({
   View: "View",
+  Keyboard: { dismiss: h.dismiss },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   useWindowDimensions: () => ({ width: 400, height: 800 }),
@@ -31,6 +35,10 @@ vi.mock("../components/buyer-location", () => ({
     h.setArea = setArea;
     return { area, busy: false };
   },
+}));
+vi.mock("../components/app-sheet", () => ({
+  AppSheet: ({ visible, children, onShow, onClose, scroll }: any) =>
+    visible ? React.createElement("Sheet", { onShow, onClose, scroll }, children) : null,
 }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
 vi.mock("../components/listing-gallery", () => ({ ListingGallery: "ListingGallery" }));
@@ -53,7 +61,8 @@ vi.mock("../state", () => ({
   useApp: () => ({
     user: null,
     role: "BUYER",
-    route: { name: "search" },
+    route: h.route,
+    go: h.go,
     locale: "en",
     ui: (s: string) => s,
   }),
@@ -70,6 +79,7 @@ let tree: ReactTestRenderer;
 beforeEach(() => {
   vi.clearAllMocks();
   h.paths = [];
+  h.route = { name: "search" };
   h.categories = {
     items: [
       { id: "veg", slug: "vegetables", translations: [{ locale: "en", name: "Vegetables" }] },
@@ -107,6 +117,7 @@ it("refreshes on foreground and clears a filter when admin deactivates its categ
   expect(h.reloadListings).toHaveBeenCalledTimes(1);
   h.categories = { items: [] };
   h.paths = [];
+  h.route = { name: "search" };
   await act(async () => tree.update(<Market />));
   const requests = h.paths.filter((path) => path.startsWith("/marketplace/listings"));
   expect(requests.at(-1)).toBe("/marketplace/listings?search=");
@@ -134,4 +145,67 @@ it("uses a compact location indicator that opens shopping location settings", as
       .findAllByType("Pressable" as any)
       .some((node) => node.props.accessibilityLabel === "Change shopping location"),
   ).toBe(true);
+});
+
+it("submits search from either the inline icon or the keyboard", async () => {
+  await act(async () => {
+    tree = create(<Market />);
+  });
+  await act(async () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Search produce")!
+      .props.onPress(),
+  );
+  const field = () =>
+    tree.root.findAllByType("Field" as any).find((node) => node.props.label === "Search produce")!;
+  await act(async () => field().props.onChangeText("fresh yam"));
+  await act(async () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Search")!
+      .props.onPress(),
+  );
+  expect(h.paths.some((path) => path.includes("search=fresh%20yam"))).toBe(true);
+  await act(async () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Search produce")!
+      .props.onPress(),
+  );
+  await act(async () => field().props.onChangeText("tomato"));
+  await act(async () => field().props.onSubmitEditing());
+  expect(h.paths.some((path) => path.includes("search=tomato"))).toBe(true);
+  expect(tree.root.findAllByType("Field" as any)).toHaveLength(0);
+  expect(h.dismiss).toHaveBeenCalledTimes(2);
+  expect(
+    tree.root.findAllByType("Button" as any).some((node) => node.props.title === "Search"),
+  ).toBe(false);
+});
+
+it("takes Home search to results and focuses text entry only inside the sheet", async () => {
+  h.route = { name: "home" };
+  await act(async () => {
+    tree = create(<Market />);
+  });
+  expect(tree.root.findAllByType("Field" as any)).toHaveLength(0);
+  await act(async () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Search produce")!
+      .props.onPress(),
+  );
+  const input = tree.root.findByType("Field" as any);
+  expect(input.props.autoFocus).toBe(true);
+  const focus = vi.fn();
+  input.props.inputRef.current = { focus };
+  await act(async () => tree.root.findByType("Sheet" as any).props.onShow());
+  expect(focus).toHaveBeenCalledTimes(1);
+  expect(tree.root.findByType("Sheet" as any).props.scroll).toBe(false);
+  await act(async () => input.props.onChangeText("  tomatoes  "));
+  expect(h.go).not.toHaveBeenCalled();
+  await act(async () => tree.root.findByType("Field" as any).props.onSubmitEditing());
+  expect(h.go).toHaveBeenCalledWith("search", undefined, "tomatoes");
+  expect(h.dismiss).toHaveBeenCalledTimes(1);
+  expect(tree.root.findAllByType("Field" as any)).toHaveLength(0);
 });

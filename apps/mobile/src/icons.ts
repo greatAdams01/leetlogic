@@ -48,7 +48,7 @@ export const icons = {
   backLight: require("../assets/figma/4a9b7.svg"),
   check: require("../assets/figma/5cf46.svg"),
   circle: require("../assets/figma/49672.svg"),
-  search: require("../assets/figma/e6877.svg"),
+  search: require("../assets/figma/42be5.svg"),
   logo: require("../assets/figma/a1d6d.svg"),
   wordmark: require("../assets/figma/b8ba5.svg"),
   leaf: require("../assets/figma/19873.svg"),

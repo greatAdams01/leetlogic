@@ -122,6 +122,11 @@ export function localizedError(locale: Locale, value: unknown): string {
     DELIVERY_UNAVAILABLE: "Delivery quotes are not available yet.",
     DELIVERY_LOCKED: "Delivery details cannot be changed after payment or dispatch.",
     DELIVERY_PRICE_CHANGED: "Delivery price changed. Staff must review the payment before booking.",
+    NO_HELD_FUNDS: "This order has no funds held in escrow. Contact support for help.",
+    SETTLEMENT_STARTED:
+      "Payment settlement has already started. Contact support immediately for help with this order.",
+    DISPUTE_CLOSED: "Open a dispute before adding evidence. Resolved disputes cannot be changed.",
+    EVIDENCE_LIMIT: "You can add up to five photos to a dispute.",
     FORBIDDEN: "You do not have access to this resource.",
     BUYER_REQUIRED: "You do not have access to this resource.",
     ORDER_NOT_FOUND: "This item could not be found.",

@@ -25,6 +25,7 @@ export type Route = {
     | "notifications"
     | "help";
   id?: string;
+  query?: string;
 };
 
 /** Preserve the owning screen, including the current intro slide, when changing language. */

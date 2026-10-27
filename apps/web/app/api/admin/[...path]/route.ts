@@ -18,7 +18,9 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
     return NextResponse.json({ error: { message: "Invalid request origin" } }, { status: 403 });
   const route = path.join("/");
   const privateMedia =
-    route.startsWith("verifications/documents/") || route.startsWith("produce-photos/");
+    route.startsWith("verifications/documents/") ||
+    route.startsWith("produce-photos/") ||
+    route.startsWith("dispute-evidence/");
   const requestId = randomUUID();
   // The API's private download can take 60s; allow it to return its precise error.
   const deadline = AbortSignal.timeout(privateMedia ? 75000 : 15000);

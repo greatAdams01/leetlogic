@@ -702,6 +702,7 @@ model SupportTicket {
   updatedAt  DateTime         @updatedAt @db.Timestamptz(6)
   order      TradeOrder?      @relation(fields: [orderId], references: [id], onDelete: Restrict)
   messages   SupportMessage[]
+  evidence   DisputeEvidence[]
 
   user User? @relation(fields: [userId], references: [id], onDelete: Restrict, map: "ticket_user_fk")
 
@@ -1058,4 +1059,15 @@ model MoneyReconciliation {
   shippingWalletMinor BigInt?
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   @@map("money_reconciliations")
+}
+
+model DisputeEvidence {
+  id String @id @default(uuid()) @db.Uuid
+  ticketId String @db.Uuid
+  storageKey String
+  mimeType String @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  @@index([ticketId])
+  @@map("dispute_evidence")
 }
