@@ -44,6 +44,12 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
   const address =
     a.user?.addresses.find((candidate) => candidate.isDefaultDelivery) || a.user?.addresses[0];
   const selected = d?.quotes.find((quote) => quote.id === d.selectedQuoteId);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const currentQuote = !!selected && new Date(selected.expiresAt).getTime() > now;
   const total = BigInt(data.order.totalMinor) + BigInt(selected?.amountMinor || 0);
   const selectQuote = async (quoteId: string) => {
     setBusy(true);
@@ -62,7 +68,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       <Page
         header={<CheckoutHeader title="Delivery" step="STEP 1 OF 3" back={a.back} />}
         contentStyle={checkout.body}
-        footer={<Button title="Continue" onPress={() => setStage("scope")} />}
+        footer={<Button title="Continue" disabled={!address} onPress={() => setStage("scope")} />}
       >
         <Heading>Delivery</Heading>
         <Label muted>Shipping cost is shown before you pay.</Label>
@@ -113,7 +119,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       <Page
         header={<CheckoutHeader title={`To ${address?.city || d?.destination?.state || "destination"}`} back={() => setStage("scope")} />}
         contentStyle={checkout.body}
-        footer={<Button title="Continue" disabled={!d?.selectedQuoteId || busy} onPress={() => setStage("summary")} />}
+        footer={<Button title="Continue" disabled={!currentQuote || busy} onPress={() => setStage("summary")} />}
       >
         <Label style={checkout.routeLabel}>NATIONWIDE DELIVERY</Label>
         <Heading>To {address?.city || d?.destination?.state}</Heading>
@@ -121,14 +127,16 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         <View style={s.between}><Label style={checkout.optionTitle}>Available Carriers</Label><Label style={{ color: colors.green }}>{d?.quotes.length || 0} best match</Label></View>
         {d?.quotes.map((quote, index) => {
           const active = quote.id === d.selectedQuoteId;
-          return <Pressable key={quote.id} onPress={() => void selectQuote(quote.id)}><Card style={{ ...checkout.carrier, ...(active ? checkout.optionSelected : {}) }}>
+          return <Pressable key={quote.id} disabled={busy || new Date(quote.expiresAt).getTime() <= now} onPress={() => void selectQuote(quote.id)}><Card style={{ ...checkout.carrier, ...(active ? checkout.optionSelected : {}) }}>
             {index === 0 && <Label style={checkout.recommended}>⚡ RECOMMENDED</Label>}
             <View style={s.between}><View style={{ flex: 1 }}><Label style={checkout.carrierName}>{quote.courier}</Label><Label><Label style={checkout.gold}>{money(quote.amountMinor)}</Label>{quote.eta ? `  ·  ${quote.eta}` : ""}</Label></View>{active ? <View style={checkout.check}><Label style={{ color: "white" }}>✓</Label></View> : <View style={checkout.radio} />}</View>
-            {index === 0 && <Card style={checkout.innerNote}><Label>❄ Temperature-managed handling available for fresh farm produce.</Label></Card>}
+
             <Label style={checkout.strong}>◷ Estimated arrival</Label><Label>{quote.eta || "Confirmed after booking"}</Label>
+            <Label muted>{new Date(quote.expiresAt).getTime() <= now ? "Quote expired" : a.ui("Valid until {date}", { date: a.date(quote.expiresAt) })}</Label>
           </Card></Pressable>;
         })}
         <Card style={checkout.guarantee}><Icon name="cartShield" size={22} /><View style={{ flex: 1 }}><Label style={checkout.strong}>LeetLogic Guarantee</Label><Label>Tracked in real time with delivery confirmation.</Label></View></Card>
+        <Button title="Get fresh delivery quotes" secondary onPress={() => a.go("quotes", data.order.id)} />
         {error && <Notice text={error} error />}
       </Page>
     );
@@ -136,9 +144,11 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
     <Page
       header={<CheckoutHeader title="Order summary" back={() => setStage("carrier")} />}
       contentStyle={checkout.body}
-      footer={<OrderPayment orderId={data.order.id} isBuyer onChanged={reload} compact buttonTitle="Pay Now" />}
+      footer={currentQuote
+        ? <OrderPayment orderId={data.order.id} isBuyer onChanged={reload} compact buttonTitle="Pay Now" />
+        : <View style={{ gap: 10 }}><Notice text="Your delivery quote expired. Review a fresh quote before paying." /><Button title="Get fresh delivery quotes" onPress={() => a.go("quotes", data.order.id)} /></View>}
     >
-      <Card style={checkout.softCard}><Label>🏅 Delivering to: {a.user?.profile?.fullName || "Buyer"} · Change</Label><Label muted>{address ? `${address.line1}, ${address.city}, ${address.state}` : d?.destination?.address}</Label></Card>
+      <Card style={checkout.softCard}><Label>🏅 Delivering to: {a.user?.profile?.fullName || "Buyer"} · Change</Label><Label muted>{d?.destination ? `${d.destination.address}, ${d.destination.state}` : "Choose a delivery destination"}</Label></Card>
       <Card style={checkout.productSummary}><Label style={checkout.flowBadge}>• Active</Label><Heading>{data.order.title}</Heading><Label style={checkout.priceLarge}>{money(data.order.totalMinor)}</Label><Label muted>{data.order.suggestedPickup.state} · {data.order.quantity || 1} {a.unit(data.order.unitCode || "UNIT")}</Label></Card>
       <Card style={checkout.paymentDetails}>
         <Label style={checkout.optionTitle}>Payment details</Label>

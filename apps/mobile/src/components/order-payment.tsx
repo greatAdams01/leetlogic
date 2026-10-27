@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Linking, View } from "react-native";
 import { useApp } from "../state";
 import { api } from "../lib/api";
@@ -23,13 +23,25 @@ export function OrderPayment({
   const [data, setData] = useState<any>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const load = useCallback(async () => {
-    setData(await api(`/orders/${orderId}/payments`));
-  }, [orderId]);
+  const load = useCallback(async (reconcile = false) => {
+    let latest = await api(`/orders/${orderId}/payments`);
+    const pending = latest.items?.find((payment: any) =>
+      ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(payment.status),
+    );
+    if (reconcile && isBuyer && pending) {
+      await api(`/orders/${orderId}/payments/${pending.id}/refresh`, { method: "POST", body: {} });
+      latest = await api(`/orders/${orderId}/payments`);
+    }
+    setData(latest);
+  }, [orderId, isBuyer]);
+  const callbacks = useRef({ onChanged, error: a.error });
+  callbacks.current = { onChanged, error: a.error };
   useEffect(() => {
     void load().catch(() => {});
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void load().catch(() => {});
+      if (state === "active") {
+        void load(true).then(() => callbacks.current.onChanged()).catch((e) => setError(callbacks.current.error(e)));
+      }
     });
     return () => sub.remove();
   }, [load]);
