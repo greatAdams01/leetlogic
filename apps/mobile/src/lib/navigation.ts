@@ -72,3 +72,11 @@ export function backStack(stack: Route[], signedIn: boolean): Route[] {
   if (route?.name === "otp") return [{ name: "phone" }];
   return stack;
 }
+
+/** Finish a nested flow without leaving its form in the back history. */
+export function returnToScreen(stack: Route[], target: Route): Route[] {
+  const index = stack.findLastIndex(
+    (route) => route.name === target.name && route.id === target.id,
+  );
+  return index >= 0 ? [...stack.slice(0, index), target] : [...stack.slice(0, -1), target];
+}

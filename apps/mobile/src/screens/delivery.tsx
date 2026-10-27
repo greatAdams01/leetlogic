@@ -40,12 +40,16 @@ function CheckoutHeader({ title, step, back }: { title: string; step?: string; b
 
 function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Promise<unknown> }) {
   const a = useApp();
-  const [stage, setStage] = useState<"address" | "scope" | "carrier" | "summary">(
-    data.delivery?.status === "PICKUP_PENDING"
-      ? "summary"
-      : data.delivery?.quotes.length
+  const [stage, setStage] = useState<"address" | "scope" | "carrier" | "summary" | "review">(
+    a.route.query === "delivery-review" || data.delivery?.status === "MANUAL_REVIEW"
+      ? "review"
+      : a.route.query === "delivery-carriers"
         ? "carrier"
-        : "scope",
+        : data.delivery?.status === "PICKUP_PENDING"
+          ? "summary"
+          : data.delivery?.quotes.length
+            ? "carrier"
+            : "scope",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -61,6 +65,14 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
   }, []);
   const currentQuote = !!selected && new Date(selected.expiresAt).getTime() > now;
   const total = BigInt(data.order.totalMinor) + BigInt(selected?.amountMinor || 0);
+  useEffect(() => {
+    if (
+      stage === "review" &&
+      d?.status !== "MANUAL_REVIEW" &&
+      d?.quotes.some((quote) => new Date(quote.expiresAt).getTime() > Date.now())
+    )
+      setStage("carrier");
+  }, [stage, d]);
   const selectQuote = async (quoteId: string) => {
     setBusy(true);
     setError("");
@@ -73,6 +85,38 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       setBusy(false);
     }
   };
+  if (stage === "review")
+    return (
+      <Page
+        header={<CheckoutHeader title="Delivery review" back={a.back} />}
+        contentStyle={checkout.body}
+      >
+        <Heading>Delivery review pending</Heading>
+        <Notice text="Your delivery details are saved. This shipment needs staff review before a delivery price can be confirmed." />
+        <Card>
+          <Label style={{ fontFamily: "NotoBold" }}>Pickup Location</Label>
+          <Label>
+            {data.order.suggestedPickup.address}, {data.order.suggestedPickup.state}
+          </Label>
+          <Label style={{ fontFamily: "NotoBold" }}>Delivery Destination</Label>
+          <Label>
+            {d?.destination?.address}, {d?.destination?.state}
+          </Label>
+        </Card>
+        <Button
+          title="Refresh orders"
+          secondary
+          onPress={async () => {
+            await reload();
+          }}
+        />
+        <Button
+          title="Edit delivery details"
+          secondary
+          onPress={() => a.go("quotes", data.order.id)}
+        />
+      </Page>
+    );
   if (stage === "address")
     return (
       <Page
@@ -966,7 +1010,7 @@ export function Quotes() {
                   "Use positive measurements: dimensions up to 1,000 cm and weight up to 1,000,000 kg.",
                 );
               const p = r.data!.order.suggestedPickup;
-              await api(`/orders/${a.route.id}/delivery/quotes`, {
+              const result = await api(`/orders/${a.route.id}/delivery/quotes`, {
                 method: "POST",
                 body: {
                   pickup: { ...p, email: p.email || pickupEmail, country: "NG" },
@@ -981,7 +1025,13 @@ export function Quotes() {
                   },
                 },
               });
-              a.back();
+              a.returnTo(
+                "delivery",
+                a.route.id,
+                result.manualReview || !result.items?.length
+                  ? "delivery-review"
+                  : "delivery-carriers",
+              );
             } catch (e) {
               setError(a.error(e));
             } finally {

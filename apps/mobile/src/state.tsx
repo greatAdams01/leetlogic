@@ -17,6 +17,7 @@ import {
   openLanguageScreen,
   finishLanguageSelection,
   backStack,
+  returnToScreen,
 } from "./lib/navigation";
 import { accountRoleKey, restoredAccount, signInRole } from "./lib/onboarding";
 import { readSecurity } from "./lib/farmer-security";
@@ -198,6 +199,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           openLanguage: (introStep?: number) => setStack((v) => openLanguageScreen(v, introStep)),
           finishLanguage: () => setStack(finishLanguageSelection),
           go,
+          returnTo: (name: Route["name"], id?: string, query?: string) =>
+            setStack((current) => returnToScreen(current, { name, id, query })),
           back,
           reset,
           locale,
@@ -246,6 +249,7 @@ export function useApp() {
     openLanguage: (introStep?: number) => void;
     finishLanguage: () => void;
     go: (name: Route["name"], id?: string, query?: string) => void;
+    returnTo: (name: Route["name"], id?: string, query?: string) => void;
     back: () => void;
     reset: (name: Route["name"]) => void;
     locale: Locale;

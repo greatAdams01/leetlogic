@@ -5,6 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   api: vi.fn(),
   back: vi.fn(),
+  returnTo: vi.fn(),
+  query: undefined as string | undefined,
   reload: vi.fn(),
   user: null as any,
   data: null as any,
@@ -36,9 +38,10 @@ vi.mock("../components/ui", async () => {
 vi.mock("./api", () => ({ api: h.api }));
 vi.mock("../state", () => ({
   useApp: () => ({
-    route: { id: "order" },
+    route: { id: "order", query: h.query },
     user: h.user,
     back: h.back,
+    returnTo: h.returnTo,
     status: (s: string) => s,
     unit: (s: string) => s,
     error: (e: Error) => e.message,
@@ -59,6 +62,7 @@ const submit = () =>
     .props.onPress();
 beforeEach(() => {
   vi.clearAllMocks();
+  h.query = undefined;
   h.api.mockResolvedValue({ items: [] });
   h.user = { addresses: [], profile: {}, phoneE164: "+2348012345678" };
   h.data = {
@@ -265,4 +269,47 @@ it("reviews distinct farmer and buyer addresses with farmer packing prefilled an
       }),
     }),
   );
+});
+
+for (const [result, next] of [
+  [{ items: [{ id: "rate" }] }, "delivery-carriers"],
+  [{ manualReview: true }, "delivery-review"],
+  [{ items: [] }, "delivery-review"],
+] as const) {
+  it(`continues pricing to ${next} instead of returning to step one`, async () => {
+    h.data.order.packageSuggestion = {
+      ...h.data.order.packageSuggestion,
+      length: 50,
+      width: 40,
+      height: 30,
+    };
+    h.api.mockResolvedValueOnce(result);
+    await act(async () => {
+      tree = create(<Quotes />);
+    });
+    await act(async () => submit());
+    expect(h.returnTo).toHaveBeenCalledWith("delivery", "order", next);
+    expect(h.back).not.toHaveBeenCalled();
+  });
+}
+it("resumes a manual review result without repeating the pickup or delivery choice", async () => {
+  h.query = "delivery-review";
+  h.data.order = {
+    ...h.data.order,
+    isBuyer: true,
+    status: "AWAITING_PAYMENT",
+    totalMinor: "10000",
+  };
+  h.data.delivery = {
+    status: "MANUAL_REVIEW",
+    quotes: [],
+    destination: { address: "Buyer home", state: "FCT" },
+  };
+  await act(async () => {
+    tree = create(<Delivery />);
+  });
+  const headings = tree.root.findAllByType("Heading" as any).map((node) => node.props.children);
+  expect(headings).toContain("Delivery review pending");
+  expect(headings).not.toContain("Pickup or delivery?");
+  expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(0);
 });

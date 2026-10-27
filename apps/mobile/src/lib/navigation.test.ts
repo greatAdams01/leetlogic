@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { openLanguageScreen, finishLanguageSelection, backStack, type Route } from "./navigation";
+import {
+  openLanguageScreen,
+  finishLanguageSelection,
+  backStack,
+  returnToScreen,
+  type Route,
+} from "./navigation";
 describe("language navigation", () => {
   it("continues first-time language selection into onboarding", () => {
     expect(finishLanguageSelection([{ name: "language" }])).toEqual([
@@ -59,5 +65,26 @@ describe("leaving guest sign-in prompts", () => {
     const home: Route[] = [{ name: "home" }];
     expect(backStack(orders, true)).toBe(orders);
     expect(backStack(home, false)).toBe(home);
+  });
+});
+
+describe("delivery pricing return", () => {
+  it("returns to the owning order with its next step and removes the pricing form", () => {
+    const history: Route[] = [
+      { name: "orders" },
+      { name: "delivery", id: "order" },
+      { name: "quotes", id: "order" },
+    ];
+    const next = returnToScreen(history, {
+      name: "delivery",
+      id: "order",
+      query: "delivery-carriers",
+    });
+    expect(next).toEqual([
+      { name: "orders" },
+      { name: "delivery", id: "order", query: "delivery-carriers" },
+    ]);
+    expect(backStack(next, true)).toEqual([{ name: "orders" }]);
+    expect(history).toHaveLength(3);
   });
 });
