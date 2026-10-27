@@ -1,0 +1,31 @@
+import React from "react";
+import { act, create } from "react-test-renderer";
+import { afterEach, expect, it, vi } from "vitest";
+vi.mock("react-native", () => ({ View: "View" }));
+vi.mock("../components/ui", () => ({ Label: "Label", colors: { mint: "green", green: "green" } }));
+vi.mock("../state", () => ({ useApp: () => ({ ui: (text: string, values?: any) => text.replace("{time}", values?.time || "") }) }));
+import { ReservationTimer } from "../components/reservation-timer";
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+afterEach(() => vi.useRealTimers());
+it("counts down, warns in the last three minutes and stops at expiry", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-27T10:00:00Z"));
+  let tree: any;
+  await act(async () => { tree = create(<ReservationTimer expiresAt="2026-10-27T10:04:00Z" />); });
+  const label = () => tree.root.findAllByType("Label")[1];
+  expect(label().props.children).toContain("4:00");
+  expect(label().props.style.color).toBe("green");
+  await act(async () => { vi.advanceTimersByTime(60000); });
+  expect(label().props.children).toContain("3:00");
+  expect(label().props.style.color).toBe("#8a4b08");
+  await act(async () => { vi.advanceTimersByTime(180000); });
+  expect(label().props.children).toBe("Checkout time expired");
+  expect(vi.getTimerCount()).toBe(0);
+  await act(async () => tree.unmount());
+});
+it("omits the timer when an order has no reservation deadline", async () => {
+  let tree: any;
+  await act(async () => { tree = create(<ReservationTimer />); });
+  expect(tree.toJSON()).toBeNull();
+  await act(async () => tree.unmount());
+});

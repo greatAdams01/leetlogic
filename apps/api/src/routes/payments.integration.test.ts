@@ -201,6 +201,26 @@ suite("provider-backed payment safeguards", () => {
       ...overrides,
     });
   }
+  it("collects produce-only payment for pickup and lets only the buyer confirm receipt", async () => {
+    const { o, d } = await order();
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set("Authorization", `Bearer ${outsider}`).send({})).status).toBe(404);
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(200);
+    const selected = await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } });
+    expect(selected.status).toBe("PICKUP_PENDING");
+    expect(selected.shippingMinor).toBe(0n);
+    expect(selected.selectedQuoteId).toBeNull();
+    const a = await checkout(o.id);
+    expect(a.amountMinor).toBe(10000n);
+    expect(a.shippingMinor).toBe(0n);
+    expect(a.quoteId).toBeNull();
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(409);
+    mockReceipt(a, { amount: "100.00", amount_paid: "101.00" });
+    await reconcilePayment(a.id);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("PICKUP_READY");
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(409);
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(200);
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).deliveryConfirmedAt).not.toBeNull();
+  });
   it("deduplicates concurrent checkout and restricts payment access", async () => {
     const { o } = await order();
     const attempts = await Promise.all([startCheckout(o.id, buyer), startCheckout(o.id, buyer)]);

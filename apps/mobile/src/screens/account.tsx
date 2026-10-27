@@ -290,7 +290,12 @@ export function Addresses() {
           ? "Your farm address is used for pickup. Choose a different pickup address only when arranging an order’s delivery."
           : "Save the addresses where you want to receive your orders."}
       </Label>
-      {saved && <Notice text={seller ? "Pickup location saved." : "Delivery address saved."} />}
+      {saved && (
+        <View style={{ gap: 8 }}>
+          <Notice text={seller ? "Pickup location saved." : "Delivery address saved."} />
+          {!seller && <Button title="Go back" onPress={a.back} />}
+        </View>
+      )}
       {(seller && !addingPickup ? (farmAddress ? [farmAddress] : []) : a.user?.addresses)?.map(
         (ad) => (
           <Card key={ad.id}>
@@ -337,6 +342,7 @@ export function Addresses() {
               }
             }}
           />
+          {coordinates && !seller && <Notice text="Location selected. Review your address below, then tap Save address to continue." />}
           <Card>
             {(["label", "line1", "city"] as const).map((k) => (
               <Field
@@ -393,6 +399,11 @@ export function Addresses() {
                 setSaved(true);
                 setCoordinates(undefined);
                 if (addingPickup) a.back();
+                else if (!seller) {
+                  a.alert("Delivery address saved.", "Return to continue your order.", [
+                    { text: "Go back", onPress: a.back },
+                  ]);
+                }
               } catch (e) {
                 setError(a.error(e));
               } finally {

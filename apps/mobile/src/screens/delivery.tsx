@@ -36,13 +36,14 @@ function CheckoutHeader({ title, step, back }: { title: string; step?: string; b
 function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Promise<unknown> }) {
   const a = useApp();
   const [stage, setStage] = useState<"address" | "scope" | "carrier" | "summary">(
-    data.delivery?.quotes.length ? "carrier" : "address",
+    data.delivery?.status === "PICKUP_PENDING" ? "summary" : data.delivery?.quotes.length ? "carrier" : "scope",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const d = data.delivery;
   const address =
     a.user?.addresses.find((candidate) => candidate.isDefaultDelivery) || a.user?.addresses[0];
+  const collection = d?.status === "PICKUP_PENDING";
   const selected = d?.quotes.find((quote) => quote.id === d.selectedQuoteId);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -68,7 +69,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       <Page
         header={<CheckoutHeader title="Delivery" step="STEP 1 OF 3" back={a.back} />}
         contentStyle={checkout.body}
-        footer={<Button title="Continue" disabled={!address} onPress={() => setStage("scope")} />}
+        footer={<Button title="Continue" disabled={!address} onPress={() => a.go("quotes", data.order.id)} />}
       >
         <Heading>Delivery</Heading>
         <Label muted>Shipping cost is shown before you pay.</Label>
@@ -102,16 +103,23 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       <Page
         header={<CheckoutHeader title="Delivery" step="Step 2 of 3" back={() => setStage("address")} />}
         contentStyle={checkout.body}
-        footer={<Button title="Continue" onPress={() => d?.quotes.length ? setStage("carrier") : a.go("quotes", data.order.id)} />}
       >
         <Label style={checkout.flowBadge}>Logistics & fulfillment</Label>
-        <Heading>How should it arrive?</Heading>
-        <Label>Choose the shipping scope that suits your location and order size.</Label>
-        <Card style={checkout.option}><View style={{ flex: 1 }}><Label style={checkout.optionTitle}>Local pickup</Label><Label>Collect directly from farmer hub or station in town.</Label></View><View style={checkout.radio} /></Card>
-        <Card style={{ ...checkout.option, ...checkout.optionSelected }}><View style={{ flex: 1 }}><Label style={checkout.optionTitle}>Nigeria · Recommended</Label><Label>Interstate and intrastate courier delivery across Nigeria.</Label></View><View style={checkout.check}><Label style={{ color: "white" }}>✓</Label></View></Card>
-        <Card style={checkout.option}><View style={{ flex: 1 }}><Label style={checkout.optionTitle}>International</Label><Label>Air cargo and sea shipping for processed agri-goods.</Label></View><View style={checkout.radio} /></Card>
-        <Card style={checkout.softCard}><Label>🏅 Destination · Change</Label><Label muted>{address ? `${address.line1}, ${address.city}, ${address.state} State` : "Add delivery address"}</Label></Card>
-        <Label style={{ fontSize: 14 }}>Escrow protected deal · Calculated at next step</Label>
+        <Heading>Pickup or delivery?</Heading>
+        <Label>Choose how you want to receive your produce.</Label>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={async () => {
+          setBusy(true); setError("");
+          try {
+            await api(`/orders/${data.order.id}/delivery/collection`, { method: "POST", body: {} });
+            await reload(); setStage("summary");
+          } catch (e) { setError(a.error(e)); } finally { setBusy(false); }
+        }}>
+          <Card style={checkout.option}><View style={{ flex: 1 }}><Label style={checkout.optionTitle}>Pickup</Label><Label>Collect at the farmer’s confirmed address. No courier fee.</Label></View><View style={checkout.radio} /></Card>
+        </Pressable>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => setStage("address")}>
+          <Card style={checkout.option}><View style={{ flex: 1 }}><Label style={checkout.optionTitle}>Delivery</Label><Label>Send to your saved address. Courier coverage and fees depend on your location.</Label></View><View style={checkout.radio} /></Card>
+        </Pressable>
+        {error && <Notice text={error} error />}
       </Page>
     );
   if (stage === "carrier")
@@ -142,25 +150,27 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
     );
   return (
     <Page
-      header={<CheckoutHeader title="Order summary" back={() => setStage("carrier")} />}
+      header={<CheckoutHeader title="Order summary" back={() => setStage(collection ? "scope" : "carrier")} />}
       contentStyle={checkout.body}
-      footer={currentQuote
+      footer={collection || currentQuote
         ? <OrderPayment orderId={data.order.id} isBuyer onChanged={reload} compact buttonTitle="Pay Now" />
         : <View style={{ gap: 10 }}><Notice text="Your delivery quote expired. Review a fresh quote before paying." /><Button title="Get fresh delivery quotes" onPress={() => a.go("quotes", data.order.id)} /></View>}
     >
-      <Card style={checkout.softCard}><Label>🏅 Delivering to: {a.user?.profile?.fullName || "Buyer"} · Change</Label><Label muted>{d?.destination ? `${d.destination.address}, ${d.destination.state}` : "Choose a delivery destination"}</Label></Card>
+      {!collection && <Card style={checkout.softCard}><Label>🏅 Delivering to: {a.user?.profile?.fullName || "Buyer"} · Change</Label><Label muted>{d?.destination ? `${d.destination.address}, ${d.destination.state}` : "Choose a delivery destination"}</Label><Label>{d?.destination?.name} · {d?.destination?.phone}</Label></Card>}
+      {collection && <Card><Heading>Pickup</Heading><Label>{data.order.suggestedPickup.address}, {data.order.suggestedPickup.state}</Label><Label>{data.order.suggestedPickup.phone}</Label><Label>Call the farmer to arrange collection after payment.</Label><Button title="Call farmer" secondary onPress={() => void Linking.openURL(`tel:${data.order.suggestedPickup.phone}`).catch((e) => setError(a.error(e)))} /></Card>}
       <Card style={checkout.productSummary}><Label style={checkout.flowBadge}>• Active</Label><Heading>{data.order.title}</Heading><Label style={checkout.priceLarge}>{money(data.order.totalMinor)}</Label><Label muted>{data.order.suggestedPickup.state} · {data.order.quantity || 1} {a.unit(data.order.unitCode || "UNIT")}</Label></Card>
       <Card style={checkout.paymentDetails}>
         <Label style={checkout.optionTitle}>Payment details</Label>
         <View style={s.between}><Label muted>Produce</Label><Label>{money(data.order.totalMinor)}</Label></View>
-        <View style={s.between}><Label muted>Delivery to {address?.city || d?.destination?.state}</Label><Label>{money(selected?.amountMinor || "0")}</Label></View>
+        <View style={s.between}><Label muted>{collection ? "Pickup" : "Delivery"}</Label><Label>{money(selected?.amountMinor || "0")}</Label></View>
         <View style={checkout.rule} />
         <View style={s.between}><Label>Total</Label><Label style={checkout.strong}>{money(total.toString())}</Label></View>
         <Label style={{ fontSize: 14 }}>Payment provider fees are shown before confirmation.</Label>
       </Card>
-      <Card style={checkout.note}><Icon name="cartShield" size={22} /><View style={{ flex: 1 }}><Label style={checkout.strong}>Escrow & transit guaranteed</Label><Label muted>Courier dispatch with tracking. Payment held safely until you inspect and confirm delivery.</Label></View></Card>
-      <Label style={checkout.liveBadge}>Live hub routing active</Label>
-      <Label>{data.order.suggestedPickup.state} → Regional depot → {address?.city || d?.destination?.state}</Label>
+      <Card style={checkout.note}><Icon name="cartShield" size={22} /><View style={{ flex: 1 }}><Label style={checkout.strong}>Secure payment</Label><Label muted>Payment held safely until you inspect and confirm receipt.</Label></View></Card>
+      {error && <Notice text={error} error />}
+      {!collection && <Label style={checkout.liveBadge}>Live hub routing active</Label>}
+      {!collection && <Label>{data.order.suggestedPickup.state} → {d?.destination?.state || address?.state}</Label>}
     </Page>
   );
 }
@@ -225,6 +235,8 @@ export function Delivery() {
               Produce and shipping are accounted for separately.
             </Label>
           </Card>
+          {d?.status === "PICKUP_READY" && <Card><Heading>Pickup</Heading><Label>Payment received. Arrange collection with the farmer.</Label><Label>{data.order.suggestedPickup.phone}</Label><Button title="Call farmer" secondary onPress={() => void Linking.openURL(`tel:${data.order.suggestedPickup.phone}`).catch((e) => setError(a.error(e)))} /></Card>}
+          {!data.order.isBuyer && d?.destination?.phone && <Card><Heading>Buyer contact</Heading><Label>{d.destination.name}</Label><Label>{d.destination.phone}</Label><Button title="Call buyer" secondary onPress={() => void Linking.openURL(`tel:${d.destination.phone}`).catch((e) => setError(a.error(e)))} /></Card>}
           {data.order.isBuyer && <OrderDisputes orderId={a.route.id!} />}
           <Card>
             <Heading>Pickup location</Heading>
@@ -453,9 +465,9 @@ export function Delivery() {
               ))}
             </Card>
           )}
-          {d?.status === "DELIVERED" && data.order.isBuyer && data.order.status === "FUNDED" && (
+          {["DELIVERED", "PICKUP_READY"].includes(d?.status || "") && data.order.isBuyer && data.order.status === "FUNDED" && (
             <Button
-              title={a.t("delivery.confirm")}
+              title={d?.status === "PICKUP_READY" ? "Confirm pickup received" : a.t("delivery.confirm")}
               disabled={busy}
               onPress={() =>
                 a.alert(
@@ -588,7 +600,11 @@ export function Quotes() {
         notes: source.notes || "",
         ...(saved ? { pickupDate: saved.pickupDate } : {}),
       }));
-    if (r.data.delivery?.destination) setDestination(r.data.delivery.destination);
+    if (r.data.delivery?.destination && r.data.delivery.status !== "PICKUP_PENDING") setDestination(r.data.delivery.destination);
+    else {
+      const address = a.user?.addresses.find((item) => item.isDefaultDelivery) || a.user?.addresses[0];
+      if (address) setDestination((current) => ({ ...current, address: `${address.line1}, ${address.city}, ${address.lga}`, state: address.state }));
+    }
   }, [r.data]);
   return (
     <Page

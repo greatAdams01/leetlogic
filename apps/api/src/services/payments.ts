@@ -171,19 +171,20 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
     if (active) return active;
     const d = order.delivery,
       quote = d?.quotes.find((q) => q.id === d.selectedQuoteId);
-    if (
+    const collection = d?.status === "PICKUP_PENDING" && kind === "ORDER";
+    if (!collection && (
       !d ||
       !quote ||
       quote.expiresAt <= new Date() ||
       !quote.courierId ||
       d.status === "MANUAL_REVIEW"
-    )
+    ))
       throw new AppError(409, "QUOTE_EXPIRED", "Choose a current delivery quote before paying.");
     if (
       order.financialHold ||
       (kind === "ORDER"
         ? order.status !== "AWAITING_PAYMENT" || order.heldMinor !== 0n
-        : order.status !== "FUNDED" || !!d.providerShipmentId || !!d.bookingStartedAt)
+        : order.status !== "FUNDED" || !!d!.providerShipmentId || !!d!.bookingStartedAt)
     )
       throw new AppError(409, "PAYMENT_LOCKED", "This order cannot accept a payment right now.");
     if (kind === "ORDER" && order.reservationExpiresAt && order.reservationExpiresAt <= new Date())
@@ -205,10 +206,10 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
         "This seller is finishing payment setup. Please try again later.",
       );
     const produce = kind === "ORDER" ? order.totalMinor : 0n;
-    const shipping = kind === "ORDER" ? quote.amountMinor : quote.amountMinor - d.paidMinor;
+    const shipping = collection ? 0n : kind === "ORDER" ? quote!.amountMinor : quote!.amountMinor - d!.paidMinor;
     if (shipping < 0n || produce + shipping <= 0n)
       throw new AppError(409, "TOPUP_NOT_REQUIRED", "No additional payment is needed.");
-    const expiresAt = new Date(Math.min(quote.expiresAt.getTime(), Date.now() + 15 * 60000));
+    const expiresAt = new Date(Math.min(quote && !collection ? quote.expiresAt.getTime() : Infinity, Date.now() + 15 * 60000));
     const created = await tx.paymentAttempt.create({
       data: {
         orderId,
@@ -218,7 +219,7 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
         amountMinor: produce + shipping,
         produceMinor: produce,
         shippingMinor: shipping,
-        quoteId: quote.id,
+        quoteId: collection ? null : quote!.id,
         expiresAt,
       },
     });
@@ -434,7 +435,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
         data: {
           paidMinor: { increment: current.shippingMinor },
           paymentRef: order.delivery.paymentRef || chargeId,
-          status: "PAID",
+          status: order.delivery.status === "PICKUP_PENDING" ? "PICKUP_READY" : "PAID",
         },
       });
     await audit(

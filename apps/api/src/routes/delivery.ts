@@ -88,6 +88,7 @@ customerDeliveryRouter.get("/", async (req, res) => {
       reference: true,
       status: true,
       totalMinor: true,
+      reservationExpiresAt: true,
       quantity: true,
       listing: { select: { title: true, unitCode: true } },
       delivery: { select: { status: true, shippingMinor: true } },
@@ -96,6 +97,28 @@ customerDeliveryRouter.get("/", async (req, res) => {
     take: 50,
   });
   res.json(serialize({ items }));
+});
+// Buyer collection uses no courier quote or shipping charge.
+customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.buyerId !== req.auth!.sub)
+    throw new AppError(403, "BUYER_REQUIRED", "Only the buyer can choose pickup.");
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
+    await unlockedCheckout(tx, order.id);
+    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true, shipment: true } });
+    if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.bookingStartedAt || current.delivery?.paidMinor)
+      throw new AppError(409, "DELIVERY_LOCKED", "Fulfilment cannot change after payment or dispatch.");
+    const buyer = await tx.user.findUniqueOrThrow({ where: { id: req.auth!.sub }, include: { profile: true } });
+    const pickup = { ...savedPickup(order), name: order.farmerProfile.farmName, phone: order.farmerProfile.user.phoneE164, country: "NG" };
+    const destination = { name: buyer.profile?.fullName || "Buyer", phone: buyer.phoneE164, email: buyer.profile?.email || "", address: pickup.address, state: pickup.state, country: "NG" };
+    await tx.delivery.upsert({ where: { orderId: order.id },
+      create: { orderId: order.id, status: "PICKUP_PENDING", pickup, destination },
+      update: { status: "PICKUP_PENDING", pickup, destination, selectedQuoteId: null, shippingMinor: 0n, courier: null, failureCode: null },
+    });
+    await audit(req, { action: "delivery.collection.selected", entityType: "order", entityId: order.id }, tx);
+  });
+  res.json({ selected: true });
 });
 // Only the farmer can change where their produce is collected, before checkout.
 customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
@@ -746,18 +769,22 @@ staffDeliveryRouter.post(
 );
 customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
   const order = await orderAccess(req);
-  if (order.buyerId !== req.auth!.sub || order.delivery?.status !== "DELIVERED")
+  if (order.buyerId !== req.auth!.sub || !["DELIVERED", "PICKUP_READY"].includes(order.delivery?.status || ""))
     throw new AppError(409, "DELIVERY_NOT_READY", "Only the buyer can confirm a delivered order");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
     await unlockedCheckout(tx, order.id);
-    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id } });
+    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true } });
+    if (!["DELIVERED", "PICKUP_READY"].includes(current.delivery?.status || ""))
+      throw new AppError(409, "DELIVERY_NOT_READY", "Order is not ready for confirmation");
     if (current.status !== "FUNDED" && current.status !== "DELIVERED")
       throw new AppError(409, "ORDER_NOT_FUNDED", "Order cannot be confirmed");
     await tx.tradeOrder.update({
       where: { id: order.id },
       data: { status: "DELIVERED", deliveryConfirmedAt: new Date() },
     });
+    if (current.delivery?.status === "PICKUP_READY")
+      await tx.delivery.update({ where: { id: current.delivery.id }, data: { status: "DELIVERED" } });
     await audit(
       req,
       { action: "delivery.recipient.confirmed", entityType: "order", entityId: order.id },

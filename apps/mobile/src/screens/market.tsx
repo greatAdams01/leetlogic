@@ -1,3 +1,4 @@
+import { ReservationTimer } from "../components/reservation-timer";
 import { ProductActions } from "../components/product-actions";
 import { BuyerSearch } from "../components/buyer-search";
 import { BuyerEscrow } from "../components/buyer-escrow";
@@ -615,6 +616,8 @@ export function Orders() {
   );
   const nextAction = (order: Order) => {
     if (a.role === "SELLER") return { title: "View order & tracking", hint: "Review fulfilment and delivery status" };
+    if (order.status === "FUNDED" && order.delivery?.status === "PICKUP_READY")
+      return { title: "View pickup details", hint: "Arrange collection and confirm receipt" };
     if (order.status === "AWAITING_PAYMENT") {
       if (!order.delivery) return { title: "Continue checkout", hint: "Confirm delivery address and choose shipping" };
       if (["QUOTE_REQUIRED", "MANUAL_REVIEW"].includes(order.delivery.status))
@@ -666,6 +669,7 @@ export function Orders() {
               <Text style={[s.badge, checkout && { backgroundColor: colors.mint }]}> {checkout ? "Checkout in progress" : a.status(i.delivery?.status || i.status)} </Text>
               <Label muted style={s.small}>{i.reference.slice(-8)}</Label>
             </View>
+            {checkout && <ReservationTimer expiresAt={i.reservationExpiresAt} />}
             <View style={{ gap: 3 }}>
               <Label style={{ fontFamily: "NotoBold", fontSize: 20 }}>{i.listing.title}</Label>
               <Label muted>{i.quantity || 1} {a.unit(i.listing.unitCode || "UNIT")}</Label>

@@ -75,6 +75,7 @@ export type Customer = {
   addresses: Address[];
 };
 export type Order = {
+  reservationExpiresAt?: string | null;
   id: string;
   reference: string;
   status: string;
