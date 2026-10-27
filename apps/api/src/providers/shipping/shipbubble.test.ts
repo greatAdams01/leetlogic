@@ -82,6 +82,9 @@ describe("Shipbubble protocol", () => {
                 courier_id: "test-courier",
                 service_code: "pickup",
                 courier_name: "Courier",
+                ratings: 4.5,
+                votes: 80,
+                tracking_level: 8,
                 total: 120.5,
                 service_type: "pickup",
                 delivery_eta: "Tomorrow",
@@ -114,6 +117,7 @@ describe("Shipbubble protocol", () => {
     });
     expect(quotes).toHaveLength(1);
     expect(quotes[0]?.amountMinor).toBe(12050n);
+    expect(quotes[0]?.quality).toEqual({ rating: 4.5, votes: 80, trackingLevel: 8 });
     expect(JSON.parse(fetcher.mock.calls[2]![1].body)).toMatchObject({
       sender_address_code: 1,
       reciever_address_code: 2,

@@ -63,6 +63,7 @@ const safePayment = (item: any) => ({
   orderId: item.orderId,
   kind: item.kind,
   status: item.status,
+  exceptionCode: item.exceptionCode,
   amountMinor: item.amountMinor,
   produceMinor: item.produceMinor,
   shippingMinor: item.shippingMinor,
@@ -100,6 +101,7 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
         ...safePayment(item),
         checkoutUrl: order.buyerId === req.auth!.sub ? item.checkoutUrl : null,
       })),
+      orderStatus: order.status,
       financialHold: order.financialHold,
       heldMinor: order.heldMinor,
       releasedMinor: order.releasedMinor,
@@ -120,6 +122,12 @@ paymentsRouter.post("/:id/checkout", async (req, res) => {
   });
   if (operation?.status === "QUEUED") await runMoneyOperation(operation.id);
   const updated = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } });
+  if (["FAILED", "BLOCKED"].includes(updated.status))
+    throw new AppError(
+      updated.status === "FAILED" ? 422 : 503,
+      updated.exceptionCode || "PAYMENT_PROVIDER_REJECTED",
+      "We couldn’t start your payment. Please try again or contact support.",
+    );
   res.status(updated.checkoutUrl ? 200 : 202).json(serialize(safePayment(updated)));
 });
 paymentsRouter.post("/:id/payments/:paymentId/refresh", async (req, res) => {
@@ -131,6 +139,12 @@ paymentsRouter.post("/:id/payments/:paymentId/refresh", async (req, res) => {
     where: { id: uuid.parse(req.params.paymentId), orderId: order.id, mode: mode() },
   });
   if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
+  if (!payment.checkoutId) {
+    const operation = await prisma.moneyOperation.findFirst({
+      where: { paymentId: payment.id, kind: "CHECKOUT", mode: mode(), status: "QUEUED" },
+    });
+    if (operation) await runMoneyOperation(operation.id);
+  }
   await reconcilePayment(payment.id);
   res.json(
     serialize(

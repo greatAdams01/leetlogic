@@ -1,6 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import {
+  paymentActions,
+  pendingPaymentStatuses,
+} from "../../../packages/contracts/src/payment-state";
 import { isHostedPaymentUrl } from "../../../packages/contracts/src/payment-urls";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
@@ -30,42 +34,70 @@ export function CustomerPayment({
   const [data, setData] = useState<any>(null),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
+  const running = useRef(false);
+  const callbacks = useRef({ error, onChanged });
+  callbacks.current = { error, onChanged };
   const load = useCallback(
-    async () => setData(await customerApi(`orders/${orderId}/payments`)),
-    [orderId],
+    async (reconcile = false) => {
+      let latest = await customerApi(`orders/${orderId}/payments`);
+      const pending = latest.items?.find((item: any) =>
+        pendingPaymentStatuses.includes(item.status),
+      );
+      if (reconcile && isBuyer && pending) {
+        await customerApi(`orders/${orderId}/payments/${pending.id}/refresh`, {});
+        latest = await customerApi(`orders/${orderId}/payments`);
+      }
+      setData(latest);
+    },
+    [orderId, isBuyer],
   );
   useEffect(() => {
-    void load().catch(() => {});
-    const focus = () => void load().catch(() => {});
+    setData(null);
+    setNotice("");
+    void load().catch((e) => setNotice(callbacks.current.error(e)));
+    const focus = () => {
+      if (!running.current)
+        void load(true)
+          .then(() => callbacks.current.onChanged())
+          .catch((e) => setNotice(callbacks.current.error(e)));
+    };
     window.addEventListener("focus", focus);
     return () => window.removeEventListener("focus", focus);
   }, [load]);
-  const latest = data?.items?.[0];
+  const actions = paymentActions<any>(data || {}, topup);
+  const latest = actions.item;
+  const open = (url: string) => {
+    if (!isHostedPaymentUrl(url, "checkout"))
+      throw new Error("We couldn’t open the secure payment page. Please try again.");
+    location.assign(url);
+  };
   const act = async (kind: string) => {
-    if (busy) return;
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setNotice("");
     try {
-      if (kind === "refresh") {
-        if (latest) await customerApi(`orders/${orderId}/payments/${latest.id}/refresh`, {});
-        await load();
-        await onChanged();
+      if (kind === "refresh") await load(true);
+      else if (kind === "resume") {
+        if (actions.canResume) open(actions.pending!.checkoutUrl!);
       } else {
         const result = await customerApi(`orders/${orderId}/checkout`, { kind });
-        if (result.checkoutUrl) {
-          const url = new URL(result.checkoutUrl);
-          if (url.protocol !== "https:" || url.hostname !== "checkout.bachs.io")
-            throw new Error("We couldn’t open the secure payment page. Please try again.");
-          location.assign(result.checkoutUrl);
-        } else await load();
+        setData((current: any) => ({
+          ...current,
+          items: [result, ...(current?.items || []).filter((item: any) => item.id !== result.id)],
+        }));
+        if (result.checkoutUrl) open(result.checkoutUrl);
+        await load();
       }
+      await onChanged();
     } catch (e) {
       setNotice(error(e));
+      await load().catch(() => setData(null));
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
-  if (!data?.enabled) return null;
   return (
     <section>
       <h2>{say("Payment")}</h2>
@@ -74,7 +106,10 @@ export function CustomerPayment({
           "Payment-processing fees are shown before you pay. Non-returnable fees are deducted from refunds.",
         )}
       </p>
-      {data.financialHold && (
+      {data && !data.enabled && (
+        <p role="status">{say("Payments are not available right now. Please try again later.")}</p>
+      )}
+      {data?.financialHold && (
         <p role="status">
           {say("Your payment is being reviewed. Please contact support for help.")}
         </p>
@@ -84,26 +119,41 @@ export function CustomerPayment({
           {status(latest.status)} · {money(latest.amountMinor)}
         </p>
       )}
-      {isBuyer &&
-        !data.financialHold &&
-        data.heldMinor === "0" &&
-        data.releasedMinor === "0" &&
-        data.refundedMinor === "0" && (
-          <button disabled={busy} onClick={() => void act("ORDER")}>
-            {say("Pay securely")}
+      {data?.enabled && isBuyer && actions.canPay && (
+        <button disabled={busy} onClick={() => void act(actions.kind)}>
+          {say(actions.kind === "DELIVERY_TOPUP" ? "Pay delivery difference" : "Make Payment")}
+        </button>
+      )}
+      {data?.enabled && isBuyer && actions.pending && (
+        <>
+          <button disabled={busy} onClick={() => void act("refresh")}>
+            {say("Check Payment")}
           </button>
+          <p>{say("After paying, return to this order and check your payment.")}</p>
+          {actions.canResume && (
+            <button disabled={busy} onClick={() => void act("resume")}>
+              {say("Continue payment")}
+            </button>
+          )}
+        </>
+      )}
+      {data?.enabled && isBuyer && actions.succeeded && (
+        <p role="status">{say("Payment confirmed")}</p>
+      )}
+      {data?.enabled && actions.locked && !data.financialHold && (
+        <p role="status">{say("This order cannot accept a payment right now.")}</p>
+      )}
+      {latest?.exceptionCode &&
+        (["FAILED", "BLOCKED", "EXCEPTION", "UNKNOWN"].includes(latest.status) ||
+          latest.exceptionCode === "PAYMENT_ATTEMPT_FAILED") && (
+          <p role="alert">{error({ code: latest.exceptionCode })}</p>
         )}
-      {isBuyer && topup && (
-        <button disabled={busy} onClick={() => void act("DELIVERY_TOPUP")}>
-          {say("Pay delivery difference")}
-        </button>
-      )}
-      {isBuyer && latest && (
+      <p role="alert">{notice}</p>
+      {!data && !!notice && (
         <button disabled={busy} onClick={() => void act("refresh")}>
-          {say("Check payment status")}
+          {say("Check Payment")}
         </button>
       )}
-      <p role="status">{notice}</p>
     </section>
   );
 }

@@ -859,6 +859,7 @@ model DeliveryQuote {
   courier String @db.VarChar(120)
   amountMinor BigInt
   eta String? @db.VarChar(180)
+  quality Json?
   inputHash String @db.VarChar(64)
   expiresAt DateTime @db.Timestamptz(6)
   createdAt DateTime @default(now()) @db.Timestamptz(6)

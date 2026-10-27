@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Linking, View } from "react-native";
+import {
+  paymentActions,
+  pendingPaymentStatuses,
+} from "../../../../packages/contracts/src/payment-state";
+import { isHostedPaymentUrl } from "../../../../packages/contracts/src/payment-urls";
 import { useApp } from "../state";
 import { api } from "../lib/api";
 import { money } from "../lib/domain";
@@ -9,7 +14,7 @@ export function OrderPayment({
   isBuyer,
   onChanged,
   topup = false,
-  buttonTitle = "Pay securely",
+  buttonTitle = "Make Payment",
   compact = false,
 }: {
   orderId: string;
@@ -23,55 +28,77 @@ export function OrderPayment({
   const [data, setData] = useState<any>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const load = useCallback(async (reconcile = false) => {
-    let latest = await api(`/orders/${orderId}/payments`);
-    const pending = latest.items?.find((payment: any) =>
-      ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(payment.status),
-    );
-    if (reconcile && isBuyer && pending) {
-      await api(`/orders/${orderId}/payments/${pending.id}/refresh`, { method: "POST", body: {} });
-      latest = await api(`/orders/${orderId}/payments`);
-    }
-    setData(latest);
-  }, [orderId, isBuyer]);
+  const running = useRef(false);
+  const load = useCallback(
+    async (reconcile = false) => {
+      let latest = await api(`/orders/${orderId}/payments`);
+      const pending = latest.items?.find((payment: any) =>
+        pendingPaymentStatuses.includes(payment.status),
+      );
+      if (reconcile && isBuyer && pending) {
+        await api(`/orders/${orderId}/payments/${pending.id}/refresh`, {
+          method: "POST",
+          body: {},
+        });
+        latest = await api(`/orders/${orderId}/payments`);
+      }
+      setData(latest);
+      return latest;
+    },
+    [orderId, isBuyer],
+  );
   const callbacks = useRef({ onChanged, error: a.error });
   callbacks.current = { onChanged, error: a.error };
   useEffect(() => {
-    void load().catch(() => {});
+    setData(null);
+    setError("");
+    void load().catch((e) => setError(callbacks.current.error(e)));
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        void load(true).then(() => callbacks.current.onChanged()).catch((e) => setError(callbacks.current.error(e)));
+      if (state === "active" && !running.current) {
+        void load(true)
+          .then(() => callbacks.current.onChanged())
+          .catch((e) => setError(callbacks.current.error(e)));
       }
     });
     return () => sub.remove();
   }, [load]);
-  const item = data?.items?.[0];
-  const act = async (kind: "ORDER" | "DELIVERY_TOPUP" | "REFRESH") => {
-    if (busy) return;
+  const actions = paymentActions<any>(data || {}, topup);
+  const item = actions.item;
+  const open = async (url: string) => {
+    if (!isHostedPaymentUrl(url, "checkout"))
+      throw new Error("We couldn’t open the secure payment page. Please try again.");
+    await Linking.openURL(url);
+  };
+  const act = async (kind: "ORDER" | "DELIVERY_TOPUP" | "REFRESH" | "RESUME") => {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError("");
     try {
-      if (kind === "REFRESH") {
-        if (item)
-          await api(`/orders/${orderId}/payments/${item.id}/refresh`, { method: "POST", body: {} });
+      if (kind === "RESUME") {
+        if (actions.canResume) await open(actions.pending!.checkoutUrl!);
+      } else if (kind === "REFRESH") {
+        await load(true);
       } else {
         const result = await api(`/orders/${orderId}/checkout`, { method: "POST", body: { kind } });
-        if (result.checkoutUrl) {
-          const url = new URL(result.checkoutUrl);
-          if (url.protocol !== "https:" || url.hostname !== "checkout.bachs.io")
-            throw new Error("We couldn’t open the secure payment page. Please try again.");
-          await Linking.openURL(result.checkoutUrl);
-        }
+        // Persist the returned pending state before opening the hosted page.
+        setData((current: any) => ({
+          ...current,
+          items: [result, ...(current?.items || []).filter((p: any) => p.id !== result.id)],
+        }));
+        if (result.checkoutUrl) await open(result.checkoutUrl);
       }
-      await load();
+      if (kind !== "REFRESH") await load();
       await onChanged();
     } catch (e) {
       setError(a.error(e));
+      // A lost response may still have created checkout. Read its state before offering another write.
+      await load().catch(() => setData(null));
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
-  if (!data?.enabled) return null;
   const content = (
     <>
       {!compact && <Heading>Payment</Heading>}
@@ -81,7 +108,10 @@ export function OrderPayment({
           refunds.
         </Label>
       )}
-      {!!data.financialHold && (
+      {data && !data.enabled && (
+        <Notice text="Payments are not available right now. Please try again later." />
+      )}
+      {!!data?.financialHold && (
         <Notice text="Your payment is being reviewed. Please contact support for help." />
       )}
       {item && (
@@ -90,35 +120,51 @@ export function OrderPayment({
           <Label>{money(item.amountMinor)}</Label>
         </View>
       )}
-      {isBuyer &&
-        data.heldMinor === "0" &&
-        data.releasedMinor === "0" &&
-        data.refundedMinor === "0" &&
-        !data.financialHold && (
-          <Button
-            title={buttonTitle}
-            disabled={busy}
-            loading={busy}
-            onPress={() => void act("ORDER")}
-          />
-        )}
-      {isBuyer && topup && data.heldMinor !== "0" && !data.financialHold && (
+      {data?.enabled && isBuyer && actions.canPay && (
         <Button
-          title="Pay delivery difference"
-          secondary
+          title={actions.kind === "DELIVERY_TOPUP" ? "Pay delivery difference" : buttonTitle}
           disabled={busy}
-          onPress={() => void act("DELIVERY_TOPUP")}
+          loading={busy}
+          onPress={() => void act(actions.kind as "ORDER" | "DELIVERY_TOPUP")}
         />
       )}
-      {isBuyer && item && (
+      {data?.enabled && isBuyer && actions.pending && (
+        <>
+          <Button
+            title="Check Payment"
+            disabled={busy}
+            loading={busy}
+            onPress={() => void act("REFRESH")}
+          />
+          <Label muted>After paying, return to this order and check your payment.</Label>
+          {actions.canResume && (
+            <Button
+              title="Continue payment"
+              secondary
+              disabled={busy}
+              onPress={() => void act("RESUME")}
+            />
+          )}
+        </>
+      )}
+      {data?.enabled && isBuyer && actions.succeeded && <Label>Payment confirmed</Label>}
+      {data?.enabled && actions.locked && !data.financialHold && (
+        <Notice text="This order cannot accept a payment right now." />
+      )}
+      {item?.exceptionCode &&
+        (["FAILED", "BLOCKED", "EXCEPTION", "UNKNOWN"].includes(item.status) ||
+          item.exceptionCode === "PAYMENT_ATTEMPT_FAILED") && (
+          <Notice text={a.error({ code: item.exceptionCode })} error />
+        )}
+      {error && <Notice text={error} error />}
+      {!data && !!error && (
         <Button
-          title="Check payment status"
-          secondary
+          title="Check Payment"
           disabled={busy}
+          loading={busy}
           onPress={() => void act("REFRESH")}
         />
       )}
-      {error && <Notice text={error} error />}
     </>
   );
   return compact ? <View style={{ gap: 12 }}>{content}</View> : <Card>{content}</Card>;

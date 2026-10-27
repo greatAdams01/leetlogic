@@ -8,7 +8,7 @@ export function isHostedPaymentUrl(
     const url = new URL(value);
     const hosts =
       type === "checkout"
-        ? ["checkout.bachs.io"]
+        ? ["checkout.bachs.io", ...(mode !== "live" ? ["sandbox-checkout.bachs.io"] : [])]
         : [
             "connect.bachs.io",
             "app.bachs.io",

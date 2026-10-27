@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { prisma, type Prisma, type MoneyOperation } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
-import { bachs, minor, paymentReady } from "../providers/payments/bachs.js";
+import { bachs, minor, paymentReady, checkoutReturnUrls } from "../providers/payments/bachs.js";
 import { encryptSecret, hashToken } from "../lib/crypto.js";
 import { queueBooking } from "../routes/delivery.js";
 import type { Request } from "express";
@@ -151,6 +151,21 @@ export async function createOperation(
 }
 export async function startCheckout(orderId: string, buyerId: string, kind = "ORDER") {
   paymentReady("CHECKOUT");
+  checkoutReturnUrls("configuration-check");
+  // A declined card can leave its hosted session open. Reconcile that session before allowing another.
+  const previous = await prisma.paymentAttempt.findFirst({
+    where: {
+      orderId,
+      buyerId,
+      mode: mode(),
+      kind,
+      status: "FAILED",
+      checkoutId: { not: null },
+      paidMinor: 0n,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (previous) await reconcilePayment(previous.id);
   const attempt = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${orderId}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUnique({
@@ -159,6 +174,17 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
     });
     if (!order || order.buyerId !== buyerId)
       throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+    if (
+      order.financialHold ||
+      (kind === "ORDER"
+        ? order.status !== "AWAITING_PAYMENT" || order.heldMinor !== 0n
+        : order.status !== "FUNDED" ||
+          !!order.delivery?.providerShipmentId ||
+          !!order.delivery?.bookingStartedAt)
+    )
+      throw new AppError(409, "PAYMENT_LOCKED", "This order cannot accept a payment right now.");
+    if (kind === "ORDER" && order.reservationExpiresAt && order.reservationExpiresAt <= new Date())
+      throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
     const active = await tx.paymentAttempt.findFirst({
       where: {
         orderId,
@@ -172,23 +198,15 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
     const d = order.delivery,
       quote = d?.quotes.find((q) => q.id === d.selectedQuoteId);
     const collection = d?.status === "PICKUP_PENDING" && kind === "ORDER";
-    if (!collection && (
-      !d ||
-      !quote ||
-      quote.expiresAt <= new Date() ||
-      !quote.courierId ||
-      d.status === "MANUAL_REVIEW"
-    ))
-      throw new AppError(409, "QUOTE_EXPIRED", "Choose a current delivery quote before paying.");
     if (
-      order.financialHold ||
-      (kind === "ORDER"
-        ? order.status !== "AWAITING_PAYMENT" || order.heldMinor !== 0n
-        : order.status !== "FUNDED" || !!d!.providerShipmentId || !!d!.bookingStartedAt)
+      !collection &&
+      (!d ||
+        !quote ||
+        quote.expiresAt <= new Date() ||
+        !quote.courierId ||
+        d.status === "MANUAL_REVIEW")
     )
-      throw new AppError(409, "PAYMENT_LOCKED", "This order cannot accept a payment right now.");
-    if (kind === "ORDER" && order.reservationExpiresAt && order.reservationExpiresAt <= new Date())
-      throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
+      throw new AppError(409, "QUOTE_EXPIRED", "Choose a current delivery quote before paying.");
     const recipient = await tx.financialAccount.findUnique({
       where: { userId_mode: { userId: order.farmerProfile.userId, mode: mode() } },
     });
@@ -206,10 +224,19 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
         "This seller is finishing payment setup. Please try again later.",
       );
     const produce = kind === "ORDER" ? order.totalMinor : 0n;
-    const shipping = collection ? 0n : kind === "ORDER" ? quote!.amountMinor : quote!.amountMinor - d!.paidMinor;
+    const shipping = collection
+      ? 0n
+      : kind === "ORDER"
+        ? quote!.amountMinor
+        : quote!.amountMinor - d!.paidMinor;
     if (shipping < 0n || produce + shipping <= 0n)
       throw new AppError(409, "TOPUP_NOT_REQUIRED", "No additional payment is needed.");
-    const expiresAt = new Date(Math.min(quote && !collection ? quote.expiresAt.getTime() : Infinity, Date.now() + 15 * 60000));
+    const expiresAt = new Date(
+      Math.min(
+        quote && !collection ? quote.expiresAt.getTime() : Infinity,
+        Date.now() + 15 * 60000,
+      ),
+    );
     const created = await tx.paymentAttempt.create({
       data: {
         orderId,
@@ -254,7 +281,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
     (checkout.reference && checkout.reference !== attempt.id)
   )
     throw new Error("PAYMENT_CHECKOUT_MISMATCH");
-  const chargeId = hintedCharge || attempt.chargeId || checkout.charge_id || checkout.payment_id;
+  const chargeId = hintedCharge || checkout.charge_id || checkout.payment_id || attempt.chargeId;
   if (!chargeId) {
     if (["expired", "cancelled"].includes(checkout.status) && attempt.status !== "SUCCEEDED")
       await prisma.paymentAttempt.update({
@@ -263,7 +290,24 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
       });
     return;
   }
-  if (attempt.chargeId && chargeId !== attempt.chargeId) {
+  let replaceUnpaidCharge: string | null = null;
+  if (
+    attempt.chargeId &&
+    chargeId !== attempt.chargeId &&
+    attempt.paidMinor === 0n &&
+    !["SUCCEEDED", "REFUNDED", "EXCEPTION"].includes(attempt.status)
+  ) {
+    const prior = await bachs.payment(attempt.chargeId);
+    if (
+      prior.payment_id === attempt.chargeId &&
+      prior.checkout_id === attempt.checkoutId &&
+      prior.currency === "NGN" &&
+      ["failed", "cancelled"].includes(prior.status) &&
+      minor(prior.amount_paid || "0") === 0n
+    )
+      replaceUnpaidCharge = attempt.chargeId;
+  }
+  if (attempt.chargeId && chargeId !== attempt.chargeId && !replaceUnpaidCharge) {
     const extra = await bachs.payment(chargeId);
     if (
       extra.payment_id !== chargeId ||
@@ -334,6 +378,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
     payment.status === "succeeded" &&
     received === attempt.amountMinor &&
     minor(payment.amount_remaining || "0") === 0n;
+  const declined = payment.status === "failed" && received === 0n;
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${attempt.orderId}::uuid FOR UPDATE`;
     const current = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
@@ -342,7 +387,11 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
       include: { delivery: true, listing: true },
     });
     if (["SUCCEEDED", "REFUNDED"].includes(current.status)) return;
-    if (current.chargeId && current.chargeId !== chargeId)
+    if (
+      current.chargeId &&
+      current.chargeId !== chargeId &&
+      !(replaceUnpaidCharge === current.chargeId && current.paidMinor === 0n)
+    )
       throw new Error("PAYMENT_CHARGE_CHANGED");
     if (received < current.paidMinor) throw new Error("PAYMENT_AMOUNT_REGRESSION");
     if (received > current.paidMinor)
@@ -372,7 +421,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
     await tx.paymentAttempt.update({
       where: { id: current.id },
       data: {
-        chargeId,
+        chargeId: declined ? null : chargeId,
         paidMinor: received,
         processingFeeMinor: fee,
         method: payment.method || payment.payment_method,
@@ -381,10 +430,12 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
             ? "SUCCEEDED"
             : exception
               ? "EXCEPTION"
-              : payment.status === "failed"
-                ? "FAILED"
+              : declined
+                ? ["expired", "cancelled"].includes(checkout.status)
+                  ? "EXPIRED"
+                  : "OPEN"
                 : "OPEN",
-        exceptionCode: exception || null,
+        exceptionCode: exception || (declined ? "PAYMENT_ATTEMPT_FAILED" : null),
       },
     });
     if (exception) {

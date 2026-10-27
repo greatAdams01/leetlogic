@@ -17,7 +17,15 @@ const config = vi.hoisted(() => ({
   PAYMENTS_LIVE_COLLECTIONS: false,
 }));
 vi.mock("../../config.js", () => ({ getConfig: () => config }));
-import { Bachs, decimal, minor, verifyBachs, hostedUrl, paymentReady } from "./bachs.js";
+import {
+  Bachs,
+  decimal,
+  minor,
+  verifyBachs,
+  hostedUrl,
+  paymentReady,
+  checkoutReturnUrls,
+} from "./bachs.js";
 describe("Bachs payment protocol", () => {
   const fetcher = vi.fn(),
     provider = new Bachs(fetcher as typeof fetch);
@@ -25,6 +33,7 @@ describe("Bachs payment protocol", () => {
     fetcher.mockReset();
     config.BACHS_MODE = "sandbox";
     config.BACHS_BANK_REFUNDS_VERIFIED = false;
+    config.PAYMENTS_RETURN_ORIGIN = "https://leetlogic.example";
   });
   it("preserves exact kobo and rejects malformed or negative money", () => {
     expect(minor("9999999999999.99")).toBe(999999999999999n);
@@ -64,6 +73,26 @@ describe("Bachs payment protocol", () => {
     });
     expect(options.headers["Idempotency-Key"]).toBe("attempt");
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("omits unsupported local redirect URLs for sandbox checkout", async () => {
+    config.PAYMENTS_RETURN_ORIGIN = "http://localhost:3001";
+    fetcher.mockResolvedValue(
+      Response.json({
+        checkout_id: "cs_local",
+        checkout_url: "https://sandbox-checkout.bachs.io/c/local",
+        expires_at: "2026-10-28T00:00:00Z",
+      }),
+    );
+    const result = await provider.checkout({ id: "local", orderId: "order", amountMinor: 12345n });
+    const body = JSON.parse(fetcher.mock.calls[0]![1].body);
+    expect(body.success_url).toBeUndefined();
+    expect(body.cancel_url).toBeUndefined();
+    expect(result.checkout_url).toBe("https://sandbox-checkout.bachs.io/c/local");
+    config.BACHS_MODE = "live";
+    expect(() => checkoutReturnUrls("local")).toThrow(
+      expect.objectContaining({ code: "PAYMENTS_RETURN_URL_INVALID" }),
+    );
+    expect(() => hostedUrl("https://sandbox-checkout.bachs.io/c/local")).toThrow();
   });
   it("never retries an uncertain write and never leaks provider errors", async () => {
     fetcher.mockRejectedValue(new Error("secret upstream error"));

@@ -63,6 +63,27 @@ export function paymentReady(kind = "CHECKOUT") {
     );
   return c;
 }
+export function checkoutReturnUrls(attemptId: string) {
+  const c = getConfig();
+  const origin = new URL(c.PAYMENTS_RETURN_ORIGIN);
+  const local =
+    origin.hostname === "localhost" ||
+    origin.hostname.endsWith(".localhost") ||
+    origin.hostname === "[::1]" ||
+    /^(127\.|0\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin.hostname) ||
+    origin.hostname.endsWith(".local");
+  // Bachs permits omitted redirects. Use its hosted completion screen for local sandbox tests.
+  if (local && c.BACHS_MODE === "sandbox" && c.NODE_ENV !== "production") return {};
+  if (local || origin.protocol !== "https:" || origin.username || origin.password)
+    throw new AppError(
+      503,
+      "PAYMENTS_RETURN_URL_INVALID",
+      "Payment setup is incomplete. Please try again later.",
+    );
+  const target = new URL("/payments/return", origin);
+  target.searchParams.set("attempt", attemptId);
+  return { success_url: target.toString(), cancel_url: target.toString() };
+}
 export function verifyBachs(
   raw: Buffer,
   headers: { v2?: string; timestamp?: string; signature?: string },
@@ -153,10 +174,10 @@ export class Bachs {
       );
     return json.status === "success" && json.data ? json.data : json;
   }
-  async checkout(input: { id: string; amountMinor: bigint; orderId: string }) {
+  async checkout(input: { id: string; amountMinor: bigint; orderId: string; expiresAt?: Date }) {
     paymentReady("CHECKOUT");
     const c = getConfig();
-    const base = new URL("/payments/return", c.PAYMENTS_RETURN_ORIGIN).toString();
+    const redirects = checkoutReturnUrls(input.id);
     const result = z
       .object({
         checkout_id: z.string(),
@@ -179,8 +200,13 @@ export class Bachs {
             payment_method_types: c.BACHS_BANK_REFUNDS_VERIFIED
               ? ["NGN_CARD", "NGN_BANK_TRANSFER"]
               : ["NGN_CARD"],
-            success_url: `${base}?attempt=${input.id}`,
-            cancel_url: `${base}?attempt=${input.id}`,
+            ...redirects,
+            expires_in_minutes: input.expiresAt
+              ? Math.max(
+                  1,
+                  Math.min(15, Math.floor((input.expiresAt.getTime() - Date.now()) / 60000)),
+                )
+              : 15,
           },
           input.id,
         ),

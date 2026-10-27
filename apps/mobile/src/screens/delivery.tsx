@@ -270,7 +270,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
           <Label style={checkout.optionTitle}>Available Carriers</Label>
           <Label style={{ color: colors.green }}>{d?.quotes.length || 0} best match</Label>
         </View>
-        {d?.quotes.map((quote, index) => {
+        {d?.quotes.map((quote) => {
           const active = quote.id === d.selectedQuoteId;
           return (
             <Pressable
@@ -279,7 +279,10 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
               onPress={() => void selectQuote(quote.id)}
             >
               <Card style={{ ...checkout.carrier, ...(active ? checkout.optionSelected : {}) }}>
-                {index === 0 && <Label style={checkout.recommended}>⚡ RECOMMENDED</Label>}
+                {quote.recommended && <Label style={checkout.recommended}>⚡ RECOMMENDED</Label>}
+                {!!quote.recommendationReason && (
+                  <Label muted>{a.ui(quote.recommendationReason)}</Label>
+                )}
                 <View style={s.between}>
                   <View style={{ flex: 1 }}>
                     <Label style={checkout.carrierName}>{quote.courier}</Label>
@@ -297,6 +300,19 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
                   )}
                 </View>
 
+                {quote.quality?.rating != null && quote.quality.votes > 0 && (
+                  <Label muted>
+                    {a.ui("Provider rating: {rating}/5 ({votes} ratings)", {
+                      rating: quote.quality.rating,
+                      votes: quote.quality.votes,
+                    })}
+                  </Label>
+                )}
+                {quote.quality?.trackingLevel != null && (
+                  <Label muted>
+                    {a.ui("Tracking quality: {level}/10", { level: quote.quality.trackingLevel })}
+                  </Label>
+                )}
                 <Label style={checkout.strong}>◷ Estimated arrival</Label>
                 <Label>{quote.eta || "Confirmed after booking"}</Label>
                 <Label muted>
@@ -339,7 +355,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
             isBuyer
             onChanged={reload}
             compact
-            buttonTitle="Pay Now"
+            buttonTitle="Make Payment"
           />
         ) : (
           <View style={{ gap: 10 }}>

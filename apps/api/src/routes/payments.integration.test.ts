@@ -1,3 +1,4 @@
+import { AppError } from "../lib/errors.js";
 import * as mediaStorage from "../services/storage/private-media.js";
 import { randomUUID, createHmac } from "node:crypto";
 import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
@@ -203,8 +204,22 @@ suite("provider-backed payment safeguards", () => {
   }
   it("collects produce-only payment for pickup and lets only the buyer confirm receipt", async () => {
     const { o, d } = await order();
-    expect((await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set("Authorization", `Bearer ${outsider}`).send({})).status).toBe(404);
-    expect((await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/delivery/collection`)
+          .set("Authorization", `Bearer ${outsider}`)
+          .send({})
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/delivery/collection`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({})
+      ).status,
+    ).toBe(200);
     const selected = await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } });
     expect(selected.status).toBe("PICKUP_PENDING");
     expect(selected.shippingMinor).toBe(0n);
@@ -213,13 +228,169 @@ suite("provider-backed payment safeguards", () => {
     expect(a.amountMinor).toBe(10000n);
     expect(a.shippingMinor).toBe(0n);
     expect(a.quoteId).toBeNull();
-    expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/delivery/confirm`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({})
+      ).status,
+    ).toBe(409);
     mockReceipt(a, { amount: "100.00", amount_paid: "101.00" });
     await reconcilePayment(a.id);
-    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("PICKUP_READY");
-    expect((await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(409);
-    expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(200);
-    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).deliveryConfirmedAt).not.toBeNull();
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe(
+      "PICKUP_READY",
+    );
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/delivery/collection`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({})
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/delivery/confirm`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({})
+      ).status,
+    ).toBe(200);
+    expect(
+      (await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).deliveryConfirmedAt,
+    ).not.toBeNull();
+  });
+  it("ranks courier quotes, initializes one checkout, checks pending payment and funds escrow exactly once", async () => {
+    const { o, d, q } = await order();
+    await prisma.deliveryQuote.update({
+      where: { id: q.id },
+      data: { amountMinor: 1125000n, eta: "Within 1 - 4 working days" },
+    });
+    const fast = await prisma.deliveryQuote.create({
+      data: {
+        deliveryId: d.id,
+        requestToken: "fast",
+        serviceCode: "pickup",
+        courierId: "fast",
+        courier: "Value courier",
+        quality: { rating: 4.7, votes: 80, trackingLevel: 8 },
+        amountMinor: 695000n,
+        walletMinor: 695000n,
+        eta: "Within 25 hrs",
+        inputHash: "fixture",
+        expiresAt: new Date(Date.now() + 600000),
+      },
+    });
+    const auth = { Authorization: `Bearer ${token}` };
+    const detail = await request(app).get(`/v1/orders/${o.id}/delivery`).set(auth);
+    expect(detail.body.delivery.quotes[0]).toMatchObject({
+      id: fast.id,
+      recommended: true,
+      quality: { rating: 4.7, votes: 80, trackingLevel: 8 },
+    });
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/delivery/select`)
+          .set(auth)
+          .send({ quoteId: fast.id })
+      ).status,
+    ).toBe(200);
+    const write = vi.spyOn(bachs, "checkout").mockImplementation(async ({ id }) => ({
+      checkout_id: `cs_${id}`,
+      checkout_url: `https://sandbox-checkout.bachs.io/c/${id}`,
+      expires_at: new Date(Date.now() + 600000).toISOString(),
+    }));
+    const first = await request(app).post(`/v1/orders/${o.id}/checkout`).set(auth).send({});
+    expect(first.status).toBe(200);
+    expect(first.body.amountMinor).toBe("705000");
+    const again = await request(app).post(`/v1/orders/${o.id}/checkout`).set(auth).send({});
+    expect(again.body.id).toBe(first.body.id);
+    expect(write).toHaveBeenCalledTimes(1);
+    const attempt = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: first.body.id } });
+    vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      checkout_id: attempt.checkoutId,
+      reference: attempt.id,
+      status: "open",
+    });
+    await request(app).post(`/v1/orders/${o.id}/payments/${attempt.id}/refresh`).set(auth).send({});
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(0n);
+    mockReceipt(attempt, { amount: "7050.00", amount_paid: "7051.00" });
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${o.id}/payments/${attempt.id}/refresh`)
+          .set(auth)
+          .send({})
+      ).body.status,
+    ).toBe("SUCCEEDED");
+    await reconcilePayment(attempt.id);
+    expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+      status: "FUNDED",
+      heldMinor: 10000n,
+    });
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).paidMinor).toBe(
+      695000n,
+    );
+    expect(await prisma.escrowEntry.count({ where: { orderId: o.id, kind: "FUND" } })).toBe(1);
+    expect((await request(app).post(`/v1/orders/${o.id}/checkout`).set(auth).send({})).status).toBe(
+      409,
+    );
+  });
+  it("reuses an open checkout after a declined card and confirms a later successful retry once", async () => {
+    const { o } = await order();
+    const attempt = await checkout(o.id);
+    mockReceipt(attempt, { status: "failed", amount_paid: "0.00", amount_remaining: "110.00" });
+    vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      checkout_id: attempt.checkoutId,
+      reference: attempt.id,
+      charge_id: `ch_${attempt.id}`,
+      status: "open",
+    });
+    await reconcilePayment(attempt.id);
+    const declined = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+    expect(declined).toMatchObject({
+      status: "OPEN",
+      paidMinor: 0n,
+      chargeId: null,
+      exceptionCode: "PAYMENT_ATTEMPT_FAILED",
+    });
+    // Recover the same state for an older record that was previously saved as FAILED.
+    await prisma.paymentAttempt.update({
+      where: { id: attempt.id },
+      data: { status: "FAILED", chargeId: `ch_${attempt.id}` },
+    });
+    expect((await startCheckout(o.id, buyer)).id).toBe(attempt.id);
+    const retryId = `retry_${attempt.id}`;
+    mockReceipt(attempt, { payment_id: retryId });
+    vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      checkout_id: attempt.checkoutId,
+      reference: attempt.id,
+      charge_id: retryId,
+      status: "completed",
+    });
+    await reconcilePayment(attempt.id);
+    await reconcilePayment(attempt.id);
+    expect(await prisma.paymentAttempt.count({ where: { orderId: o.id, kind: "ORDER" } })).toBe(1);
+    expect(await prisma.escrowEntry.count({ where: { orderId: o.id, kind: "FUND" } })).toBe(1);
+    expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).toMatchObject({
+      status: "FUNDED",
+      heldMinor: 10000n,
+    });
+  });
+  it("returns a visible error when checkout initialization is definitely rejected", async () => {
+    const { o } = await order();
+    vi.spyOn(bachs, "checkout").mockRejectedValue(
+      new AppError(422, "PAYMENT_PROVIDER_REJECTED", "Rejected"),
+    );
+    const response = await request(app)
+      .post(`/v1/orders/${o.id}/checkout`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({});
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe("PAYMENT_PROVIDER_REJECTED");
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(0n);
   });
   it("deduplicates concurrent checkout and restricts payment access", async () => {
     const { o } = await order();

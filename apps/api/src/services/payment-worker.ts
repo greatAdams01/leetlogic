@@ -339,6 +339,7 @@ export async function runMoneyOperation(id: string) {
             id: payment.id,
             orderId: payment.orderId,
             amountMinor: payment.amountMinor,
+            expiresAt: payment.expiresAt,
           });
       if (checkout.reference && checkout.reference !== payment.id)
         throw new Error("CHECKOUT_REFERENCE_MISMATCH");

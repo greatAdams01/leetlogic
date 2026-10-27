@@ -31,6 +31,7 @@ export type ShippingRate = {
   courier: string;
   amountMinor: bigint;
   eta?: string;
+  quality?: { rating: number | null; votes: number; trackingLevel: number | null };
 };
 export type TrackedShipment = {
   id: string;
@@ -144,7 +145,7 @@ export class Shipbubble implements ShippingProvider {
     parcel: Parcel;
     name: string;
     valueMinor: bigint;
-  }) {
+  }): Promise<ShippingRate[]> {
     const c = getConfig();
     if (
       (input.parcel.packageCount ?? 1) !== 1 ||
@@ -198,6 +199,9 @@ export class Shipbubble implements ShippingProvider {
             service_type: z.string(),
             delivery_eta: z.string().optional(),
             delivery_eta_time: z.string().optional(),
+            ratings: z.number().min(0).max(5).nullish().catch(undefined),
+            votes: z.number().int().nonnegative().nullish().catch(undefined),
+            tracking_level: z.number().min(0).max(10).nullish().catch(undefined),
           }),
         ),
       })
@@ -238,6 +242,11 @@ export class Shipbubble implements ShippingProvider {
         courier: x.courier_name,
         amountMinor: BigInt(Math.round(x.total * 100)),
         eta: x.delivery_eta || x.delivery_eta_time,
+        quality: {
+          rating: x.ratings ?? null,
+          votes: x.votes ?? 0,
+          trackingLevel: x.tracking_level ?? null,
+        },
       }));
   }
   async book(quote: Pick<ShippingRate, "requestToken" | "serviceCode" | "courierId">) {

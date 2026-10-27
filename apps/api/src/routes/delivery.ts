@@ -1,3 +1,4 @@
+import { rankDeliveryQuotes, courierQuality } from "../services/delivery-ranking.js";
 import { deliveryQuoteConfiguration } from "../services/delivery-configuration.js";
 import { handlingAllowed, packageSuggestion } from "../services/packaging.js";
 import { Router, type Request } from "express";
@@ -35,6 +36,9 @@ function safeQuote(q: any) {
     amountMinor: q.amountMinor,
     eta: q.eta,
     expiresAt: q.expiresAt,
+    quality: courierQuality(q.quality),
+    recommended: !!q.recommended,
+    recommendationReason: q.recommendationReason || null,
   };
 }
 export const customerDeliveryRouter = Router();
@@ -300,7 +304,9 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
               : {}),
           },
         },
-        delivery: delivery ? { ...delivery, quotes: delivery.quotes.map(safeQuote) } : null,
+        delivery: delivery
+          ? { ...delivery, quotes: rankDeliveryQuotes(delivery.quotes).map(safeQuote) }
+          : null,
       }),
     );
   });
@@ -483,7 +489,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       await audit(req, { action: "delivery.quoted", entityType: "order", entityId: order.id }, tx);
       return result;
     });
-    res.json(serialize({ items: items.map(safeQuote) }));
+    res.json(serialize({ items: rankDeliveryQuotes(items).map(safeQuote) }));
   });
   router.post("/:id/delivery/select", async (req, res) => {
     const order = await orderAccess(req);

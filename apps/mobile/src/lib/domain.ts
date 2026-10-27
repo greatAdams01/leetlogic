@@ -143,6 +143,9 @@ export type DeliveryData = {
       courier: string;
       amountMinor: string;
       eta: string | null;
+      quality?: { rating: number | null; votes: number; trackingLevel: number | null };
+      recommended?: boolean;
+      recommendationReason?: string | null;
       expiresAt: string;
     }[];
     events: { id: string; status: string; source: string; createdAt: string }[];
