@@ -10,7 +10,7 @@ const pack = {
   notes: "Keep upright",
 };
 describe("order packing estimates", () => {
-  it("derives counts and conservative packed weight without inventing combined dimensions", () => {
+  it("derives counts and conservative packed weight while retaining per-parcel dimensions", () => {
     expect(packageSuggestion(pack, "1")).toMatchObject({
       packageCount: 1,
       weightKg: 25,
@@ -21,10 +21,10 @@ describe("order packing estimates", () => {
     expect(packageSuggestion(pack, "2.5")).toMatchObject({
       packageCount: 3,
       weightKg: 75,
-      length: null,
-      width: null,
-      height: null,
-      needsPackedDimensions: true,
+      length: 50,
+      width: 40,
+      height: 30,
+      needsPackedDimensions: false,
     });
     expect(packageSuggestion({ ...pack, unitsPerPackage: 10, weightKg: 10.5 }, "25")).toMatchObject(
       { packageCount: 3, weightKg: 31.5 },

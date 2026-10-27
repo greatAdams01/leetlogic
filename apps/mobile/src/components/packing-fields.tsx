@@ -47,6 +47,9 @@ export function PackingFieldsForm({
           onChange({ ...value, handling: handling as PackingFields["handling"] })
         }
       />
+      <Label muted>
+        For example: fragile, keep upright, keep refrigerated, or protect from direct sunlight.
+      </Label>
       <Field
         label="Handling instructions"
         value={value.notes}

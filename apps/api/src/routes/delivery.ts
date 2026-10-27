@@ -46,7 +46,11 @@ async function orderAccess(req: Request) {
   const order = await prisma.tradeOrder.findUnique({
     where: { id: orderId },
     include: {
-      farmerProfile: { include: { user: { include: { profile: true } } } },
+      farmerProfile: {
+        include: {
+          user: { include: { profile: true, addresses: { where: { deletedAt: null } } } },
+        },
+      },
       listing: { include: { locationAddress: true } },
       shipment: true,
       delivery: {
@@ -106,17 +110,57 @@ customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
     await unlockedCheckout(tx, order.id);
-    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true, shipment: true } });
-    if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.bookingStartedAt || current.delivery?.paidMinor)
-      throw new AppError(409, "DELIVERY_LOCKED", "Fulfilment cannot change after payment or dispatch.");
-    const buyer = await tx.user.findUniqueOrThrow({ where: { id: req.auth!.sub }, include: { profile: true } });
-    const pickup = { ...savedPickup(order), name: order.farmerProfile.farmName, phone: order.farmerProfile.user.phoneE164, country: "NG" };
-    const destination = { name: buyer.profile?.fullName || "Buyer", phone: buyer.phoneE164, email: buyer.profile?.email || "", address: pickup.address, state: pickup.state, country: "NG" };
-    await tx.delivery.upsert({ where: { orderId: order.id },
-      create: { orderId: order.id, status: "PICKUP_PENDING", pickup, destination },
-      update: { status: "PICKUP_PENDING", pickup, destination, selectedQuoteId: null, shippingMinor: 0n, courier: null, failureCode: null },
+    const current = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { delivery: true, shipment: true },
     });
-    await audit(req, { action: "delivery.collection.selected", entityType: "order", entityId: order.id }, tx);
+    if (
+      current.status !== "AWAITING_PAYMENT" ||
+      current.shipment ||
+      current.delivery?.bookingStartedAt ||
+      current.delivery?.paidMinor
+    )
+      throw new AppError(
+        409,
+        "DELIVERY_LOCKED",
+        "Fulfilment cannot change after payment or dispatch.",
+      );
+    const buyer = await tx.user.findUniqueOrThrow({
+      where: { id: req.auth!.sub },
+      include: { profile: true },
+    });
+    const pickup = {
+      ...savedPickup(order),
+      name: order.farmerProfile.farmName,
+      phone: order.farmerProfile.user.phoneE164,
+      country: "NG",
+    };
+    const destination = {
+      name: buyer.profile?.fullName || "Buyer",
+      phone: buyer.phoneE164,
+      email: buyer.profile?.email || "",
+      address: pickup.address,
+      state: pickup.state,
+      country: "NG",
+    };
+    await tx.delivery.upsert({
+      where: { orderId: order.id },
+      create: { orderId: order.id, status: "PICKUP_PENDING", pickup, destination },
+      update: {
+        status: "PICKUP_PENDING",
+        pickup,
+        destination,
+        selectedQuoteId: null,
+        shippingMinor: 0n,
+        courier: null,
+        failureCode: null,
+      },
+    });
+    await audit(
+      req,
+      { action: "delivery.collection.selected", entityType: "order", entityId: order.id },
+      tx,
+    );
   });
   res.json({ selected: true });
 });
@@ -180,28 +224,43 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
   res.json({ saved: true });
 });
 function savedPickup(order: any) {
-  const pickup = order.delivery?.pickup;
-  return pickup && typeof pickup.address === "string" && typeof pickup.state === "string"
-    ? pickup
-    : {
-        address: order.listing.locationAddress.line1,
-        state: order.listing.locationAddress.state,
-        ...(order.listing.locationAddress.latitude != null &&
-        order.listing.locationAddress.longitude != null
-          ? {
-              latitude: Number(order.listing.locationAddress.latitude),
-              longitude: Number(order.listing.locationAddress.longitude),
-            }
-          : {}),
-      };
+  const snapshot = order.delivery?.pickup;
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const listingAddress = order.listing.locationAddress;
+  const addresses = [listingAddress, ...(order.farmerProfile.user.addresses || [])];
+  // Old quotes may contain a buyer address in pickup. Resolve only farmer-owned addresses.
+  const saved =
+    snapshot && typeof snapshot.address === "string" && typeof snapshot.state === "string"
+      ? addresses.find(
+          (address: any) =>
+            address.state.toLowerCase() === snapshot.state.toLowerCase() &&
+            [
+              address.line1,
+              `${address.line1}, ${address.city}`,
+              `${address.line1}, ${address.city}, ${address.lga}`,
+            ].some((text) => normalize(text) === normalize(snapshot.address)),
+        )
+      : null;
+  const address = saved || listingAddress;
+  return {
+    address: [address.line1, address.city, address.lga].filter(Boolean).join(", "),
+    state: address.state,
+    ...(address.latitude != null && address.longitude != null
+      ? { latitude: Number(address.latitude), longitude: Number(address.longitude) }
+      : {}),
+  };
 }
 function checkPickup(order: any, pickup: { address: string; state: string }) {
   const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   const expected = savedPickup(order);
-  if (
-    !normalize(pickup.address).includes(normalize(expected.address)) ||
-    pickup.state.toLowerCase() !== expected.state.toLowerCase()
-  )
+  const listing = order.listing.locationAddress;
+  const fullListingAddress = [listing.line1, listing.city, listing.lga].filter(Boolean).join(", ");
+  const matches =
+    normalize(pickup.address) === normalize(expected.address) ||
+    // Older clients sent the listing's street without city or local government.
+    (normalize(expected.address) === normalize(fullListingAddress) &&
+      normalize(pickup.address) === normalize(listing.line1));
+  if (!matches || pickup.state.toLowerCase() !== expected.state.toLowerCase())
     throw new AppError(
       422,
       "PICKUP_ADDRESS_MISMATCH",
@@ -268,6 +327,14 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       );
     checkPickup(order, body.pickup);
     const confirmed = savedPickup(order);
+    body.pickup = {
+      ...body.pickup,
+      ...confirmed,
+      name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
+      phone: order.farmerProfile.user.phoneE164,
+      email: order.farmerProfile.user.profile?.email || body.pickup.email,
+      country: "NG",
+    };
     delete body.pickup.latitude;
     delete body.pickup.longitude;
     if (confirmed.latitude != null && confirmed.longitude != null) {
@@ -769,12 +836,18 @@ staffDeliveryRouter.post(
 );
 customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
   const order = await orderAccess(req);
-  if (order.buyerId !== req.auth!.sub || !["DELIVERED", "PICKUP_READY"].includes(order.delivery?.status || ""))
+  if (
+    order.buyerId !== req.auth!.sub ||
+    !["DELIVERED", "PICKUP_READY"].includes(order.delivery?.status || "")
+  )
     throw new AppError(409, "DELIVERY_NOT_READY", "Only the buyer can confirm a delivered order");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
     await unlockedCheckout(tx, order.id);
-    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true } });
+    const current = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { delivery: true },
+    });
     if (!["DELIVERED", "PICKUP_READY"].includes(current.delivery?.status || ""))
       throw new AppError(409, "DELIVERY_NOT_READY", "Order is not ready for confirmation");
     if (current.status !== "FUNDED" && current.status !== "DELIVERED")
@@ -784,7 +857,10 @@ customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
       data: { status: "DELIVERED", deliveryConfirmedAt: new Date() },
     });
     if (current.delivery?.status === "PICKUP_READY")
-      await tx.delivery.update({ where: { id: current.delivery.id }, data: { status: "DELIVERED" } });
+      await tx.delivery.update({
+        where: { id: current.delivery.id },
+        data: { status: "DELIVERED" },
+      });
     await audit(
       req,
       { action: "delivery.recipient.confirmed", entityType: "order", entityId: order.id },

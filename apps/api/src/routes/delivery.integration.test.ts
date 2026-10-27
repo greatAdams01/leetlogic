@@ -225,7 +225,7 @@ suite("delivery and language database workflows", () => {
     const catalogue = await request(app).get("/v1/listing-drafts/catalogue").set(sellerAuth);
     expect(catalogue.body.primaryAddressId).toBe(addressId);
     expect((await request(app).get(path).set(customer())).body.order.suggestedPickup.address).toBe(
-      contact.address,
+      `${contact.address}, Lagos, Ikeja`,
     );
     const alternate = await prisma.address.create({
       data: {
@@ -340,6 +340,73 @@ suite("delivery and language database workflows", () => {
     expect(publicListing.body.item.locationAddress).not.toHaveProperty("latitude");
     expect(publicListing.body.item.locationAddress).not.toHaveProperty("longitude");
   });
+  it("repairs a buyer address saved as pickup and prices canonical farmer pickup with buyer-edited packing", async () => {
+    const original = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    const created = await prisma.tradeOrder.create({
+      data: {
+        reference: `ADDRESS-${randomUUID()}`,
+        buyerId: original.buyerId,
+        farmerProfileId: farmerId,
+        listingId,
+        quantity: "1",
+        totalMinor: 10000n,
+        feeBasisPoints: 600,
+      },
+    });
+    const path = `/v1/orders/${created.id}/delivery`;
+    await prisma.delivery.create({
+      data: { orderId: created.id, pickup: input.destination, destination: input.destination },
+    });
+    const detail = await request(app).get(path).set(customer());
+    expect(detail.body.order.suggestedPickup.address).toContain(contact.address);
+    expect(detail.body.order.suggestedPickup.address).not.toContain(input.destination.address);
+    expect(detail.body.delivery.destination.address).toBe(input.destination.address);
+    const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
+      {
+        courierId: "address-test",
+        courier: "Address test",
+        amountMinor: 800n,
+        walletMinor: 800n,
+        requestToken: "address-token",
+        serviceCode: "pickup",
+        eta: "Tomorrow",
+      },
+    ]);
+    try {
+      const edited = {
+        ...input,
+        pickup: detail.body.order.suggestedPickup,
+        parcel: {
+          ...input.parcel,
+          weightKg: 4.5,
+          length: 35,
+          width: 25,
+          height: 20,
+          notes: "Keep upright; protect from sunlight",
+        },
+      };
+      // Legacy farmer profiles may not yet contain an email.
+      edited.pickup.email ||= contact.email;
+      const response = await request(app).post(`${path}/quotes`).set(customer()).send(edited);
+      expect(response.status).toBe(200);
+      expect(quotes).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          pickup: expect.objectContaining({
+            address: detail.body.order.suggestedPickup.address,
+            phone: detail.body.order.suggestedPickup.phone,
+          }),
+          destination: expect.objectContaining({ address: input.destination.address }),
+          parcel: expect.objectContaining(edited.parcel),
+        }),
+      );
+      const saved = await prisma.delivery.findUniqueOrThrow({ where: { orderId: created.id } });
+      expect(saved.pickup).toMatchObject({ address: detail.body.order.suggestedPickup.address });
+      expect(saved.destination).toMatchObject({ address: input.destination.address });
+      expect(saved.package).toMatchObject(edited.parcel);
+    } finally {
+      quotes.mockRestore();
+    }
+  });
   it("snapshots farmer packing, derives order estimates and preserves requirements on buyer edits", async () => {
     const original = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
     const packing = {
@@ -369,7 +436,9 @@ suite("delivery and language database workflows", () => {
       expect(detail.body.order.packageSuggestion).toMatchObject({
         packageCount: 2,
         weightKg: 4,
-        length: null,
+        length: 40,
+        width: 30,
+        height: 25,
         handling: "COLD_CHAIN",
       });
       expect(
@@ -576,7 +645,7 @@ suite("delivery and language database workflows", () => {
       id: providerId,
       status: "in_transit",
       courier: "Courier",
-      pickupAddress: input.pickup.address,
+      pickupAddress: `${input.pickup.address}, Lagos, Ikeja`,
       destinationAddress: input.destination.address,
       shippingMinor: 1000n,
     });

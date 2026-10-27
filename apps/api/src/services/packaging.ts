@@ -12,13 +12,13 @@ export function packageSuggestion(source: unknown, quantity: Prisma.Decimal | st
       .mul(count)
       .toDecimalPlaces(3, Prisma.Decimal.ROUND_CEIL)
       .toNumber(),
-    // Multiple packages do not imply a single larger box of known dimensions.
-    length: count === 1 ? farmer.length : null,
-    width: count === 1 ? farmer.width : null,
-    height: count === 1 ? farmer.height : null,
+    // Dimensions describe one farmer-packed parcel, never a fictitious combined box.
+    length: farmer.length,
+    width: farmer.width,
+    height: farmer.height,
     handling: farmer.handling,
     notes: farmer.notes,
-    needsPackedDimensions: count > 1,
+    needsPackedDimensions: false,
   };
 }
 export function handlingAllowed(source: unknown, chosen: string) {

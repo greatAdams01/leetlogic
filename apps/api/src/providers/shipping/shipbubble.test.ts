@@ -59,7 +59,7 @@ describe("Shipbubble protocol", () => {
       );
     const quotes = await provider.quotes({
       pickup: contact,
-      destination: contact,
+      destination: { ...contact, address: "42 Buyer Road Abuja", state: "FCT" },
       parcel: {
         weightKg: 2,
         length: 10,
@@ -67,6 +67,7 @@ describe("Shipbubble protocol", () => {
         height: 10,
         pickupDate: "2026-11-01",
         handling: "STANDARD",
+        notes: "Keep upright and away from sunlight",
       },
       name: "Produce",
       valueMinor: 50000n,
@@ -74,8 +75,17 @@ describe("Shipbubble protocol", () => {
     expect(quotes).toHaveLength(1);
     expect(quotes[0]?.amountMinor).toBe(12050n);
     expect(JSON.parse(fetcher.mock.calls[2]![1].body)).toMatchObject({
+      sender_address_code: 1,
       reciever_address_code: 2,
-      package_items: [{ quantity: 1, unit_amount: 500, unit_weight: 2 }],
+      package_items: [
+        {
+          quantity: 1,
+          unit_amount: 500,
+          unit_weight: 2,
+          description: "Produce · Keep upright and away from sunlight",
+        },
+      ],
+      package_dimension: { length: 10, width: 10, height: 10 },
     });
   });
   it("never submits separate parcels or special handling as one standard parcel", async () => {

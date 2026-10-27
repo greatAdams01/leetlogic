@@ -2,7 +2,13 @@ vi.mock("../components/order-disputes", () => ({ OrderDisputes: "OrderDisputes" 
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ api: vi.fn(), back: vi.fn(), data: null as any }));
+const h = vi.hoisted(() => ({
+  api: vi.fn(),
+  back: vi.fn(),
+  reload: vi.fn(),
+  user: null as any,
+  data: null as any,
+}));
 vi.mock("react-native", () => ({
   View: "View",
   Pressable: "Pressable",
@@ -31,16 +37,17 @@ vi.mock("./api", () => ({ api: h.api }));
 vi.mock("../state", () => ({
   useApp: () => ({
     route: { id: "order" },
-    user: { addresses: [], profile: {}, phoneE164: "+2348012345678" },
+    user: h.user,
     back: h.back,
     status: (s: string) => s,
+    unit: (s: string) => s,
     error: (e: Error) => e.message,
     ui: (s: string, params: Record<string, unknown> = {}) =>
       s.replace(/\{(\w+)\}/g, (_, key) => String(params[key])),
   }),
-  useResource: () => ({ data: h.data, loading: false, error: "" }),
+  useResource: () => ({ data: h.data, reload: h.reload, loading: false, error: "" }),
 }));
-import { Quotes } from "../screens/delivery";
+import { Quotes, Delivery } from "../screens/delivery";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer;
 const field = (label: string) =>
@@ -53,6 +60,7 @@ const submit = () =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.api.mockResolvedValue({ items: [] });
+  h.user = { addresses: [], profile: {}, phoneE164: "+2348012345678" };
   h.data = {
     order: {
       id: "order",
@@ -135,6 +143,13 @@ it("restores a saved buyer parcel and prevents removal of mandatory handling", a
   await act(async () => {
     tree = create(<Quotes />);
   });
+  expect(field("Total packed weight (kg)")).toBeUndefined();
+  await act(async () =>
+    tree.root
+      .findAllByType("Button" as any)
+      .find((node) => node.props.title === "Edit package details")!
+      .props.onPress(),
+  );
   expect(field("Total packed weight (kg)").props.value).toBe("32");
   expect(field("Handling instructions").props.value).toBe("Final packing");
   const standard = tree.root
@@ -145,4 +160,109 @@ it("restores a saved buyer parcel and prevents removal of mandatory handling", a
     .findAllByType("Pressable" as any)
     .find((node) => node.props.children.props.children === "COLD_CHAIN")!;
   expect(cold.props.disabled).toBe(false);
+});
+
+it("offers pickup and delivery only, and opens produce-only pickup payment", async () => {
+  h.data = {
+    ...h.data,
+    order: { ...h.data.order, isBuyer: true, status: "AWAITING_PAYMENT", totalMinor: "10000" },
+  };
+  await act(async () => {
+    tree = create(<Delivery />);
+  });
+  const headings = () =>
+    tree.root.findAllByType("Heading" as any).map((node) => node.props.children);
+  expect(headings()).toContain("Pickup or delivery?");
+  expect(
+    tree.root
+      .findAllByType("Label" as any)
+      .map((node) => node.props.children)
+      .join(" "),
+  ).not.toContain("International");
+  const choices = tree.root
+    .findAllByType("Pressable" as any)
+    .filter((node) => node.props.accessibilityRole === "button");
+  await act(async () => choices[0]!.props.onPress());
+  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/collection", {
+    method: "POST",
+    body: {},
+  });
+  expect(h.reload).toHaveBeenCalledOnce();
+  h.data = { ...h.data, delivery: { status: "PICKUP_PENDING", quotes: [], selectedQuoteId: null } };
+  await act(async () => tree.update(<Delivery />));
+  expect(headings()).toContain("Pickup");
+  expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(1);
+  expect(
+    tree.root
+      .findAllByType("Label" as any)
+      .map((node) => node.props.children)
+      .join(" "),
+  ).not.toContain("quote expired");
+});
+
+it("reviews distinct farmer and buyer addresses with farmer packing prefilled and sends buyer edits for pricing", async () => {
+  h.user.addresses = [
+    {
+      id: "buyer-home",
+      isDefaultDelivery: true,
+      line1: "42 Buyer Avenue",
+      city: "Abuja",
+      lga: "Bwari",
+      state: "FCT",
+    },
+  ];
+  h.data.order.packageSuggestion = {
+    ...h.data.order.packageSuggestion,
+    packageCount: 1,
+    weightKg: 25,
+    length: 50,
+    width: 40,
+    height: 30,
+    farmer: { length: 50, width: 40, height: 30, notes: "Keep upright" },
+  };
+  await act(async () => {
+    tree = create(<Quotes />);
+  });
+  const labels = () =>
+    tree.root
+      .findAllByType("Label" as any)
+      .map((node) => node.props.children)
+      .flat()
+      .join(" ");
+  expect(labels()).toContain("Pickup Location");
+  expect(labels()).toContain("Test farm address Lagos");
+  expect(labels()).toContain("Delivery Destination");
+  expect(labels()).toContain("42 Buyer Avenue, Abuja, Bwari");
+  expect(labels()).toContain("Keep upright");
+  expect(field("Total packed weight (kg)")).toBeUndefined();
+  expect(field("Delivery address")).toBeUndefined();
+  await act(async () =>
+    tree.root
+      .findAllByType("Button" as any)
+      .find((node) => node.props.title === "Edit package details")!
+      .props.onPress(),
+  );
+  expect(field("Length (cm)").props.value).toBe("50");
+  expect(field("Handling instructions").props.value).toBe("Keep upright");
+  await act(async () => field("Total packed weight (kg)").props.onChangeText("24"));
+  await act(async () => submit());
+  expect(h.api).toHaveBeenLastCalledWith(
+    "/orders/order/delivery/quotes",
+    expect.objectContaining({
+      body: expect.objectContaining({
+        pickup: expect.objectContaining({ address: "Test farm address Lagos", state: "Lagos" }),
+        destination: expect.objectContaining({
+          address: "42 Buyer Avenue, Abuja, Bwari",
+          state: "FCT",
+        }),
+        parcel: expect.objectContaining({
+          weightKg: 24,
+          length: 50,
+          width: 40,
+          height: 30,
+          notes: "Keep upright",
+        }),
+      }),
+    }),
+  );
 });

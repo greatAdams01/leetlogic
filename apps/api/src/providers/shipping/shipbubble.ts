@@ -175,7 +175,7 @@ export class Shipbubble implements ShippingProvider {
           package_items: [
             {
               name: input.name,
-              description: input.name,
+              description: [input.name, input.parcel.notes].filter(Boolean).join(" · "),
               quantity: 1,
               unit_amount: Number(input.valueMinor) / 100,
               unit_weight: input.parcel.weightKg,
