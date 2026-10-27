@@ -10,6 +10,8 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("react-native", () => ({
   View: "View",
+  Pressable: "Pressable",
+  StyleSheet: { create: (styles: any) => styles },
   AppState: { addEventListener: () => ({ remove() {} }) },
 }));
 vi.mock("../components/ui", () => ({
@@ -20,6 +22,7 @@ vi.mock("../components/ui", () => ({
   Button: "Button",
   Field: "Field",
   Notice: "Notice",
+  Icon: "Icon",
   colors: {},
 }));
 vi.mock("../components/listing-photo", () => ({ ListingPhoto: "ListingPhoto" }));
@@ -74,8 +77,8 @@ it("creates orders only on checkout and prevents concurrent submissions", async 
   });
   expect(h.api).not.toHaveBeenCalled();
   await act(async () => {
-    button("Continue to delivery").props.onPress();
-    button("Continue to delivery").props.onPress();
+    button("Checkout").props.onPress();
+    button("Checkout").props.onPress();
   });
   expect(h.api).toHaveBeenCalledTimes(1);
   await act(async () => finish({ orders: [{ id: "order" }] }));
@@ -88,21 +91,21 @@ it("retries an uncertain checkout with the same key and snapshot", async () => {
   await act(async () => {
     tree = create(<Cart />);
   });
-  await act(async () => button("Continue to delivery").props.onPress());
+  await act(async () => button("Checkout").props.onPress());
   const original = h.api.mock.calls[0]![1];
   await act(async () => button("Retry checkout").props.onPress());
   expect(h.api.mock.calls[1]![1]).toEqual(original);
-  expect(h.go).toHaveBeenCalledWith("orders");
+  expect(h.go).toHaveBeenCalledWith("orders", undefined, "checkout");
 });
 it("allows cart correction after a confirmed rejection instead of trapping the buyer in retry", async () => {
   h.api.mockRejectedValueOnce({ status: 409, message: "Price changed" });
   await act(async () => {
     tree = create(<Cart />);
   });
-  await act(async () => button("Continue to delivery").props.onPress());
+  await act(async () => button("Checkout").props.onPress());
   expect(h.reload).toHaveBeenCalled();
   expect(button("Retry checkout")).toBeUndefined();
-  expect(button("Update cart").props.loading).toBe(false);
+  expect(button("Checkout").props.loading).toBe(false);
   expect(
     tree.root.findAllByType("Notice" as any).some((node) => node.props.text === "Price changed"),
   ).toBe(true);

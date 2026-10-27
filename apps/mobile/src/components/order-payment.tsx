@@ -9,10 +9,14 @@ export function OrderPayment({
   isBuyer,
   onChanged,
   topup = false,
+  buttonTitle = "Pay securely",
+  compact = false,
 }: {
   orderId: string;
   isBuyer: boolean;
   topup?: boolean;
+  buttonTitle?: string;
+  compact?: boolean;
   onChanged: () => Promise<unknown>;
 }) {
   const a = useApp();
@@ -56,13 +60,15 @@ export function OrderPayment({
     }
   };
   if (!data?.enabled) return null;
-  return (
-    <Card>
-      <Heading>Payment</Heading>
-      <Label>
-        Payment-processing fees are shown before you pay. Non-returnable fees are deducted from
-        refunds.
-      </Label>
+  const content = (
+    <>
+      {!compact && <Heading>Payment</Heading>}
+      {!compact && (
+        <Label>
+          Payment-processing fees are shown before you pay. Non-returnable fees are deducted from
+          refunds.
+        </Label>
+      )}
       {!!data.financialHold && (
         <Notice text="Your payment is being reviewed. Please contact support for help." />
       )}
@@ -78,7 +84,7 @@ export function OrderPayment({
         data.refundedMinor === "0" &&
         !data.financialHold && (
           <Button
-            title="Pay securely"
+            title={buttonTitle}
             disabled={busy}
             loading={busy}
             onPress={() => void act("ORDER")}
@@ -101,6 +107,7 @@ export function OrderPayment({
         />
       )}
       {error && <Notice text={error} error />}
-    </Card>
+    </>
   );
+  return compact ? <View style={{ gap: 12 }}>{content}</View> : <Card>{content}</Card>;
 }

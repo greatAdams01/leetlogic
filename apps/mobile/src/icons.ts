@@ -1,6 +1,10 @@
 export const icons = {
   productShare: require("../assets/figma/2d111.svg"),
   productHeart: require("../assets/figma/268e8.svg"),
+  cartRemove: require("../assets/figma/90847.svg"),
+  cartMinus: require("../assets/figma/236d7.svg"),
+  cartPlus: require("../assets/figma/44148.svg"),
+  cartShield: require("../assets/figma/9b633.svg"),
   cart: require("../assets/figma/fcd38.svg"),
   cartActive: require("../assets/figma/d6729.svg"),
   buyerSelectedDot: require("../assets/figma/9966f.svg"),

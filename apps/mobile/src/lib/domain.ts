@@ -53,6 +53,7 @@ export type Address = {
   id: string;
   label: string;
   isDefaultFarm?: boolean;
+  isDefaultDelivery?: boolean;
   latitude?: string | number | null;
   longitude?: string | number | null;
   state: string;

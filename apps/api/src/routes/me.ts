@@ -157,6 +157,7 @@ meRouter.patch("/farm-location", async (req, res) => {
 
 const addressSchema = z.object({
   coordinates: coordinatesSchema.optional(),
+  isDefaultDelivery: z.boolean().optional().default(false),
   label: z.string().trim().min(1).max(60),
   state: z.string().trim().min(2).max(80),
   lga: z.string().trim().min(2).max(80),
@@ -164,9 +165,29 @@ const addressSchema = z.object({
   line1: z.string().trim().min(5).max(180),
 });
 meRouter.post("/addresses", async (req, res) => {
-  const { coordinates, ...body } = addressSchema.parse(req.body);
-  const address = await prisma.address.create({
-    data: { ...body, ...coordinates, countryCode: "NG", userId: req.auth!.sub },
+  const { coordinates, isDefaultDelivery, ...body } = addressSchema.parse(req.body);
+  const address = await prisma.$transaction(async (tx) => {
+    if (isDefaultDelivery)
+      await tx.address.updateMany({
+        where: { userId: req.auth!.sub, deletedAt: null, isDefaultDelivery: true },
+        data: { isDefaultDelivery: false },
+      });
+    const created = await tx.address.create({
+      data: {
+        ...body,
+        ...coordinates,
+        isDefaultDelivery,
+        countryCode: "NG",
+        userId: req.auth!.sub,
+      },
+    });
+    if (isDefaultDelivery)
+      await audit(
+        req,
+        { action: "delivery.location.defaulted", entityType: "address", entityId: created.id },
+        tx,
+      );
+    return created;
   });
   res.status(201).json({ address });
 });

@@ -15,10 +15,14 @@ export function FarmPin({
   value,
   onConfirm,
   disabled = false,
+  context = "farm",
+  autoLocate = false,
 }: {
   value?: FarmPoint;
   onConfirm: (point: FarmPoint) => void | Promise<void>;
   disabled?: boolean;
+  context?: "farm" | "buyer";
+  autoLocate?: boolean;
 }) {
   const a = useApp();
   const [busy, setBusy] = useState(false),
@@ -36,6 +40,7 @@ export function FarmPin({
     confirming = useRef(false);
   const generation = useRef(0),
     gesture = useRef(false);
+  const autoStarted = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -61,7 +66,7 @@ export function FarmPin({
     setBusy(true);
     setError("");
     try {
-      const captured = await captureFarmPosition();
+      const captured = await captureFarmPosition(context);
       if (active.current && request === generation.current) {
         centreOn(captured.point, captured.accuracy);
         setOpen(true);
@@ -73,6 +78,11 @@ export function FarmPin({
       if (active.current) setBusy(false);
     }
   };
+  useEffect(() => {
+    if (!autoLocate || value || autoStarted.current) return;
+    autoStarted.current = true;
+    void locate();
+  }, [autoLocate, value]);
   const close = () => {
     if (confirming.current) return;
     generation.current++;
@@ -107,10 +117,11 @@ export function FarmPin({
   };
   return (
     <Card>
-      <Heading>Map location</Heading>
+      <Heading>{context === "buyer" ? "Delivery location" : "Map location"}</Heading>
       <Label>
-        Use your current location at the pickup point, then confirm the pin. Your address is still
-        needed for delivery.
+        {context === "buyer"
+          ? "Your current location is selected by default. Confirm the pin or move it to the exact delivery point."
+          : "Use your current location at the pickup point, then confirm the pin. Your address is still needed for delivery."}
       </Label>
       {value && <Notice text="Location pin confirmed." success />}
       <Button
@@ -120,7 +131,7 @@ export function FarmPin({
         onPress={() => void locate()}
       />
       <Button
-        title={value ? "View or adjust pin" : "Choose location on map"}
+        title={value ? "View or adjust pin" : context === "buyer" ? "Choose delivery point on map" : "Choose location on map"}
         secondary
         disabled={disabled || busy}
         onPress={() => {
@@ -138,7 +149,7 @@ export function FarmPin({
       <AppSheet
         visible={open}
         title="Confirm map location"
-        subtitle="Move the map to place the pin on your pickup point."
+        subtitle={context === "buyer" ? "Move the map to place the pin on your delivery point." : "Move the map to place the pin on your pickup point."}
         onClose={close}
         busy={saving}
         scroll={false}

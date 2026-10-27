@@ -266,6 +266,7 @@ export function Addresses() {
     [coordinates, setCoordinates] = useState<FarmPoint | undefined>();
   const seller = a.role === "SELLER" || !!a.user?.farmerProfile;
   const addingPickup = seller && a.route.id === "pickup";
+  const defaultDelivery = a.user?.addresses.find((address) => address.isDefaultDelivery);
   const farmAddress = farmLocation(
     a.user?.addresses || [],
     a.user?.farmerProfile?.primaryAddressId,
@@ -296,6 +297,7 @@ export function Addresses() {
             <Label style={{ fontFamily: "NotoBold" }}>
               {ad.id === farmAddress?.id ? a.ui("Farm location") : ad.label}
             </Label>
+            {!seller && ad.isDefaultDelivery && <Text style={s.badge}>Primary delivery location</Text>}
             <Label>
               {ad.line1}, {ad.city}, {ad.lga}, {ad.state}
             </Label>
@@ -316,7 +318,25 @@ export function Addresses() {
           <Text style={s.sectionTitle}>
             {seller ? "Different pickup address" : "Add a delivery address"}
           </Text>
-          {addingPickup && <FarmPin value={coordinates} onConfirm={setCoordinates} />}
+          <FarmPin
+            value={coordinates || (!seller ? savedFarmPoint(defaultDelivery) : undefined)}
+            context={seller ? "farm" : "buyer"}
+            autoLocate={!seller && !defaultDelivery}
+            onConfirm={async (point) => {
+              setCoordinates(point);
+              if (!seller) {
+                const place = await import("../lib/device-location")
+                  .then(({ describePosition }) => describePosition(point))
+                  .catch(() => null);
+                if (place)
+                  setForm((current) => ({
+                    ...current,
+                    ...place,
+                    label: current.label || "Current location",
+                  }));
+              }
+            }}
+          />
           <Card>
             {(["label", "line1", "city"] as const).map((k) => (
               <Field
@@ -350,7 +370,7 @@ export function Addresses() {
           </Card>
           <Button
             title={busy ? "Saving…" : seller ? "Save pickup address" : "Save address"}
-            disabled={busy || !form.state || !form.lga}
+            disabled={busy || (!coordinates && (!form.state || !form.lga))}
             onPress={async () => {
               setBusy(true);
               try {
@@ -358,7 +378,15 @@ export function Addresses() {
                 setError("");
                 await api("/me/addresses", {
                   method: "POST",
-                  body: { ...form, ...(coordinates ? { coordinates } : {}) },
+                  body: {
+                    label: form.label || (coordinates ? "Current location" : "Delivery address"),
+                    line1: form.line1 || "Pinned delivery location",
+                    city: form.city || "Pinned location",
+                    lga: form.lga || "Pinned location",
+                    state: form.state || "Nigeria",
+                    isDefaultDelivery: !seller,
+                    ...(coordinates ? { coordinates } : {}),
+                  },
                 });
                 await a.loadUser();
                 setForm({ label: "", line1: "", state: "", lga: "", city: "" });

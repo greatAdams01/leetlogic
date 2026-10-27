@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({ api: vi.fn(), back: vi.fn(), data: null as any }))
 vi.mock("react-native", () => ({
   View: "View",
   Pressable: "Pressable",
+  StyleSheet: { create: (styles: any) => styles },
   Linking: { openURL: vi.fn() },
 }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));

@@ -1,6 +1,6 @@
 import * as Location from "expo-location";
 
-import { savedFarmPoint } from "./farm-location";
+import { savedFarmPoint, type FarmPoint } from "./farm-location";
 export { savedFarmPoint, type FarmPoint } from "./farm-location";
 export async function captureFarmPosition(context: "farm" | "buyer" = "farm") {
   const fail = (farm: string, buyer: string) => new Error(context === "buyer" ? buyer : farm);
@@ -49,4 +49,16 @@ export async function captureFarmPosition(context: "farm" | "buyer" = "farm") {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function describePosition(point: FarmPoint) {
+  const [place] = await Location.reverseGeocodeAsync(point);
+  return place
+    ? {
+        line1: [place.name, place.street].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(", ") || "Pinned delivery location",
+        city: place.city || place.subregion || place.district || "Pinned location",
+        lga: place.district || place.subregion || place.city || "Pinned location",
+        state: place.region || "Nigeria",
+      }
+    : null;
 }

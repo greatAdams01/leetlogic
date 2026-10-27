@@ -613,10 +613,37 @@ export function Orders() {
         ? ["DELIVERED", "COMPLETED", "CANCELLED", "REFUNDED"].includes(i.status)
         : !["DELIVERED", "COMPLETED", "CANCELLED", "REFUNDED"].includes(i.status)),
   );
+  const nextAction = (order: Order) => {
+    if (a.role === "SELLER") return { title: "View order & tracking", hint: "Review fulfilment and delivery status" };
+    if (order.status === "AWAITING_PAYMENT") {
+      if (!order.delivery) return { title: "Continue checkout", hint: "Confirm delivery address and choose shipping" };
+      if (["QUOTE_REQUIRED", "MANUAL_REVIEW"].includes(order.delivery.status))
+        return { title: "Continue checkout", hint: "Get or review the delivery fee before payment" };
+      if (["QUOTED", "PAYMENT_PENDING", "TOPUP_REQUIRED"].includes(order.delivery.status))
+        return { title: "Continue checkout", hint: "Confirm the combined produce and delivery total" };
+      return { title: "Continue checkout", hint: "Complete delivery and pay once on the order summary" };
+    }
+    if (order.status === "FUNDED" && order.delivery?.status === "PAYMENT_PENDING")
+      return { title: "Book delivery", hint: "Payment received—dispatch is ready" };
+    if (["BOOKED", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(order.delivery?.status || ""))
+      return { title: "Track delivery", hint: "Follow the courier and arrival status" };
+    return { title: "View order details", hint: "See payment, delivery, and support details" };
+  };
   return (
-    <Page loading={r.loading}>
+    <Page loading={r.loading} contentStyle={{ gap: 18 }}>
       <Label muted>{a.role === "SELLER" ? "SELLER PORTAL" : "BUYER PORTAL"}</Label>
       <Heading>{a.t("orders.title")}</Heading>
+      {a.role === "BUYER" && a.route.query === "checkout" && (
+        <Card style={{ backgroundColor: "#e4f3e9", flexDirection: "row", gap: 12 }}>
+          <Icon name="cartShield" size={22} />
+          <View style={{ flex: 1, gap: 4 }}>
+            <Label style={{ fontFamily: "NotoBold" }}>Your cart is now ready for delivery</Label>
+            <Label muted style={s.small}>
+              Each farmer shipment is checked out separately. Start with any order below, then return here for the next one.
+            </Label>
+          </View>
+        </Card>
+      )}
       <View style={s.row}>
         {["All", "Active", "Completed"].map((v) => (
           <Pressable key={v} accessibilityRole="button" onPress={() => setFilter(v)}>
@@ -630,20 +657,35 @@ export function Orders() {
       </View>
       {r.error && <Notice text={r.error} error />}
       {!r.loading && !r.error && !items?.length && <Notice text={a.t("orders.empty")} />}
-      {items?.map((i) => (
-        <Card key={i.id}>
-          <Text style={s.badge}>{a.status(i.delivery?.status || i.status)}</Text>
-          <Label style={{ fontFamily: "NotoBold", fontSize: 18 }}>{i.listing.title}</Label>
-          <Label muted style={s.small}>
-            {i.reference}
-          </Label>
-          <Label style={{ fontSize: 24, color: "#8a5b00", fontFamily: "NotoBold" }}>
-            {money(i.totalMinor)}
-          </Label>
-          {i.delivery && <Label muted>Delivery: {money(i.delivery.shippingMinor)}</Label>}
-          <Button title="View order & tracking" onPress={() => a.go("delivery", i.id)} />
-        </Card>
-      ))}
+      {items?.map((i) => {
+        const action = nextAction(i);
+        const checkout = a.role === "BUYER" && i.status === "AWAITING_PAYMENT";
+        return (
+          <Card key={i.id} style={{ borderWidth: checkout ? 2 : 0, borderColor: checkout ? colors.green : colors.line, gap: 14 }}>
+            <View style={s.between}>
+              <Text style={[s.badge, checkout && { backgroundColor: colors.mint }]}> {checkout ? "Checkout in progress" : a.status(i.delivery?.status || i.status)} </Text>
+              <Label muted style={s.small}>{i.reference.slice(-8)}</Label>
+            </View>
+            <View style={{ gap: 3 }}>
+              <Label style={{ fontFamily: "NotoBold", fontSize: 20 }}>{i.listing.title}</Label>
+              <Label muted>{i.quantity || 1} {a.unit(i.listing.unitCode || "UNIT")}</Label>
+            </View>
+            <View style={s.between}>
+              <View><Label muted style={s.small}>Produce</Label><Label style={{ fontSize: 22, color: "#6b4a2f", fontFamily: "NotoBold" }}>{money(i.totalMinor)}</Label></View>
+              {i.delivery && <View style={{ alignItems: "flex-end" }}><Label muted style={s.small}>Delivery</Label><Label style={{ fontFamily: "NotoBold" }}>{money(i.delivery.shippingMinor)}</Label></View>}
+            </View>
+            {checkout && (
+              <View style={{ gap: 7 }}>
+                <View style={{ flexDirection: "row", gap: 6 }}>
+                  {[0, 1, 2].map((step) => <View key={step} style={{ height: 5, flex: 1, borderRadius: 99, backgroundColor: step === 0 || i.delivery ? colors.green : colors.line }} />)}
+                </View>
+                <Label muted style={s.small}>{action.hint}</Label>
+              </View>
+            )}
+            <Button title={action.title} onPress={() => a.go("delivery", i.id)} />
+          </Card>
+        );
+      })}
       <Button title="Refresh orders" secondary onPress={() => void r.reload()} />
     </Page>
   );
