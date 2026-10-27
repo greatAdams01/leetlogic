@@ -1,3 +1,4 @@
+import { deliveryQuoteConfiguration } from "../services/delivery-configuration.js";
 import { handlingAllowed, packageSuggestion } from "../services/packaging.js";
 import { Router, type Request } from "express";
 import { z } from "zod";
@@ -319,6 +320,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       );
     if (!c.DELIVERY_ENABLED)
       throw new AppError(503, "DELIVERY_UNAVAILABLE", "Delivery quotes are not available yet");
+    const { categories, states } = deliveryQuoteConfiguration(c);
     if (!handlingAllowed(order.packagingSnapshot ?? order.listing.packaging, body.parcel.handling))
       throw new AppError(
         422,
@@ -350,10 +352,6 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         "DELIVERY_SCOPE_UNSUPPORTED",
         "This farmer offers delivery within their state. Choose a delivery address in the same state.",
       );
-    const categories = c.DELIVERY_ALLOWED_CATEGORIES.split(",");
-    const states = c.DELIVERY_ALLOWED_STATES.toLowerCase()
-      .split(",")
-      .map((x) => x.trim());
     const eligible =
       body.parcel.handling === "STANDARD" &&
       body.parcel.packageCount === 1 &&

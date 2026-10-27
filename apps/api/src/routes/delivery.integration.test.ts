@@ -58,6 +58,7 @@ suite("delivery and language database workflows", () => {
     c.DELIVERY_ENABLED = true;
     c.SHIPBUBBLE_API_KEY = "fixture";
     c.SHIPBUBBLE_TEST_KEY_CONFIRMED = true;
+    c.SHIPBUBBLE_CATEGORY_ID = 24032950;
     c.TRANSLATION_ENABLED = true;
     c.AZURE_TRANSLATOR_KEY = "fixture";
     c.AZURE_TRANSLATOR_REGION = "fixture";
@@ -203,6 +204,27 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${seller}` })
       ).status,
     ).toBe(200);
+  });
+  it("reports missing pricing configuration without sending the shipment to staff review", async () => {
+    const config = getConfig();
+    const prior = config.DELIVERY_ALLOWED_STATES;
+    const quotes = vi.spyOn(shippingProvider, "quotes");
+    try {
+      config.DELIVERY_ALLOWED_STATES = " , ";
+      const response = await request(app)
+        .post(`/v1/orders/${orderId}/delivery/quotes`)
+        .set(customer())
+        .send(input);
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe("DELIVERY_CONFIGURATION_REQUIRED");
+      expect(JSON.stringify(response.body)).not.toContain("DELIVERY_ALLOWED_STATES");
+      expect(quotes).not.toHaveBeenCalled();
+      expect(await prisma.delivery.count({ where: { orderId } })).toBe(0);
+      expect(await prisma.deliveryEvent.count({ where: { delivery: { orderId } } })).toBe(0);
+    } finally {
+      config.DELIVERY_ALLOWED_STATES = prior;
+      quotes.mockRestore();
+    }
   });
   it("defaults to the farm and lets only its farmer change an unpaid order pickup", async () => {
     const farmer = await prisma.farmerProfile.update({

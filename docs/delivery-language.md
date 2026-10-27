@@ -33,6 +33,14 @@ Webhook: register `/v1/webhooks/shipbubble`. No signature contract was establish
 
 Authoritative references: https://docs.shipbubble.com/get-started and https://github.com/Shipbubble/node-sdk/blob/main/openapi.yaml. Verify account-specific commodity coverage, restrictions, credentials and provider payloads before pilot activation.
 
+### Pricing readiness and address validation
+
+Quote requests return `503 DELIVERY_CONFIGURATION_REQUIRED` before changing an order if the provider key, confirmed key mode, provider category ID, or either delivery allowlist is missing. The diagnostic log names the missing settings; customer responses do not expose configuration details. Only explicitly unsupported parcels or routes enter manual review.
+
+Shipbubble address validation receives the full address including state and Nigeria, plus confirmed latitude/longitude when available. Buyers retain the pin from their selected saved delivery address; changing the street address or state clears that pin. Provider address rejections return `PICKUP_ADDRESS_INVALID` or `DESTINATION_ADDRESS_INVALID` so the correct party can fix the location.
+
+Sandbox verification on 27 October 2026 returned courier quotes for the saved standard 10 kg Rivers-to-Rivers processed-produce shipment using Shipbubble category `24032950` (Dry food and supplements). This verifies sandbox pricing, not live booking or live charges. Local credentials and route configuration remain in the ignored `.env`; other environments need their own configuration. An order cancelled by reservation expiry must be placed again; the quote diagnostic does not revive orders or book shipments.
+
 ## Language configuration and behavior
 
 Configure a **dedicated Azure Translator F0 resource** and set `AZURE_TRANSLATOR_KEY`, `AZURE_TRANSLATOR_REGION`, and `TRANSLATION_ENABLED=true`. Do not switch the Azure resource to a paid tier. Azure's free monthly limit is two million characters; the app defaults to reserving at most 1.9 million as headroom, configurable only up to two million. Other consumers of that Azure resource are outside our usage counter, hence the dedicated-resource requirement.

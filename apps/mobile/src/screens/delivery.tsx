@@ -1,3 +1,4 @@
+import { savedFarmPoint } from "../lib/farm-location";
 import { OrderDisputes } from "../components/order-disputes";
 import { OrderPayment } from "../components/order-payment";
 import { Select } from "../components/Select";
@@ -968,6 +969,8 @@ export function Quotes() {
           ...current,
           address: `${address.line1}, ${address.city}, ${address.lga}`,
           state: address.state,
+          latitude: savedFarmPoint(address)?.latitude,
+          longitude: savedFarmPoint(address)?.longitude,
         }));
     }
   }, [r.data]);
@@ -1092,6 +1095,8 @@ export function Quotes() {
                     ...d,
                     address: `${ad.line1}, ${ad.city}, ${ad.lga}`,
                     state: ad.state,
+                    latitude: savedFarmPoint(ad)?.latitude,
+                    longitude: savedFarmPoint(ad)?.longitude,
                   }))
                 }
               >
@@ -1121,14 +1126,22 @@ export function Quotes() {
                 keyboardType={
                   k === "phone" ? "phone-pad" : k === "email" ? "email-address" : "default"
                 }
-                onChangeText={(v) => setDestination((d) => ({ ...d, [k]: v }))}
+                onChangeText={(v) =>
+                  setDestination((d) => ({
+                    ...d,
+                    [k]: v,
+                    ...(k === "address" ? { latitude: undefined, longitude: undefined } : {}),
+                  }))
+                }
               />
             ))}
             <Select
               label="State"
               value={destination.state}
               options={nigeriaStates}
-              onChange={(state) => setDestination((d) => ({ ...d, state }))}
+              onChange={(state) =>
+                setDestination((d) => ({ ...d, state, latitude: undefined, longitude: undefined }))
+              }
             />
           </Card>
         </>

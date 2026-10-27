@@ -23,10 +23,50 @@ describe("Shipbubble protocol", () => {
   beforeEach(() => {
     fetcher.mockReset();
   });
-  it("keeps internal map pins out of the provider's address-validation payload", async () => {
+  it("sends supported confirmed map pins and a complete address to Shipbubble", async () => {
     fetcher.mockResolvedValue(Response.json({ status: "success", data: { address_code: 1 } }));
     await provider.validateAddress({ ...contact, latitude: 6.52, longitude: 3.37 });
-    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toEqual(contact);
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toEqual({
+      ...contact,
+      address: `${contact.address}, Nigeria`,
+      latitude: 6.52,
+      longitude: 3.37,
+    });
+  });
+  it("includes state and country for addresses without a map pin", async () => {
+    fetcher.mockResolvedValue(Response.json({ status: "success", data: { address_code: 1 } }));
+    await provider.validateAddress({
+      ...contact,
+      address: "74 Aluu Road Rumuekini",
+      state: "Rivers",
+    });
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body).address).toBe(
+      "74 Aluu Road Rumuekini, Rivers, Nigeria",
+    );
+  });
+  it("reports an invalid destination separately from a provider failure", async () => {
+    fetcher
+      .mockResolvedValueOnce(Response.json({ status: "success", data: { address_code: 1 } }))
+      .mockResolvedValueOnce(
+        Response.json({ status: "failed", message: "private provider detail" }, { status: 400 }),
+      );
+    await expect(
+      provider.quotes({
+        pickup: contact,
+        destination: contact,
+        parcel: {
+          weightKg: 10,
+          length: 20,
+          width: 10,
+          height: 20,
+          pickupDate: "2026-11-01",
+          handling: "STANDARD",
+        },
+        name: "Flour",
+        valueMinor: 10000n,
+      }),
+    ).rejects.toMatchObject({ status: 422, code: "DESTINATION_ADDRESS_INVALID" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
   it("uses address validation and VAT-inclusive pickup quotes only", async () => {
     fetcher

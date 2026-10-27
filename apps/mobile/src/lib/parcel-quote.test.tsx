@@ -209,6 +209,8 @@ it("reviews distinct farmer and buyer addresses with farmer packing prefilled an
     {
       id: "buyer-home",
       isDefaultDelivery: true,
+      latitude: "9.08",
+      longitude: "7.4",
       line1: "42 Buyer Avenue",
       city: "Abuja",
       lga: "Bwari",
@@ -258,6 +260,8 @@ it("reviews distinct farmer and buyer addresses with farmer packing prefilled an
         destination: expect.objectContaining({
           address: "42 Buyer Avenue, Abuja, Bwari",
           state: "FCT",
+          latitude: 9.08,
+          longitude: 7.4,
         }),
         parcel: expect.objectContaining({
           weightKg: 24,
@@ -312,4 +316,40 @@ it("resumes a manual review result without repeating the pickup or delivery choi
   expect(headings).toContain("Delivery review pending");
   expect(headings).not.toContain("Pickup or delivery?");
   expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(0);
+});
+
+it("clears a saved map pin when the buyer edits the delivery address", async () => {
+  h.data.delivery = {
+    destination: {
+      name: "Buyer",
+      phone: "+2348012345678",
+      email: "buyer@example.test",
+      address: "Old delivery address Abuja",
+      state: "FCT",
+      country: "NG",
+      latitude: 9.08,
+      longitude: 7.4,
+    },
+  };
+  h.data.order.packageSuggestion = {
+    ...h.data.order.packageSuggestion,
+    length: 20,
+    width: 10,
+    height: 20,
+  };
+  await act(async () => {
+    tree = create(<Quotes />);
+  });
+  await act(async () =>
+    tree.root
+      .findAllByType("Button" as any)
+      .find((node) => node.props.title === "Edit delivery details")!
+      .props.onPress(),
+  );
+  await act(async () => field("Delivery address").props.onChangeText("New delivery address Abuja"));
+  await act(async () => submit());
+  const body = h.api.mock.calls.at(-1)![1].body;
+  expect(body.destination.address).toBe("New delivery address Abuja");
+  expect(body.destination.latitude).toBeUndefined();
+  expect(body.destination.longitude).toBeUndefined();
 });

@@ -120,6 +120,12 @@ export function localizedError(locale: Locale, value: unknown): string {
     INSUFFICIENT_BALANCE: "Your available earnings do not cover this withdrawal and its fee.",
     PAYMENT_REVIEW_REQUIRED: "Your payment is being reviewed. Please contact support for help.",
     DELIVERY_UNAVAILABLE: "Delivery quotes are not available yet.",
+    PICKUP_ADDRESS_INVALID:
+      "The farmer’s pickup address could not be verified. Ask the farmer to confirm the full address and map pin.",
+    DESTINATION_ADDRESS_INVALID:
+      "Your delivery address could not be verified. Check the full address or choose a map pin.",
+    DELIVERY_CONFIGURATION_REQUIRED:
+      "Delivery pricing is temporarily unavailable. Please try again later.",
     DELIVERY_LOCKED: "Delivery details cannot be changed after payment or dispatch.",
     DELIVERY_PRICE_CHANGED: "Delivery price changed. Staff must review the payment before booking.",
     NO_HELD_FUNDS: "This order has no funds held in escrow. Contact support for help.",

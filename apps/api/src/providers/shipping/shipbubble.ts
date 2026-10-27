@@ -99,25 +99,44 @@ export class Shipbubble implements ShippingProvider {
       ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(20000),
     });
-    if (!response.ok)
-      throw new AppError(502, "SHIPBUBBLE_REQUEST_FAILED", "Delivery provider request failed");
-    const envelope = await response.json();
-    if (envelope.status !== "success")
-      throw new AppError(
-        502,
-        "SHIPBUBBLE_REQUEST_FAILED",
-        "Delivery provider could not complete the request",
+    const envelope = await response.json().catch(() => null);
+    if (!response.ok || envelope?.status !== "success") {
+      const invalidAddress =
+        path === "/shipping/address/validate" && [400, 422].includes(response.status);
+      const error = new AppError(
+        invalidAddress ? 422 : 502,
+        invalidAddress ? "DELIVERY_ADDRESS_INVALID" : "SHIPBUBBLE_REQUEST_FAILED",
+        invalidAddress
+          ? "Check the full street address, city, state and map pin before requesting delivery."
+          : "Delivery provider could not complete the request",
       );
+      error.diagnostics = {
+        provider: "shipbubble",
+        operation: path,
+        providerStatus: response.status,
+        reason: invalidAddress ? "Address could not be validated" : "Provider request failed",
+        hint: invalidAddress
+          ? "Send a complete address including state and country, or confirmed coordinates."
+          : "Check provider credentials and availability.",
+      };
+      throw error;
+    }
     return envelope.data;
   }
   async validateAddress(contact: Contact) {
-    // Keep the confirmed map pin in our snapshot; Shipbubble validates its supported address fields.
-    const { latitude: _latitude, longitude: _longitude, ...address } = contact;
-    void _latitude;
-    void _longitude;
-    return z
-      .object({ address_code: z.number().int() })
-      .parse(await this.call("/shipping/address/validate", "POST", address)).address_code;
+    // Shipbubble accepts a full address string or confirmed coordinates.
+    const { latitude, longitude, ...address } = contact;
+    const parts = [address.address];
+    if (!address.address.toLowerCase().includes(address.state.toLowerCase()))
+      parts.push(address.state);
+    if (!/\bnigeria\b/i.test(address.address)) parts.push("Nigeria");
+    return z.object({ address_code: z.number().int() }).parse(
+      await this.call("/shipping/address/validate", "POST", {
+        ...address,
+        address: parts.join(", "),
+        ...(latitude !== undefined && longitude !== undefined ? { latitude, longitude } : {}),
+      }),
+    ).address_code;
   }
   async quotes(input: {
     pickup: Contact;
@@ -144,9 +163,25 @@ export class Shipbubble implements ShippingProvider {
         "CATEGORY_REQUIRED",
         "Configure the confirmed Shipbubble produce category",
       );
+    const validate = async (contact: Contact, pickup: boolean) => {
+      try {
+        return await this.validateAddress(contact);
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== "DELIVERY_ADDRESS_INVALID") throw error;
+        const specific = new AppError(
+          422,
+          pickup ? "PICKUP_ADDRESS_INVALID" : "DESTINATION_ADDRESS_INVALID",
+          pickup
+            ? "The farmer’s pickup address could not be verified. Ask the farmer to confirm the full address and map pin."
+            : "Your delivery address could not be verified. Check the full address or choose a map pin.",
+        );
+        specific.diagnostics = error.diagnostics;
+        throw specific;
+      }
+    };
     const [sender, receiver] = await Promise.all([
-      this.validateAddress(input.pickup),
-      this.validateAddress(input.destination),
+      validate(input.pickup, true),
+      validate(input.destination, false),
     ]);
     const data = z
       .object({
