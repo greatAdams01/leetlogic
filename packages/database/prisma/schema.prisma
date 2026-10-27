@@ -132,6 +132,8 @@ model User {
   sessions        Session[]
   farmerProfile   FarmerProfile?
 
+  cartItems CartItem[]
+  likedListings LikedListing[]
   ordersBought   TradeOrder[]
   supportTickets SupportTicket[]
   riskAlerts     RiskAlert[]
@@ -523,6 +525,8 @@ model Listing {
   movements         InventoryMovement[]
   reservations      InventoryReservation[]
 
+  cartItems CartItem[]
+  likedBy LikedListing[]
   tradeOrders TradeOrder[]
 
   @@index([status, categoryId])
@@ -1070,4 +1074,25 @@ model DisputeEvidence {
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
   @@index([ticketId])
   @@map("dispute_evidence")
+}
+
+model CartItem {
+  userId String @db.Uuid
+  listingId String @db.Uuid
+  quantity Decimal @db.Decimal(18,3)
+  unitPriceMinor BigInt
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  @@id([userId, listingId])
+  @@map("cart_items")
+}
+model LikedListing {
+  userId String @db.Uuid
+  listingId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  @@id([userId, listingId])
+  @@map("liked_listings")
 }

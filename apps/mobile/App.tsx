@@ -1,3 +1,4 @@
+import { Cart, LikedProduce } from "./src/screens/cart";
 import { BuyerCategories } from "./src/screens/buyer-categories";
 import { BuyerLocationProvider } from "./src/components/buyer-location";
 import { ShoppingLocation } from "./src/screens/shopping-location";
@@ -40,6 +41,8 @@ function Router() {
     categories: BuyerCategories,
     shoppingLocation: ShoppingLocation,
     product: Product,
+    cart: Cart,
+    likes: LikedProduce,
     orders: Orders,
     delivery: Delivery,
     quotes: Quotes,

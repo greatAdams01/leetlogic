@@ -1,3 +1,4 @@
+vi.mock("../components/product-actions", () => ({ ProductActions: "ProductActions" }));
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

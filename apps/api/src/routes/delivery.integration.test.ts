@@ -837,6 +837,158 @@ suite("delivery and language database workflows", () => {
       await prisma.listing.update({ where: { id: listingId }, data: { categoryId } });
     }
   });
+  it("persists owned likes and cart items without reserving stock, then checks out atomically and once", async () => {
+    const buyerId = verifyAccessToken(buyer, "customer").sub;
+    const source = await prisma.listing.findUniqueOrThrow({ where: { id: listingId } });
+    const make = () =>
+      prisma.listing.create({
+        data: {
+          farmerProfileId: farmerId,
+          categoryId,
+          locationAddressId: addressId,
+          unitCode: source.unitCode,
+          title: "Cart fixture",
+          shippingScope: "LOCAL",
+          status: "ACTIVE",
+          unitPriceMinor: 10000n,
+          availableQuantity: 20,
+        },
+      });
+    const first = await make(),
+      second = await make();
+    const auth = { Authorization: `Bearer ${buyer}` },
+      other = { Authorization: `Bearer ${outsider}` };
+    expect((await request(app).get("/v1/shopping/cart")).status).toBe(401);
+    for (let n = 0; n < 2; n++)
+      expect(
+        (await request(app).put(`/v1/shopping/likes/${first.id}`).set(auth).send({ liked: true }))
+          .status,
+      ).toBe(200);
+    expect(
+      await prisma.likedListing.count({ where: { userId: buyerId, listingId: first.id } }),
+    ).toBe(1);
+    expect(
+      (await request(app).get(`/v1/shopping/listings/${first.id}`).set(other)).body.liked,
+    ).toBe(false);
+    expect(
+      (await request(app).get("/v1/shopping/likes").set(auth)).body.items.some(
+        (x: any) => x.listing.id === first.id,
+      ),
+    ).toBe(true);
+    await request(app).put(`/v1/shopping/likes/${first.id}`).set(auth).send({ liked: false });
+    expect(
+      await prisma.likedListing.count({ where: { userId: buyerId, listingId: first.id } }),
+    ).toBe(0);
+    await prisma.listing.update({
+      where: { id: first.id },
+      data: { unitPriceMinor: 999999999999999999n },
+    });
+    expect(
+      (
+        await request(app)
+          .put(`/v1/shopping/cart/${first.id}`)
+          .set(auth)
+          .send({ quantity: "20", unitPriceMinor: "999999999999999999" })
+      ).body.error.code,
+    ).toBe("INVALID_TOTAL");
+    await prisma.listing.update({ where: { id: first.id }, data: { unitPriceMinor: 10000n } });
+    for (const item of [first, second]) {
+      expect(
+        (
+          await request(app)
+            .put(`/v1/shopping/cart/${item.id}`)
+            .set(auth)
+            .send({ quantity: "2", unitPriceMinor: "10000" })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await prisma.listing.findUniqueOrThrow({ where: { id: item.id } })
+        ).reservedQuantity.toString(),
+      ).toBe("0");
+    }
+    expect((await request(app).get("/v1/shopping/cart").set(other)).body.items).toEqual([]);
+    await request(app).delete(`/v1/shopping/cart/${first.id}`).set(other);
+    expect(await prisma.cartItem.count({ where: { userId: buyerId, listingId: first.id } })).toBe(
+      1,
+    );
+    expect(
+      (
+        await request(app)
+          .put(`/v1/shopping/cart/${first.id}`)
+          .set({ Authorization: `Bearer ${seller}` })
+          .send({ quantity: "1", unitPriceMinor: "10000" })
+      ).body.error.code,
+    ).toBe("OWN_LISTING");
+    const body = {
+      items: [first, second].map((item) => ({
+        listingId: item.id,
+        quantity: "2",
+        unitPriceMinor: "10000",
+      })),
+    };
+    const key = randomUUID();
+    await prisma.listing.update({ where: { id: second.id }, data: { unitPriceMinor: 11000n } });
+    expect(
+      (
+        await request(app)
+          .post("/v1/shopping/cart/checkout")
+          .set(auth)
+          .set("Idempotency-Key", key)
+          .send(body)
+      ).body.error.code,
+    ).toBe("CART_PRICE_CHANGED");
+    expect(await prisma.tradeOrder.count({ where: { listingId: first.id } })).toBe(0);
+    expect(await prisma.cartItem.count({ where: { userId: buyerId } })).toBe(2);
+    await request(app)
+      .put(`/v1/shopping/cart/${second.id}`)
+      .set(auth)
+      .send({ quantity: "2", unitPriceMinor: "11000" });
+    body.items[1]!.unitPriceMinor = "11000";
+    await prisma.listing.update({ where: { id: second.id }, data: { availableQuantity: 0 } });
+    expect(
+      (
+        await request(app)
+          .post("/v1/shopping/cart/checkout")
+          .set(auth)
+          .set("Idempotency-Key", key)
+          .send(body)
+      ).body.error.code,
+    ).toBe("INVENTORY_UNAVAILABLE");
+    expect(
+      (
+        await prisma.listing.findUniqueOrThrow({ where: { id: first.id } })
+      ).reservedQuantity.toString(),
+    ).toBe("0");
+    expect(await prisma.tradeOrder.count({ where: { listingId: first.id } })).toBe(0);
+    await prisma.listing.update({ where: { id: second.id }, data: { availableQuantity: 20 } });
+    const results = await Promise.all(
+      [0, 1].map(() =>
+        request(app)
+          .post("/v1/shopping/cart/checkout")
+          .set(auth)
+          .set("Idempotency-Key", key)
+          .send(body),
+      ),
+    );
+    expect(results.map((x) => x.status)).toEqual([201, 201]);
+    expect(results[0]!.body).toEqual(results[1]!.body);
+    expect(results[0]!.body.orders).toHaveLength(2);
+    expect(
+      await prisma.tradeOrder.count({ where: { listingId: { in: [first.id, second.id] } } }),
+    ).toBe(2);
+    expect(await prisma.cartItem.count({ where: { userId: buyerId } })).toBe(0);
+    body.items[0]!.quantity = "3";
+    expect(
+      (
+        await request(app)
+          .post("/v1/shopping/cart/checkout")
+          .set(auth)
+          .set("Idempotency-Key", key)
+          .send(body)
+      ).body.error.code,
+    ).toBe("IDEMPOTENCY_KEY_REUSED");
+  });
   it("uploads a listing photo as binary and serves it privately only to its owner", async () => {
     const config = getConfig();
     const previousStorage = config.MEDIA_STORAGE;

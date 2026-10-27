@@ -18,6 +18,7 @@ describe("seller dashboard and navigation", () => {
     expect(bottomTabs("BUYER").map((tab) => tab.name)).toEqual([
       "home",
       "search",
+      "cart",
       "orders",
       "profile",
     ]);

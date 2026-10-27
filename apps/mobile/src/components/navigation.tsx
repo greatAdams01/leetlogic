@@ -186,8 +186,14 @@ export function Navigation() {
                   <Icon
                     name={tab.active}
                     nativeSize={{
-                      width: tab.name === "sell" || tab.name === "orders" ? 20 : 16,
-                      height: tab.name === "sell" || tab.name === "orders" ? 20 : 16,
+                      width:
+                        tab.name === "sell" || tab.name === "orders" || tab.name === "cart"
+                          ? 20
+                          : 16,
+                      height:
+                        tab.name === "sell" || tab.name === "orders" || tab.name === "cart"
+                          ? 20
+                          : 16,
                     }}
                   />
                   <Label numberOfLines={1} adjustsFontSizeToFit style={styles.activeLabel}>

@@ -2,6 +2,7 @@ import type { Route } from "./navigation";
 export const buyerTabs = [
   { name: "home", label: "Home", icon: "home", active: "homeActive" },
   { name: "search", label: "Search", icon: "search", active: "searchActive" },
+  { name: "cart", label: "Cart", icon: "cart", active: "cartActive" },
   { name: "orders", label: "Orders", icon: "orders", active: "ordersActive" },
   { name: "profile", label: "Menu", icon: "profile", active: "profileActive" },
 ] as const;
@@ -9,8 +10,8 @@ export const sellerTabs = [
   buyerTabs[0],
   { name: "myListings", label: "Listings", icon: "listings", active: "listingsActive" },
   { name: "sell", label: "Sell", icon: "sell", active: "sellActive" },
-  buyerTabs[2],
   buyerTabs[3],
+  buyerTabs[4],
 ] as const;
 export const bottomTabs = (role: "BUYER" | "SELLER") =>
   role === "SELLER" ? sellerTabs : buyerTabs;
@@ -21,7 +22,8 @@ export const showsBottomTabs = (
 ) =>
   route !== "sell" &&
   (signedIn || route === "home" || route === "search") &&
-  (bottomTabs(role).some((tab) => tab.name === route) || (role === "BUYER" && route === "categories"));
+  (bottomTabs(role).some((tab) => tab.name === route) ||
+    (role === "BUYER" && route === "categories"));
 
 // Reserve space for a compact icon-and-label pill, keeping every other tab tappable.
 export function tabGeometry(width: number, count: number, selected: number, labelWidth: number) {

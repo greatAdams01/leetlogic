@@ -6445,5 +6445,194 @@
     "● Ciniki kai tsaye yana gudana",
     "● Azụmahịa ozugbo na-arụ ọrụ",
     "● Òwò tààrà ń ṣiṣẹ́"
+  ],
+  [
+    "Cart",
+    "Cart",
+    "Kwandon kaya",
+    "Ụgbọ ahịa",
+    "Apẹ̀rẹ̀"
+  ],
+  [
+    "Add to cart",
+    "Add to cart",
+    "Ƙara a kwando",
+    "Tinye n’ụgbọ ahịa",
+    "Fi sínú apẹ̀rẹ̀"
+  ],
+  [
+    "Update cart",
+    "Update cart",
+    "Sabunta kwando",
+    "Melite ụgbọ ahịa",
+    "Ṣàtúnṣe apẹ̀rẹ̀"
+  ],
+  [
+    "Cart updated",
+    "Cart don update",
+    "An sabunta kwando",
+    "E melitela ụgbọ ahịa",
+    "A ti ṣàtúnṣe apẹ̀rẹ̀"
+  ],
+  [
+    "Add to cart · {amount}",
+    "Add to cart · {amount}",
+    "Ƙara a kwando · {amount}",
+    "Tinye n’ụgbọ ahịa · {amount}",
+    "Fi sínú apẹ̀rẹ̀ · {amount}"
+  ],
+  [
+    "Update cart · {amount}",
+    "Update cart · {amount}",
+    "Sabunta kwando · {amount}",
+    "Melite ụgbọ ahịa · {amount}",
+    "Ṣàtúnṣe apẹ̀rẹ̀ · {amount}"
+  ],
+  [
+    "Saving cart…",
+    "We dey save cart…",
+    "Ana adana kwando…",
+    "A na-echekwa ụgbọ ahịa…",
+    "A ń fi apẹ̀rẹ̀ pamọ́…"
+  ],
+  [
+    "Liked produce",
+    "Produce wey you like",
+    "Amfanin gonar da ake so",
+    "Ihe ubi masịrị gị",
+    "Èso oko tí o fẹ́ràn"
+  ],
+  [
+    "Like produce",
+    "Like this produce",
+    "So amfanin gona",
+    "Nwee mmasị n’ihe ubi",
+    "Fẹ́ràn èso oko"
+  ],
+  [
+    "Unlike produce",
+    "Remove like",
+    "Daina so",
+    "Wepụ mmasị",
+    "Yọ ìfẹ́ràn kúrò"
+  ],
+  [
+    "Share produce",
+    "Share produce",
+    "Raba amfanin gona",
+    "Kesaa ihe ubi",
+    "Pín èso oko"
+  ],
+  [
+    "Share to WhatsApp",
+    "Share for WhatsApp",
+    "Raba zuwa WhatsApp",
+    "Kesaa na WhatsApp",
+    "Pín sí WhatsApp"
+  ],
+  [
+    "More sharing options",
+    "Other ways to share",
+    "Ƙarin hanyoyin rabawa",
+    "Ụzọ nkesa ndị ọzọ",
+    "Àwọn ọ̀nà pípín mìíràn"
+  ],
+  [
+    "We couldn’t open sharing. Please try again.",
+    "We no fit open sharing. Try again.",
+    "Ba mu iya buɗe rabawa ba. Sake gwadawa.",
+    "Anyị enweghị ike imepe nkesa. Nwaa ọzọ.",
+    "A kò lè ṣí pípín. Gbìyànjú lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "No liked produce yet. Tap the heart on a product to save it.",
+    "You never like produce. Tap heart to save am.",
+    "Babu amfanin gona da aka so tukuna. Danna zuciya don adanawa.",
+    "Ọ dịghị ihe ubi masịrị gị ugbu a. Pịa obi iji chekwaa ya.",
+    "Kò sí èso oko tí o fẹ́ràn síbẹ̀. Tẹ ọkàn láti fi pamọ́."
+  ],
+  [
+    "Continue shopping",
+    "Continue to shop",
+    "Ci gaba da sayayya",
+    "Gaa n’ihu ịzụ ahịa",
+    "Tẹ̀síwájú rírà"
+  ],
+  [
+    "Produce subtotal",
+    "Produce total",
+    "Jimillar amfanin gona",
+    "Ngụkọta ego ihe ubi",
+    "Àpapọ̀ owó èso oko"
+  ],
+  [
+    "Refresh cart",
+    "Check cart again",
+    "Sabunta kwando",
+    "Melite ụgbọ ahịa",
+    "Ṣàyẹ̀wò apẹ̀rẹ̀ lẹ́ẹ̀kan sí i"
+  ],
+  [
+    "Remove",
+    "Remove",
+    "Cire",
+    "Wepụ",
+    "Yọ kúrò"
+  ],
+  [
+    "Retry checkout",
+    "Try checkout again",
+    "Sake gwada kammalawa",
+    "Nwaa ịkwụ ụgwọ ọzọ",
+    "Gbìyànjú ìparí rírà lẹ́ẹ̀kan sí i"
+  ],
+  [
+    "Your cart is empty. Browse produce to add something.",
+    "Your cart empty. Find produce add.",
+    "Kwandonku babu kaya. Nemo amfanin gona don ƙarawa.",
+    "Ụgbọ ahịa gị tọgbọ chakoo. Chọgharịa ihe ubi ka ịtinye.",
+    "Apẹ̀rẹ̀ rẹ ṣófo. Wo èso oko láti fi kún un."
+  ],
+  [
+    "Cart items are not reserved. Each produce item gets its own delivery quote and payment before checkout is complete.",
+    "Cart no reserve produce. Each produce get im own delivery price and payment before you finish checkout.",
+    "Ba a keɓe kayan kwando ba. Kowane amfanin gona yana da nasa kuɗin isarwa da biya kafin kammalawa.",
+    "A naghị edobe ihe dị n’ụgbọ ahịa. Ihe ubi ọ bụla nwere ego nnyefe na ịkwụ ụgwọ nke ya tupu emechaa.",
+    "A kò fi ohun inú apẹ̀rẹ̀ pamọ́ sílẹ̀. Èso oko kọ̀ọ̀kan ní iye ìfiránṣẹ́ àti ìsanwó tirẹ̀ kí rírà tó pé."
+  ],
+  [
+    "The price changed. Update this item to accept the new price.",
+    "Price don change. Update this produce to accept new price.",
+    "Farashin ya canza. Sabunta wannan kayan don karɓar sabon farashi.",
+    "Ego agbanweela. Melite ihe a ka ịnabata ego ọhụrụ.",
+    "Iye owó ti yí padà. Ṣàtúnṣe ohun yìí láti gba iye tuntun."
+  ],
+  [
+    "This produce is no longer available.",
+    "This produce no dey available again.",
+    "Wannan amfanin gona baya samuwa.",
+    "Ihe ubi a adịghịzi.",
+    "Èso oko yìí kò sí mọ́."
+  ],
+  [
+    "The price changed. Refresh and review your cart.",
+    "Price don change. Refresh and check your cart.",
+    "Farashin ya canza. Sabunta kuma duba kwandonku.",
+    "Ego agbanweela. Melite ma nyochaa ụgbọ ahịa gị.",
+    "Iye owó ti yí padà. Ṣàyẹ̀wò apẹ̀rẹ̀ rẹ lẹ́ẹ̀kan sí i."
+  ],
+  [
+    "Your cart changed. Refresh and review it before continuing.",
+    "Your cart don change. Refresh check am before you continue.",
+    "Kwandonku ya canza. Sabunta kuma duba shi kafin ci gaba.",
+    "Ụgbọ ahịa gị agbanweela. Melite ma nyochaa ya tupu ịga n’ihu.",
+    "Apẹ̀rẹ̀ rẹ ti yí padà. Ṣàyẹ̀wò rẹ̀ kí o tó tẹ̀síwájú."
+  ],
+  [
+    "Your cart can hold up to 30 produce items.",
+    "Your cart fit hold up to 30 produce items.",
+    "Kwandonku zai iya ɗaukar kayan amfanin gona 30.",
+    "Ụgbọ ahịa gị nwere ike ibu ihe ubi ruru 30.",
+    "Apẹ̀rẹ̀ rẹ lè gba èso oko 30."
   ]
 ]

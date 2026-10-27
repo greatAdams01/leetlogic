@@ -1,3 +1,4 @@
+import { shoppingRouter } from "./routes/shopping.js";
 import {
   buyerTransactionsRouter,
   disputeEvidenceAdminRouter,
@@ -109,6 +110,7 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.use("/v1/listing-drafts", listingDraftRouter);
   app.use("/v1/content", contentRouter);
   app.use("/v1/marketplace", marketplaceRouter);
+  app.use("/v1/shopping", shoppingRouter);
   app.use("/v1/auth", authRouter);
   app.use("/v1/me", meRouter);
   app.use("/v1/webhooks/dojah", dojahWebhookRouter);

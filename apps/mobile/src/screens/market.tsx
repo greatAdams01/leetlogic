@@ -1,3 +1,4 @@
+import { ProductActions } from "../components/product-actions";
 import { BuyerSearch } from "../components/buyer-search";
 import { BuyerEscrow } from "../components/buyer-escrow";
 import {
@@ -27,7 +28,7 @@ import {
 } from "../components/ui";
 import { estimatedPacking, produceTotal } from "../lib/packaging";
 import { Select } from "../components/Select";
-import { api, uuid } from "../lib/api";
+import { api } from "../lib/api";
 import { money, quantity, type Listing, type Order } from "../lib/domain";
 export { ListingPhoto } from "../components/listing-photo";
 export function Market() {
@@ -291,7 +292,12 @@ export function Product() {
   const [qty, setQty] = useState("1");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [key, setKey] = useState(uuid);
+  const shopping = useResource<{ liked: boolean; cartQuantity: string | null }>(
+    `/shopping/listings/${a.route.id}`,
+    !!a.user,
+  );
+  const [liking, setLiking] = useState(false);
+  const likingNow = useRef(false);
   const [translation, setTranslation] = useState("");
   const submitting = useRef(false);
   const item = r.data?.item;
@@ -302,7 +308,6 @@ export function Product() {
   const estimate = item ? estimatedPacking(item.packaging, qty) : null;
   const changeQuantity = (value: string) => {
     setQty(value);
-    setKey(uuid());
     setError("");
   };
   const minimum = item?.unit?.allowsDecimal ? 0.001 : 1;
@@ -322,7 +327,15 @@ export function Product() {
     <Page
       loading={r.loading}
       header={
-        <View style={{ paddingHorizontal: 24, height: 76, justifyContent: "center" }}>
+        <View
+          style={{
+            paddingHorizontal: 24,
+            height: 76,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={a.ui("Go back")}
@@ -338,61 +351,55 @@ export function Product() {
           >
             <Icon name="productBack" nativeSize={{ width: 22, height: 22 }} />
           </Pressable>
+          {item && (
+            <ProductActions
+              item={item}
+              liked={!!shopping.data?.liked}
+              busy={liking || (!!a.user && (shopping.loading || !!shopping.error))}
+              onLike={() => {
+                if (!a.user) {
+                  a.go("phone");
+                  return;
+                }
+                if (likingNow.current) return;
+                likingNow.current = true;
+                setLiking(true);
+                setError("");
+                void api(`/shopping/likes/${item.id}`, {
+                  method: "PUT",
+                  body: { liked: !shopping.data?.liked },
+                })
+                  .then(() => shopping.reload())
+                  .catch((e) => setError(a.error(e)))
+                  .finally(() => {
+                    likingNow.current = false;
+                    setLiking(false);
+                  });
+              }}
+            />
+          )}
         </View>
-      }
-      footer={
-        item && (
-          <Button
-            title={
-              busy
-                ? "Creating order…"
-                : total
-                  ? a.ui("Start order · {amount}", { amount: money(total) })
-                  : a.ui("Start order")
-            }
-            loading={busy}
-            disabled={
-              busy ||
-              !total ||
-              Number(qty) > available ||
-              Number(qty) < minimum ||
-              (!!item.unit && !item.unit.allowsDecimal && !Number.isInteger(Number(qty)))
-            }
-            onPress={async () => {
-              if (submitting.current) return;
-              if (!a.user) {
-                a.go("phone");
-                return;
-              }
-              submitting.current = true;
-              setBusy(true);
-              setError("");
-              try {
-                quantity(qty);
-                const result = await api<{ order: { id: string } }>("/marketplace/orders", {
-                  method: "POST",
-                  body: { listingId: item.id, quantity: qty },
-                  key,
-                });
-                a.go("delivery", result.order.id);
-              } catch (e) {
-                setError(a.error(e));
-              } finally {
-                submitting.current = false;
-                setBusy(false);
-              }
-            }}
-          />
-        )
       }
     >
       {!!r.error && <Notice text={r.error} error />}
+      {!!error && <Notice text={error} error />}
+      {!!shopping.error && (
+        <>
+          <Notice text={shopping.error} error />
+          <Button title="Try again" secondary onPress={() => void shopping.reload()} />
+        </>
+      )}
       {item && (
         <>
           <ListingGallery key={item.id} item={item} />
-          <Card>
+          <Card style={{ borderRadius: 16, boxShadow: "0px 1px 1px rgba(0,0,0,0.05)" }}>
             <View style={{ flexDirection: "row", gap: 12, justifyContent: "space-between" }}>
-              <Label style={{ fontFamily: "NotoBold", fontSize: 18, flex: 1 }}>{item.title}</Label>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Label>{item.title}</Label>
+                {!!(translation || item.description) && (
+                  <Label>{translation || item.description}</Label>
+                )}
+              </View>
               <Label muted style={{ flex: 1, textAlign: "right" }}>
                 {a.ui("{quantity} {unit} available", {
                   quantity: available,
@@ -400,9 +407,6 @@ export function Product() {
                 })}
               </Label>
             </View>
-            {!!(translation || item.description) && (
-              <Label>{translation || item.description}</Label>
-            )}
             <View
               style={{
                 flexDirection: "row",
@@ -421,7 +425,7 @@ export function Product() {
               )}
             </View>
           </Card>
-          <Card>
+          <Card style={{ borderRadius: 16, boxShadow: "0px 1px 1px rgba(0,0,0,0.05)" }}>
             <View
               style={{
                 flexDirection: "row",
@@ -488,8 +492,67 @@ export function Product() {
               Delivery is quoted separately before payment.
             </Label>
           </Card>
+          <Card style={{ borderRadius: 16, boxShadow: "0px 1px 1px rgba(0,0,0,0.05)" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Icon name="buyerVerified" nativeSize={{ width: 14, height: 14 }} />
+              <Label style={{ fontFamily: "NotoBold" }}>{item.farmerProfile.farmName}</Label>
+            </View>
+            <Label muted>
+              {item.locationAddress.city}, {item.locationAddress.state}
+            </Label>
+            <Label>Verified farmer</Label>
+            <Label>{item.shippingScope === "LOCAL" ? "Local delivery" : "Nigeria delivery"}</Label>
+          </Card>
+          <Button
+            icon={false}
+            title={
+              busy
+                ? "Saving cart…"
+                : total
+                  ? a.ui(
+                      shopping.data?.cartQuantity
+                        ? "Update cart · {amount}"
+                        : "Add to cart · {amount}",
+                      { amount: money(total) },
+                    )
+                  : a.ui("Add to cart")
+            }
+            loading={busy}
+            disabled={
+              busy ||
+              !total ||
+              Number(qty) > available ||
+              Number(qty) < minimum ||
+              (!!item.unit && !item.unit.allowsDecimal && !Number.isInteger(Number(qty)))
+            }
+            onPress={async () => {
+              if (submitting.current) return;
+              if (!a.user) {
+                a.go("phone");
+                return;
+              }
+              submitting.current = true;
+              setBusy(true);
+              setError("");
+              try {
+                quantity(qty);
+                await api(`/shopping/cart/${item.id}`, {
+                  method: "PUT",
+                  body: { quantity: qty, unitPriceMinor: item.unitPriceMinor },
+                });
+                await shopping.reload();
+                a.notify(a.ui("Cart updated"));
+                a.go("cart");
+              } catch (e) {
+                setError(a.error(e));
+              } finally {
+                submitting.current = false;
+                setBusy(false);
+              }
+            }}
+          />
           {item.packaging && (
-            <Card>
+            <Card style={{ borderRadius: 16, boxShadow: "0px 1px 1px rgba(0,0,0,0.05)" }}>
               <Label style={{ fontFamily: "NotoBold" }}>Packing and handling</Label>
               <Label>
                 {a.ui("{units} selling units per parcel", {
@@ -533,21 +596,9 @@ export function Product() {
               }}
             />
           )}
-          <Card>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Icon name="buyerVerified" nativeSize={{ width: 14, height: 14 }} />
-              <Label style={{ fontFamily: "NotoBold" }}>{item.farmerProfile.farmName}</Label>
-            </View>
-            <Label muted>
-              {item.locationAddress.city}, {item.locationAddress.state}
-            </Label>
-            <Label>Verified farmer</Label>
-            <Label>{item.shippingScope === "LOCAL" ? "Local delivery" : "Nigeria delivery"}</Label>
-          </Card>
           <Notice text="Delivery coverage and package eligibility are checked before payment. Bulk and cold-chain orders need staff review." />
         </>
       )}
-      {!!error && <Notice text={error} error />}
     </Page>
   );
 }

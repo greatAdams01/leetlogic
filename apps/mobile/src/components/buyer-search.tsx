@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import { Keyboard, Pressable, View, type TextInput } from "react-native";
 import { useApp } from "../state";
 import { AppSheet } from "./app-sheet";
-import { Field, Icon, Label, colors } from "./ui";
+import { Field, Icon, Label } from "./ui";
 /** A modal owns text entry; the marketplace behind it cannot scroll or take taps. */
 export function BuyerSearch({
   compact = false,

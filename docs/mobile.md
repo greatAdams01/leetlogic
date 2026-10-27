@@ -244,6 +244,14 @@ Farmers create and confirm a four-digit device PIN. Returning farmer sessions re
 
 PIN flows can be tested in Expo Go. Face ID requires an iOS development build with the configured usage permission; restart Metro after installing dependencies and rebuild the native development client to include `expo-local-authentication`. Simulator biometric enrollment and success/failure simulation must be configured in the simulator. Test new-phone role selection, buyer guest browsing, farmer PIN confirmation, cancelled biometric prompts, background locking, recovery and logout with an unavailable API. Interactive simulator testing remains a manual check.
 
+### Buyer product actions and cart
+
+The product header shares a product link through WhatsApp or the native sharing sheet and saves likes to the signed-in account. The full swipeable gallery, thumbnails and safe-area fullscreen viewer remain available. Saved produce is accessible from Cart → Liked produce. Buyer navigation now includes Cart; seller navigation remains separate.
+
+Adding or updating a cart item saves the selected quantity without creating an order or reserving stock. Cart checkout atomically validates current prices, farmer approval, units and stock, then uses the same order-creation service as the existing direct-order API. Each item becomes a separate order with its own delivery quote and payment. All selected items succeed or none do; successful checkout removes those cart items. Network retries reuse the checkout key and original cart snapshot. Confirmed price/stock rejections unlock cart editing. Payment and escrow release rules remain unchanged.
+
+Apply `20261028160000_buyer_cart_likes`, regenerate the database client, restart the backend and reload Expo after deploying these changes. `EXPO_PUBLIC_WEB_URL` should point to the deployed existing web app; the shared `/produce/:id` page shows current public listing information and photos. During development, the default link uses the backend host on web port 3001; recipients must be able to reach that host. The web server also needs its backend configured through `ADMIN_API_URL`. No credentials belong in these public URLs. WhatsApp receives a composed message for the user to send; tapping Share does not send a message automatically.
+
 ### Buyer area filters and categories
 
 Buyer Home uses the Figma trade overview: compact white Active dispatch and Trade escrow cards below the search field. Dispatch counts use owned shipments in booked, picked-up, transit, failed-attempt or returning states; escrow uses confirmed held produce funds. Search opens the shared modal sheet with keyboard focus after the native modal appears. Submission or cancellation dismisses the keyboard. Home submissions open results, and results retain only a search icon beside the shopping-location control. The submitted query is kept in navigation history for Back navigation.

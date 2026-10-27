@@ -10,6 +10,8 @@ export type Route = {
     | "categories"
     | "shoppingLocation"
     | "product"
+    | "cart"
+    | "likes"
     | "orders"
     | "delivery"
     | "quotes"
@@ -43,6 +45,8 @@ export function finishLanguageSelection(stack: Route[]): Route[] {
 }
 
 export const protectedScreens: Route["name"][] = [
+  "cart",
+  "likes",
   "orders",
   "delivery",
   "quotes",
