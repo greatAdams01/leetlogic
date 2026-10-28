@@ -468,6 +468,14 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
         where: { id: order.id },
         data: { heldMinor: current.produceMinor, status: "FUNDED" },
       });
+      const farmer = await tx.farmerProfile.findUniqueOrThrow({
+        where: { id: order.farmerProfileId },
+      });
+      await tx.paidOrderNotification.upsert({
+        where: { orderId: order.id },
+        create: { orderId: order.id, userId: farmer.userId },
+        update: {},
+      });
       await tx.escrowEntry.create({
         data: {
           orderId: order.id,

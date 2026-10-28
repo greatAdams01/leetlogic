@@ -53,6 +53,7 @@ it("keeps farmer earnings and banks out of buyer Menu even for an account with a
   await act(async () => {
     tree = create(<Profile />);
   });
+  expect(labels()).not.toContain("Security settings");
   expect(labels()).not.toContain("Payments and earnings");
   expect(labels()).not.toContain("Bank accounts");
   expect(labels()).not.toContain("Manage your produce, listings and earnings.");
@@ -72,5 +73,12 @@ it("retains earnings, banks and farm tools for seller Menu", async () => {
   expect(labels()).toContain("Payments and earnings");
   expect(labels()).toContain("Bank accounts");
   expect(labels()).toContain("Farm location");
+  expect(labels()).toContain("Security settings");
+  expect(labels()).toContain("Notifications");
+  const security = tree.root
+    .findAllByType("Label" as any)
+    .find((node) => node.props.children === "Security settings")!;
+  await act(async () => security.parent!.parent!.props.onPress());
+  expect(h.go).toHaveBeenCalledWith("securitySettings");
   expect(labels()).not.toContain("Shopping location");
 });

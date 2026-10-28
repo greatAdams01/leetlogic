@@ -73,25 +73,102 @@ async function orderAccess(req: Request) {
       order.farmerProfile.userId !== req.auth!.sub)
   )
     throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+  if (
+    req.auth!.subject !== "admin" &&
+    order.buyerId !== req.auth!.sub &&
+    (["AWAITING_PAYMENT", "CANCELLED"].includes(order.status) ||
+      !(await prisma.escrowEntry.count({ where: { orderId: order.id, kind: "FUND" } })))
+  )
+    throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
   return order;
 }
+customerDeliveryRouter.post("/push-device", async (req, res) => {
+  const { token } = z
+    .object({
+      token: z
+        .string()
+        .max(255)
+        .regex(/^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/),
+    })
+    .parse(req.body);
+  const session = await prisma.session.findUniqueOrThrow({ where: { id: req.auth!.sessionId } });
+  await prisma.mobilePushDevice.upsert({
+    where: { token },
+    create: { token, userId: req.auth!.sub, sessionFamilyId: session.tokenFamilyId },
+    update: { userId: req.auth!.sub, sessionFamilyId: session.tokenFamilyId },
+  });
+  res.status(204).end();
+});
+customerDeliveryRouter.delete("/push-device", async (req, res) => {
+  const { token } = z.object({ token: z.string().max(255) }).parse(req.body);
+  await prisma.mobilePushDevice.deleteMany({ where: { token, userId: req.auth!.sub } });
+  res.status(204).end();
+});
 customerDeliveryRouter.get("/notifications", async (req, res) => {
+  const { view } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
   const items = await prisma.deliveryNotification.findMany({
-    where: { userId: req.auth!.sub },
+    where: {
+      userId: req.auth!.sub,
+      event: {
+        delivery: {
+          order:
+            view === "seller"
+              ? {
+                  farmerProfile: { userId: req.auth!.sub },
+                  ledger: { some: { kind: "FUND" } },
+                  status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+                }
+              : { buyerId: req.auth!.sub },
+        },
+      },
+    },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
-  res.json({ items });
+  const paid =
+    view === "seller"
+      ? await prisma.paidOrderNotification.findMany({
+          where: {
+            userId: req.auth!.sub,
+            order: {
+              farmerProfile: { userId: req.auth!.sub },
+              ledger: { some: { kind: "FUND" } },
+              status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+            },
+          },
+          select: { id: true, orderId: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+          take: 50,
+        })
+      : [];
+  res.json({
+    items: [...items, ...paid.map((i) => ({ ...i, messageKey: "order.paid" }))]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 50),
+  });
 });
 customerDeliveryRouter.get("/", async (req, res) => {
   const { view } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
   const items = await prisma.tradeOrder.findMany({
     where:
       view === "seller"
-        ? { farmerProfile: { userId: req.auth!.sub } }
+        ? {
+            farmerProfile: { userId: req.auth!.sub },
+            ledger: { some: { kind: "FUND" } },
+            status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+          }
         : view === "buyer"
           ? { buyerId: req.auth!.sub }
-          : { OR: [{ buyerId: req.auth!.sub }, { farmerProfile: { userId: req.auth!.sub } }] },
+          : {
+              OR: [
+                { buyerId: req.auth!.sub },
+                {
+                  farmerProfile: { userId: req.auth!.sub },
+                  ledger: { some: { kind: "FUND" } },
+                  status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+                },
+              ],
+            },
     select: {
       id: true,
       reference: true,

@@ -17,6 +17,8 @@ export const icons = {
   buyerTruck: require("../assets/figma/a2538.svg"),
   productBack: require("../assets/figma/f7863.svg"),
   securityBack: require("../assets/figma/security-back.svg"),
+  securityFace: require("../assets/figma/security-face.svg"),
+  securityBiometric: require("../assets/figma/security-biometric.svg"),
   securityFingerprint: require("../assets/figma/security-fingerprint.svg"),
   listingBack: require("../assets/figma/3a86b.svg"),
   listingClose: require("../assets/figma/f6c84.svg"),

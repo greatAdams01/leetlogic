@@ -6,6 +6,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { LocalizedText as Text } from "../localization";
 import { Button, Icon, colors, Heading, Label, Notice } from "../components/ui";
 import { useApp } from "../state";
+import { biometricPresentation } from "../lib/biometric-presentation";
 import { checkPin, createSecurity, enableBiometric, readSecurity } from "../lib/farmer-security";
 
 export function FarmerSecurity() {
@@ -18,7 +19,10 @@ export function FarmerSecurity() {
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [label, setLabel] = useState("Biometric unlock");
+  const [presentation, setPresentation] = useState(
+    biometricPresentation(false, false, Platform.OS === "ios"),
+  );
+  const { label } = presentation;
   const [available, setAvailable] = useState(false);
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
@@ -30,14 +34,12 @@ export function FarmerSecurity() {
       if (!active) return;
       setAvailable(enrolled && types.length > 0);
       setEnabled(!!record?.biometric);
-      setLabel(
-        types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)
-          ? Platform.OS === "ios"
-            ? "Face ID"
-            : "Face unlock"
-          : types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)
-            ? "Fingerprint"
-            : "Biometric unlock",
+      setPresentation(
+        biometricPresentation(
+          types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT),
+          types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION),
+          Platform.OS === "ios",
+        ),
       );
     })().catch(() => {});
     return () => {
@@ -105,11 +107,7 @@ export function FarmerSecurity() {
         ? "Create a PIN."
         : step === "confirm"
           ? "Confirm your PIN."
-          : label === "Face ID"
-            ? "Use Face ID"
-            : label === "Face unlock"
-              ? "Use face unlock"
-              : "Use fingerprint";
+          : presentation.use;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.green }}>
       <StatusBar style="light" />
@@ -159,13 +157,7 @@ export function FarmerSecurity() {
                   justifyContent: "center",
                 }}
               >
-                {label === "Fingerprint" ? (
-                  <Icon name="securityFingerprint" nativeSize={{ width: 44, height: 44 }} />
-                ) : (
-                  <Text style={{ color: "white", fontSize: 18, fontFamily: "NotoBold" }}>
-                    {label}
-                  </Text>
-                )}
+                <Icon name={presentation.icon} nativeSize={{ width: 44, height: 44 }} />
               </View>
             </View>
           )}
@@ -230,13 +222,7 @@ export function FarmerSecurity() {
             <View style={{ backgroundColor: "white", padding: 20, borderRadius: 16, gap: 16 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
                 <View style={{ flex: 1 }}>
-                  <Label>
-                    {label === "Face ID"
-                      ? "Enable Face ID"
-                      : label === "Face unlock"
-                        ? "Enable face unlock"
-                        : "Enable fingerprint"}
-                  </Label>
+                  <Label>{presentation.enable}</Label>
                   <Label muted>Device unlock</Label>
                 </View>
                 <Switch
@@ -277,18 +263,7 @@ export function FarmerSecurity() {
           </View>
           {!!error && <Notice text={error} />}
           {step === "unlock" && available && enabled && (
-            <Button
-              title={
-                label === "Face ID"
-                  ? "Use Face ID"
-                  : label === "Face unlock"
-                    ? "Use face unlock"
-                    : "Use fingerprint"
-              }
-              secondary
-              disabled={busy}
-              onPress={biometric}
-            />
+            <Button title={presentation.use} secondary disabled={busy} onPress={biometric} />
           )}
           {step === "unlock" && (
             <Button

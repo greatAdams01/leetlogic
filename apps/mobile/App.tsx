@@ -1,7 +1,9 @@
+import { OrderPush } from "./src/components/order-push";
 import { Cart, LikedProduce } from "./src/screens/cart";
 import { BuyerCategories } from "./src/screens/buyer-categories";
 import { BuyerLocationProvider } from "./src/components/buyer-location";
 import { ShoppingLocation } from "./src/screens/shopping-location";
+import { SecuritySettings } from "./src/screens/security-settings";
 import { FarmerSecurity } from "./src/screens/farmer-security";
 import { BankAccounts } from "./src/screens/bank-accounts";
 import { Finance } from "./src/screens/finance";
@@ -55,12 +57,14 @@ function Router() {
     sell: Sell,
     review: Review,
     myListings: MyListings,
+    securitySettings: SecuritySettings,
     notifications: Notifications,
     help: Help,
   };
   const Screen = !a.user && protectedScreens.includes(a.route.name) ? Phone : screens[a.route.name];
   return (
     <>
+      <OrderPush />
       <StatusBar
         style={
           ["phone", "otp", "role", "language", "intro"].includes(a.route.name) ||

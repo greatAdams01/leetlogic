@@ -137,6 +137,8 @@ model User {
   ordersBought   TradeOrder[]
   supportTickets SupportTicket[]
   riskAlerts     RiskAlert[]
+  mobilePushDevices MobilePushDevice[]
+  paidOrderNotifications PaidOrderNotification[]
 
   @@map("users")
 }
@@ -620,6 +622,7 @@ model TradeOrder {
   delivery            Delivery?
   shipment            Shipment?
   ledger              EscrowEntry[]
+  paidOrderNotification PaidOrderNotification?
   tickets             SupportTicket[]
   compliance          ComplianceReview[]
 
@@ -1096,4 +1099,29 @@ model LikedListing {
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
   @@id([userId, listingId])
   @@map("liked_listings")
+}
+
+model MobilePushDevice {
+  token String @id @db.VarChar(255)
+  userId String @db.Uuid
+  sessionFamilyId String @db.Uuid
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@map("mobile_push_devices")
+}
+
+model PaidOrderNotification {
+  id String @id @default(uuid()) @db.Uuid
+  orderId String @unique @db.Uuid
+  userId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  sentAt DateTime? @db.Timestamptz(6)
+  nextRunAt DateTime @default(now()) @db.Timestamptz(6)
+  attempts Int @default(0)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@index([userId, createdAt])
+  @@index([sentAt, nextRunAt])
+  @@map("paid_order_notifications")
 }

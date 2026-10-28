@@ -69,7 +69,8 @@
         {
           "faceIDPermission": "Use Face ID to unlock your LeetLogic farmer account."
         }
-      ]
+      ],
+      "expo-notifications"
     ]
   }
 }

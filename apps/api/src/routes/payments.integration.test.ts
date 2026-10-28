@@ -427,6 +427,11 @@ suite("provider-backed payment safeguards", () => {
     await reconcilePayment(a.id);
     const funded = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } });
     expect(funded.heldMinor).toBe(10000n);
+    const paidNotices = await prisma.paidOrderNotification.findMany({ where: { orderId: o.id } });
+    expect(paidNotices).toHaveLength(1);
+    expect(paidNotices[0]!.userId).toBe(
+      (await prisma.farmerProfile.findUniqueOrThrow({ where: { id: o.farmerProfileId } })).userId,
+    );
     expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).paidMinor).toBe(
       1000n,
     );

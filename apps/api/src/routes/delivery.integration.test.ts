@@ -203,7 +203,7 @@ suite("delivery and language database workflows", () => {
           .get(`/v1/orders/${orderId}/delivery`)
           .set({ Authorization: `Bearer ${seller}` })
       ).status,
-    ).toBe(200);
+    ).toBe(404);
   });
   it("reports missing pricing configuration without sending the shipment to staff review", async () => {
     const config = getConfig();
@@ -226,16 +226,16 @@ suite("delivery and language database workflows", () => {
       quotes.mockRestore();
     }
   });
-  it("defaults to the farm and lets only its farmer change an unpaid order pickup", async () => {
-    const farmer = await prisma.farmerProfile.update({
+  it("keeps the farm pickup visible to the buyer while hiding unpaid checkouts from the farmer", async () => {
+    await prisma.farmerProfile.update({
       where: { id: farmerId },
       data: { primaryAddressId: addressId },
     });
-    const sourceOrder = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    const source = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
     const order = await prisma.tradeOrder.create({
       data: {
         reference: `PICKUP-${randomUUID()}`,
-        buyerId: sourceOrder.buyerId,
+        buyerId: source.buyerId,
         farmerProfileId: farmerId,
         listingId,
         quantity: "1",
@@ -244,83 +244,35 @@ suite("delivery and language database workflows", () => {
     });
     const path = `/v1/orders/${order.id}/delivery`;
     const sellerAuth = { Authorization: `Bearer ${seller}` };
-    const catalogue = await request(app).get("/v1/listing-drafts/catalogue").set(sellerAuth);
-    expect(catalogue.body.primaryAddressId).toBe(addressId);
-    expect((await request(app).get(path).set(customer())).body.order.suggestedPickup.address).toBe(
-      `${contact.address}, Lagos, Ikeja`,
-    );
-    const alternate = await prisma.address.create({
-      data: {
-        userId: farmer.userId,
-        state: "Lagos",
-        city: "Ikeja",
-        lga: "Ikeja",
-        line1: "25 Collection Centre Road",
-        label: "Collection centre",
-      },
-    });
-    expect(
-      (await request(app).post(`${path}/pickup`).set(customer()).send({ addressId: alternate.id }))
-        .status,
-    ).toBe(403);
-    expect(
-      (
-        await request(app)
-          .post(`${path}/pickup`)
-          .set({ Authorization: `Bearer ${outsider}` })
-          .send({ addressId: alternate.id })
-      ).status,
-    ).toBe(404);
-    expect(
-      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId: randomUUID() }))
-        .status,
-    ).toBe(422);
-    expect(
-      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId: alternate.id }))
-        .status,
-    ).toBe(200);
     const detail = await request(app).get(path).set(customer());
-    expect(detail.body.order.suggestedPickup.address).toContain(alternate.line1);
-    expect(
-      (await prisma.listing.findUniqueOrThrow({ where: { id: listingId } })).locationAddressId,
-    ).toBe(addressId);
-    const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
-      {
-        courierId: "test",
-        courier: "Test courier",
-        amountMinor: 500n,
-        walletMinor: 500n,
-        requestToken: "pickup-fixture",
-        serviceCode: "pickup-fixture",
-        eta: "1 day",
-      },
-    ]);
-    expect((await request(app).post(`${path}/quotes`).set(customer()).send(input)).status).toBe(
-      422,
-    );
-    const valid = {
-      ...input,
-      pickup: { ...contact, address: detail.body.order.suggestedPickup.address },
-    };
-    const quoted = await request(app).post(`${path}/quotes`).set(customer()).send(valid);
-    expect(quoted.status).toBe(200);
-    const oldQuote = quoted.body.items[0].id;
+    expect(detail.status).toBe(200);
+    expect(detail.body.order.suggestedPickup.address).toBe(`${contact.address}, Lagos, Ikeja`);
+    expect((await request(app).get(path).set(sellerAuth)).status).toBe(404);
     expect(
       (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId })).status,
-    ).toBe(200);
+    ).toBe(404);
     expect(
-      (await request(app).post(`${path}/select`).set(customer()).send({ quoteId: oldQuote }))
-        .status,
+      (await request(app).post(`${path}/pickup`).set(customer()).send({ addressId })).status,
+    ).toBe(403);
+    await prisma.tradeOrder.update({
+      where: { id: order.id },
+      data: {
+        status: "FUNDED",
+        ledger: {
+          create: {
+            kind: "FUND",
+            amountMinor: 10000n,
+            actorId: source.buyerId,
+            mutationKey: randomUUID(),
+            reason: "Confirmed test payment",
+          },
+        },
+      },
+    });
+    expect((await request(app).get(path).set(sellerAuth)).status).toBe(200);
+    expect(
+      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId })).status,
     ).toBe(409);
-    expect(
-      await prisma.deliveryQuote.count({ where: { deliveryId: detail.body.delivery.id } }),
-    ).toBe(0);
-    await prisma.tradeOrder.update({ where: { id: order.id }, data: { status: "FUNDED" } });
-    expect(
-      (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId: alternate.id }))
-        .status,
-    ).toBe(409);
-    quotes.mockRestore();
   });
   it("stores only the signed-in farmer’s valid map pin and keeps it out of public listings", async () => {
     const sellerAuth = { Authorization: `Bearer ${seller}` };
@@ -561,7 +513,7 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${seller}` })
           .send({ quoteId })
       ).status,
-    ).toBe(403);
+    ).toBe(404);
     expect(
       (
         await request(app)
@@ -622,7 +574,19 @@ suite("delivery and language database workflows", () => {
     try {
       await prisma.tradeOrder.update({
         where: { id: orderId },
-        data: { status: "FUNDED", heldMinor: 10000n },
+        data: {
+          status: "FUNDED",
+          heldMinor: 10000n,
+          ledger: {
+            create: {
+              kind: "FUND",
+              amountMinor: 10000n,
+              actorId: verifyAccessToken(buyer, "customer").sub,
+              mutationKey: randomUUID(),
+              reason: "Confirmed test payment",
+            },
+          },
+        },
       });
       const book = vi
         .spyOn(shippingProvider, "book")
@@ -1465,11 +1429,83 @@ suite("delivery and language database workflows", () => {
         totalMinor: 100n,
       },
     });
+    const makeSale = (status: string, funded: boolean) =>
+      prisma.tradeOrder.create({
+        data: {
+          reference: `VISIBILITY-${randomUUID()}`,
+          buyerId: buyerUserId,
+          farmerProfileId: farmerId,
+          listingId,
+          quantity: "1",
+          totalMinor: 100n,
+          status,
+          ...(funded
+            ? {
+                ledger: {
+                  create: {
+                    kind: "FUND",
+                    amountMinor: 100n,
+                    mutationKey: randomUUID(),
+                    actorId: buyerUserId,
+                    reason: "Confirmed test payment",
+                  },
+                },
+              }
+            : {}),
+        },
+      });
+    const paidSale = await makeSale("FUNDED", true);
+    const notice = await prisma.paidOrderNotification.create({
+      data: { orderId: paidSale.id, userId: sellerUserId },
+    });
+    const inbox = await request(app)
+      .get("/v1/orders/notifications?view=seller")
+      .set({ Authorization: `Bearer ${seller}` });
+    expect(inbox.status).toBe(200);
+    expect(inbox.body.items).toContainEqual(
+      expect.objectContaining({ id: notice.id, orderId: paidSale.id, messageKey: "order.paid" }),
+    );
+    for (const token of [buyer, outsider]) {
+      const otherInbox = await request(app)
+        .get("/v1/orders/notifications?view=seller")
+        .set({ Authorization: `Bearer ${token}` });
+      expect(otherInbox.body.items.map((item: { id: string }) => item.id)).not.toContain(notice.id);
+    }
+    const pushToken = `ExpoPushToken[${randomUUID()}]`;
+    expect(
+      (
+        await request(app)
+          .post("/v1/orders/push-device")
+          .set({ Authorization: `Bearer ${seller}` })
+          .send({ token: pushToken, userId: buyerUserId })
+      ).status,
+    ).toBe(204);
+    expect(
+      (await prisma.mobilePushDevice.findUniqueOrThrow({ where: { token: pushToken } })).userId,
+    ).toBe(sellerUserId);
+
+    const unpaidSale = await makeSale("AWAITING_PAYMENT", false);
+    const cancelledSale = await makeSale("CANCELLED", false);
+    const unverifiedSale = await makeSale("FUNDED", false);
     const sales = await request(app)
       .get("/v1/orders?view=seller")
       .set({ Authorization: `Bearer ${seller}` });
     expect(sales.status).toBe(200);
-    expect(sales.body.items.length).toBeGreaterThan(0);
+    const saleIds = sales.body.items.map((item: { id: string }) => item.id);
+    expect(saleIds).toContain(paidSale.id);
+    for (const hidden of [unpaidSale, cancelledSale, unverifiedSale]) {
+      expect(saleIds).not.toContain(hidden.id);
+      const detail = await request(app)
+        .get(`/v1/orders/${hidden.id}/delivery`)
+        .set({ Authorization: `Bearer ${seller}` });
+      expect(detail.status).toBe(404);
+    }
+    const buyerOrders = await request(app)
+      .get("/v1/orders?view=buyer")
+      .set({ Authorization: `Bearer ${buyer}` });
+    expect(buyerOrders.body.items.map((item: { id: string }) => item.id)).toContain(
+      cancelledSale.id,
+    );
     expect(sales.body.items.some((item: { id: string }) => item.id === purchase.id)).toBe(false);
     const purchases = await request(app)
       .get("/v1/orders?view=buyer")

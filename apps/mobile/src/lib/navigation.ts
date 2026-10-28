@@ -24,6 +24,7 @@ export type Route = {
     | "sell"
     | "review"
     | "myListings"
+    | "securitySettings"
     | "notifications"
     | "help";
   id?: string;
@@ -59,6 +60,7 @@ export const protectedScreens: Route["name"][] = [
   "sell",
   "review",
   "myListings",
+  "securitySettings",
   "notifications",
 ];
 

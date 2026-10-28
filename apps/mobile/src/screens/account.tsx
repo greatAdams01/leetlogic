@@ -1,3 +1,4 @@
+import { registerOrderPush } from "../lib/push-notifications";
 import { FarmPin } from "../components/farm-pin";
 import { savedFarmPoint, type FarmPoint } from "../lib/farm-location";
 import { farmLocation } from "../lib/farm-location";
@@ -130,6 +131,20 @@ export function Profile() {
       <Text style={s.sectionTitle}>Settings</Text>
       <Card>
         {[
+          ...(seller
+            ? [
+                {
+                  label: "Security settings",
+                  sub: "Manage your PIN and biometric unlock",
+                  route: "securitySettings",
+                },
+              ]
+            : []),
+          {
+            label: "Notifications",
+            sub: seller ? "Paid orders and delivery updates" : "Delivery updates",
+            route: "notifications",
+          },
           {
             label: "Payments and earnings",
             sub: "Manage payments, bank accounts and withdrawals",
@@ -185,6 +200,17 @@ export function Profile() {
             </Pressable>
           ))}
       </Card>
+      {seller && (
+        <Button
+          title="Enable paid-order notifications"
+          secondary
+          onPress={() =>
+            void registerOrderPush(true)
+              .then(() => a.notify("Paid-order notifications are enabled."))
+              .catch((e) => setError(a.error(e)))
+          }
+        />
+      )}
       <Button
         title={a.t("auth.signout")}
         secondary
@@ -302,7 +328,9 @@ export function Addresses() {
             <Label style={{ fontFamily: "NotoBold" }}>
               {ad.id === farmAddress?.id ? a.ui("Farm location") : ad.label}
             </Label>
-            {!seller && ad.isDefaultDelivery && <Text style={s.badge}>Primary delivery location</Text>}
+            {!seller && ad.isDefaultDelivery && (
+              <Text style={s.badge}>Primary delivery location</Text>
+            )}
             <Label>
               {ad.line1}, {ad.city}, {ad.lga}, {ad.state}
             </Label>
@@ -342,7 +370,9 @@ export function Addresses() {
               }
             }}
           />
-          {coordinates && !seller && <Notice text="Location selected. Review your address below, then tap Save address to continue." />}
+          {coordinates && !seller && (
+            <Notice text="Location selected. Review your address below, then tap Save address to continue." />
+          )}
           <Card>
             {(["label", "line1", "city"] as const).map((k) => (
               <Field
@@ -424,18 +454,20 @@ export function Notifications() {
   const a = useApp(),
     r = useResource<{
       items: { id: string; orderId: string; messageKey: string; createdAt: string }[];
-    }>("/orders/notifications");
+    }>(`/orders/notifications?view=${a.role === "SELLER" ? "seller" : "buyer"}`);
   return (
     <Page title="Notifications" back={a.back} loading={r.loading}>
       {r.error && <Notice text={r.error} error />}
       {!r.loading && !r.data?.items.length && (
-        <Notice text="Delivery updates will appear here when your shipment changes." />
+        <Notice text="Paid orders and delivery updates will appear here." />
       )}
       {r.data?.items.map((i) => (
         <Pressable key={i.id} onPress={() => a.go("delivery", i.orderId)}>
           <Card>
             <Label>
-              {a.t(i.messageKey as any) || a.status(i.messageKey.split(".").pop() || "Update")}
+              {i.messageKey === "order.paid"
+                ? "New paid order. Review it and prepare your produce."
+                : a.t(i.messageKey as any) || a.status(i.messageKey.split(".").pop() || "Update")}
             </Label>
             <Label muted style={s.small}>
               {a.date(i.createdAt)}
