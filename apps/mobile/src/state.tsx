@@ -4,7 +4,14 @@ import { ui, localizedError, unitLabel, dateLabel, localizedStatus } from "./lib
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, BackHandler, Alert, type AlertButton } from "react-native";
-import { api, hydrateSession, clearSession, authHeaders, sessionVersion } from "./lib/api";
+import {
+  api,
+  hydrateSession,
+  clearSession,
+  authHeaders,
+  sessionVersion,
+  deviceId,
+} from "./lib/api";
 import type { Customer } from "./lib/domain";
 import {
   en,
@@ -45,11 +52,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
   const reset = useCallback((name: Route["name"]) => setStack([{ name }]), []);
   const back = useCallback(() => setStack((v) => backStack(v, !!user)), [user]);
-  const loadUser = useCallback(async () => {
+  const loadUser = useCallback(async (publish = true) => {
     const version = sessionVersion();
     const r = await readAccount(version);
     // A completed request from an old session must not replace the current account.
-    if (authHeaders().Authorization && sessionVersion() === version)
+    if (publish && authHeaders().Authorization && sessionVersion() === version)
       setUser((current) => (JSON.stringify(current) === JSON.stringify(r.user) ? current : r.user));
     return r.user;
   }, []);
@@ -61,7 +68,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const signed = await hydrateSession();
         if (signed) {
           try {
-            const user = await loadUser();
+            const user = await loadUser(false);
             const preferred = validLocale(user.preferredLocale);
             setLocale(preferred);
             await AsyncStorage.setItem("locale", preferred);
@@ -69,11 +76,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               user,
               await AsyncStorage.getItem(accountRoleKey(user.id)),
             );
+            const nextSecurity =
+              restored.role === "SELLER"
+                ? (await readSecurity(user.id))
+                  ? "unlock"
+                  : "create"
+                : null;
+            setSecurity(nextSecurity);
             setRole(restored.role);
-            if (restored.role === "SELLER")
-              setSecurity((await readSecurity(user.id)) ? "unlock" : "create");
+            setUser(user);
             reset(restored.route);
           } catch {
+            setUser(null);
+            setSecurity(null);
             await clearSession();
           }
         } else if (await AsyncStorage.getItem("onboarded")) reset("role");
@@ -127,37 +142,55 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return localeWrites.current;
   };
   const selectRole = async (selected: "BUYER" | "SELLER") => {
+    recoverAccount.current = null;
     roleIntent.current = selected;
-    setRole(selected);
     if (!user) {
+      setRole(selected);
       reset(selected === "BUYER" ? "home" : "phone");
       return;
     }
+    const version = sessionVersion();
     await AsyncStorage.setItem(accountRoleKey(user.id), selected);
     const restored = restoredAccount(user, selected);
-    if (selected === "SELLER") setSecurity((await readSecurity(user.id)) ? "unlock" : "create");
+    const nextSecurity =
+      selected === "SELLER" ? ((await readSecurity(user.id)) ? "unlock" : "create") : null;
+    if (sessionVersion() !== version) return;
+    setSecurity(nextSecurity);
+    setRole(selected);
     reset(restored.route);
   };
   const finishSignIn = async (account: Customer) => {
+    const version = sessionVersion();
+    const recovering = recoverAccount.current === account.id;
+    const intent = roleIntent.current;
     const saved = await AsyncStorage.getItem(accountRoleKey(account.id));
-    const selected = signInRole(account, saved, roleIntent.current);
-    roleIntent.current = null;
+    if (sessionVersion() !== version) return;
+    const selected = signInRole(account, saved, recovering ? "SELLER" : intent);
     if (!selected) {
+      roleIntent.current = null;
+      recoverAccount.current = null;
+      setSecurity(null);
       setRole("BUYER");
+      setUser(account);
       reset("role");
       return;
     }
     const restored = restoredAccount(account, selected);
     await AsyncStorage.setItem(accountRoleKey(account.id), restored.role);
-    setRole(restored.role);
-    // Phone OTP has just established account ownership; allow PIN recovery here.
-    if (restored.role === "SELLER")
-      setSecurity(
-        recoverAccount.current === account.id || !(await readSecurity(account.id))
+    // OTP establishes account ownership; only explicit recovery permits replacing a PIN.
+    const nextSecurity =
+      restored.role === "SELLER"
+        ? recovering || !(await readSecurity(account.id))
           ? "create"
-          : "unlock",
-      );
+          : "unlock"
+        : null;
+    if (sessionVersion() !== version) return;
+    roleIntent.current = null;
     recoverAccount.current = null;
+    setSecurity(nextSecurity);
+    setRole(restored.role);
+    // Publish the account only after the role and security gate are ready.
+    setUser(account);
     reset(restored.route);
   };
   useEffect(() => {
@@ -184,6 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setRole("BUYER");
     roleIntent.current = null;
+    recoverAccount.current = null;
     setSecurity(null);
     setFeedback(null);
     reset("language");
@@ -216,9 +250,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           finishSignIn,
           security,
           unlock: () => setSecurity(null),
-          recoverSecurity: () => {
-            recoverAccount.current = user?.id || null;
-            return signOut();
+          recoverSecurity: async () => {
+            if (!user || role !== "SELLER") return;
+            const account = user;
+            const version = sessionVersion();
+            // Keep the PIN gate and session intact if sending the code fails.
+            await api("/auth/otp/request", {
+              method: "POST",
+              body: { phone: account.phoneE164, deviceId: await deviceId() },
+            });
+            if (sessionVersion() !== version) return;
+            const revoke = api("/auth/logout", { method: "POST" }).catch(() => {});
+            await clearSession();
+            recoverAccount.current = account.id;
+            roleIntent.current = null;
+            setUser(null);
+            setRole("SELLER");
+            // Keep the account locked when OTP loads it, until finishSignIn
+            // establishes the new PIN setup after verified ownership.
+            setSecurity("unlock");
+            setFeedback(null);
+            setStack([
+              { name: "phone", id: account.phoneE164 },
+              { name: "otp", id: account.phoneE164 },
+            ]);
+            void revoke;
           },
           notify: (text: string) => setFeedback({ id: ++feedbackId.current, text }),
           t: (key: MessageKey) => overrides[key] || ui(locale, en[key] || "Update"),
@@ -256,7 +312,7 @@ export function useApp() {
     changeLocale: (l: Locale) => Promise<void>;
     user: Customer | null;
     setUser: (u: Customer | null) => void;
-    loadUser: () => Promise<Customer>;
+    loadUser: (publish?: boolean) => Promise<Customer>;
     ready: boolean;
     role: "BUYER" | "SELLER";
     setRole: (r: "BUYER" | "SELLER") => void;

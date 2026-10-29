@@ -1520,6 +1520,45 @@ suite("delivery and language database workflows", () => {
       ).body.items,
     ).toEqual([]);
   });
+  it("lists only owned active phones and revokes the selected phone's sessions", async () => {
+    const userId = verifyAccessToken(seller, "customer").sub;
+    const currentId = verifyAccessToken(seller, "customer").sessionId;
+    const deviceId = randomUUID();
+    const first = await createSession({ subject: "CUSTOMER", principalId: userId, deviceId });
+    const second = await createSession({ subject: "CUSTOMER", principalId: userId, deviceId });
+    const ids = [first, second].map(
+      (session) => verifyAccessToken(session.accessToken, "customer").sessionId,
+    );
+    const list = await request(app)
+      .get("/v1/auth/sessions")
+      .set({ Authorization: `Bearer ${seller}` });
+    expect(list.status).toBe(200);
+    expect(list.body.items.filter((item: { id: string }) => ids.includes(item.id))).toHaveLength(1);
+    expect(list.body.items).toContainEqual(
+      expect.objectContaining({ id: currentId, current: true }),
+    );
+    expect(list.body.items.every((item: object) => !("deviceId" in item))).toBe(true);
+    const auth = { Authorization: `Bearer ${seller}` };
+    expect(
+      (
+        await request(app)
+          .delete(`/v1/auth/sessions/${ids[0]}`)
+          .set({ Authorization: `Bearer ${outsider}` })
+      ).status,
+    ).toBe(404);
+    expect((await request(app).delete(`/v1/auth/sessions/${currentId}`).set(auth)).status).toBe(
+      409,
+    );
+    expect((await request(app).delete(`/v1/auth/sessions/${ids[1]}`).set(auth)).status).toBe(204);
+    expect(await prisma.session.count({ where: { id: { in: ids }, revokedAt: null } })).toBe(0);
+    expect(
+      (
+        await request(app)
+          .get("/v1/auth/sessions")
+          .set({ Authorization: `Bearer ${first.accessToken}` })
+      ).status,
+    ).toBe(401);
+  });
   it("lists, edits and deletes only owned unsubmitted drafts", async () => {
     const photo = await prisma.producePhoto.create({
       data: {

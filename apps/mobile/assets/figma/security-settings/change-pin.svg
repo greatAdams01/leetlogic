@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="rotate-ccw" clip-path="url(#clip0_0_40)">
+<path id="Icon" d="M6.41667 9.16667H0.916667V3.66667M0.916667 9.16667L5.17 5.17C6.43584 3.9063 8.07808 3.08822 9.84929 2.83902C11.6205 2.58982 13.4247 2.92301 14.9901 3.78837C16.5555 4.65373 17.7972 6.00439 18.5282 7.63684C19.2592 9.26929 19.4399 11.0951 19.043 12.8392C18.6461 14.5832 17.6932 16.1511 16.3278 17.3064C14.9624 18.4618 13.2584 19.1422 11.4727 19.2449C9.68704 19.3477 7.91631 18.8674 6.42735 17.8763C4.93839 16.8852 3.81186 15.437 3.2175 13.75" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="#14532D"/>
+</g>
+<defs>
+<clipPath id="clip0_0_40">
+<rect width="22" height="22" fill="white"/>
+</clipPath>
+</defs>
+</svg>

@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LocalizedText as Text } from "../localization";
 import { useApp } from "../state";
 import { Icon, Notice, colors } from "../components/ui";
-import { api, API_URL, deviceId, saveSession } from "../lib/api";
+import { api, API_URL, deviceId, saveSession, sessionVersion } from "../lib/api";
 import {
   maskedPhone,
   otpDigits,
@@ -114,7 +114,7 @@ function ContinueButton({
 }
 export function Phone() {
   const a = useApp();
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(() => phoneDigits((a.route.id || "").replace(/^\+234/, "")));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submitting = useRef(false);
@@ -264,13 +264,18 @@ export function Otp() {
     setBusy(true);
     setError("");
     try {
+      const initialVersion = sessionVersion();
       const result = await api("/auth/otp/verify", {
         method: "POST",
         body: { phone: a.route.id, deviceId: await deviceId(), code: completedCode },
       });
+      if (sessionVersion() !== initialVersion) return;
       await saveSession(result);
-      const user = await a.loadUser();
+      const verifiedVersion = sessionVersion();
+      const user = await a.loadUser(false);
+      if (sessionVersion() !== verifiedVersion) return;
       await a.changeLocale(a.locale);
+      if (sessionVersion() !== verifiedVersion) return;
       await a.finishSignIn(user);
     } catch (e) {
       setError(a.error(e));

@@ -113,6 +113,7 @@ export default function App() {
   const [loaded, error] = useFonts({
     Noto: require("../web/public/fonts/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf"),
     NotoBold: require("../web/public/fonts/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyAjBN9d.ttf"),
+    MontserratSemiBold: require("../web/public/fonts/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCu170w-.ttf"),
     Montserrat: require("../web/public/fonts/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCuM70w-.ttf"),
   });
   if ((!loaded && !error) || !brandShown) return <Startup />;

@@ -1,13 +1,14 @@
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
-import { View, TextInput, Pressable, Switch, ScrollView, Platform } from "react-native";
+import { View, TextInput, Pressable, Switch, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import { LocalizedText as Text } from "../localization";
 import { Button, Icon, colors, Heading, Label, Notice } from "../components/ui";
 import { useApp } from "../state";
-import { biometricPresentation } from "../lib/biometric-presentation";
-import { checkPin, createSecurity, enableBiometric, readSecurity } from "../lib/farmer-security";
+import { useFarmerBiometrics } from "../lib/use-farmer-biometrics";
+import { sessionVersion } from "../lib/api";
+import { checkPin, createSecurity, enableBiometric } from "../lib/farmer-security";
 
 export function FarmerSecurity() {
   const a = useApp();
@@ -19,33 +20,18 @@ export function FarmerSecurity() {
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [presentation, setPresentation] = useState(
-    biometricPresentation(false, false, Platform.OS === "ios"),
-  );
+  const auth = useFarmerBiometrics(id);
+  const { presentation, available, enabled } = auth;
   const { label } = presentation;
-  const [available, setAvailable] = useState(false);
-  const [enabled, setEnabled] = useState(false);
+  const mounted = useRef(true);
+  const identity = useRef(id);
+  identity.current = id;
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      const record = await readSecurity(id);
-      if (!active) return;
-      setAvailable(enrolled && types.length > 0);
-      setEnabled(!!record?.biometric);
-      setPresentation(
-        biometricPresentation(
-          types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT),
-          types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION),
-          Platform.OS === "ios",
-        ),
-      );
-    })().catch(() => {});
+    mounted.current = true;
     return () => {
-      active = false;
+      mounted.current = false;
     };
-  }, [id]);
+  }, []);
   const perform = async (task: () => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -63,26 +49,52 @@ export function FarmerSecurity() {
   };
   const biometric = () =>
     perform(async () => {
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: a.ui("Unlock LeetLogic"),
-        disableDeviceFallback: true,
-        biometricsSecurityLevel: "strong",
-        cancelLabel: a.ui("Cancel"),
-      });
-      if (!result.success)
+      const version = sessionVersion();
+      const current = await auth.refresh();
+      if (!mounted.current || identity.current !== id || sessionVersion() !== version) return;
+      if (!current.available || (step === "unlock" && !current.enabled)) {
+        auth.failed();
+        throw new Error("Biometric unlock is unavailable. Use your PIN.");
+      }
+      let result: LocalAuthentication.LocalAuthenticationResult;
+      try {
+        result = await LocalAuthentication.authenticateAsync({
+          promptMessage: a.ui("Unlock LeetLogic"),
+          disableDeviceFallback: true,
+          biometricsSecurityLevel: "strong",
+          cancelLabel: a.ui("Cancel"),
+        });
+      } catch (error) {
+        auth.failed();
+        throw error;
+      }
+      if (!mounted.current || identity.current !== id || sessionVersion() !== version) return;
+      if (!result.success) {
+        auth.failed();
         throw new Error("Device authentication was not completed. You can use your PIN instead.");
-      if (step === "unlock") a.unlock();
-      else {
+      }
+      if (step === "unlock") {
+        const latest = await auth.refresh();
+        if (
+          mounted.current &&
+          identity.current === id &&
+          sessionVersion() === version &&
+          latest.enabled &&
+          latest.available
+        )
+          a.unlock();
+      } else {
         await enableBiometric(id, true);
-        setEnabled(true);
+        auth.setEnabled(true);
       }
     });
   const submit = (completedPin = pin) => {
     if (!/^\d{4}$/.test(completedPin) || step === "biometric") return;
     return perform(async () => {
       if (step === "unlock") {
+        const version = sessionVersion();
         await checkPin(id, completedPin);
-        a.unlock();
+        if (mounted.current && identity.current === id && sessionVersion() === version) a.unlock();
         return;
       }
       if (step === "create") {
@@ -96,7 +108,7 @@ export function FarmerSecurity() {
       await createSecurity(id, completedPin);
       first.current = "";
       setPin("");
-      setEnabled(false);
+      auth.setEnabled(false);
       setStep("biometric");
     });
   };
@@ -108,6 +120,13 @@ export function FarmerSecurity() {
         : step === "confirm"
           ? "Confirm your PIN."
           : presentation.use;
+  if (auth.loading)
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper, padding: 24 }}>
+        <StatusBar style="dark" />
+        <Label>Checking…</Label>
+      </SafeAreaView>
+    );
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.green }}>
       <StatusBar style="light" />
@@ -164,13 +183,18 @@ export function FarmerSecurity() {
           <Heading>{title}</Heading>
           <Label muted>
             {step === "unlock"
-              ? "Enter your PIN to open your farmer account."
+              ? auth.mode === "biometric"
+                ? "Unlock with biometrics or enter your PIN."
+                : "Enter your PIN to open your farmer account."
               : step === "confirm"
                 ? "Enter the same 4 digits again."
                 : step === "biometric"
                   ? "Unlock your farmer account using your device. You can still use your PIN."
                   : "4 digits. You will use this to open LeetLogic."}
           </Label>
+          {step === "unlock" && auth.mode === "biometric" && (
+            <Button title={presentation.use} disabled={busy} onPress={biometric} />
+          )}
           {step !== "biometric" ? (
             <View>
               <Pressable
@@ -235,7 +259,7 @@ export function FarmerSecurity() {
                       ? biometric()
                       : void perform(async () => {
                           await enableBiometric(id, false);
-                          setEnabled(false);
+                          auth.setEnabled(false);
                         })
                   }
                 />
@@ -262,15 +286,12 @@ export function FarmerSecurity() {
             </Label>
           </View>
           {!!error && <Notice text={error} />}
-          {step === "unlock" && available && enabled && (
-            <Button title={presentation.use} secondary disabled={busy} onPress={biometric} />
-          )}
           {step === "unlock" && (
             <Button
-              title="Sign in with a code instead"
+              title={auth.mode === "biometric" ? "Sign in with a code instead" : "Forgot your PIN?"}
               secondary
               disabled={busy}
-              onPress={() => void a.recoverSecurity()}
+              onPress={() => void perform(a.recoverSecurity)}
             />
           )}
           {step === "confirm" && (

@@ -1,4 +1,12 @@
 export const icons = {
+  settingsBack: require("../assets/figma/security-settings/back.svg"),
+  settingsShield: require("../assets/figma/security-settings/shield.svg"),
+  settingsChangePin: require("../assets/figma/security-settings/change-pin.svg"),
+  settingsChevron: require("../assets/figma/security-settings/chevron.svg"),
+  settingsBiometric: require("../assets/figma/security-settings/biometric.svg"),
+  settingsSwitchOn: require("../assets/figma/security-settings/enabled-switch.svg"),
+  settingsDevices: require("../assets/figma/security-settings/devices.svg"),
+  settingsLock: require("../assets/figma/security-settings/lock.svg"),
   productShare: require("../assets/figma/2d111.svg"),
   productHeart: require("../assets/figma/268e8.svg"),
   cartRemove: require("../assets/figma/90847.svg"),

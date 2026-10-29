@@ -3,11 +3,15 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   api: vi.fn(),
+  save: vi.fn(),
+  generation: 0,
   check: vi.fn(),
   create: vi.fn(),
   finish: vi.fn(),
   unlock: vi.fn(),
+  recover: vi.fn(),
   mode: "create",
+  phone: "08012345678",
 }));
 vi.mock("react-native", () => ({
   View: "View",
@@ -24,6 +28,9 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
 vi.mock("expo-status-bar", () => ({ StatusBar: () => null }));
 vi.mock("expo-local-authentication", () => ({
+  hasHardwareAsync: async () => false,
+  getEnrolledLevelAsync: async () => 0,
+  SecurityLevel: { BIOMETRIC_STRONG: 3 },
   supportedAuthenticationTypesAsync: async () => [],
   isEnrolledAsync: async () => false,
   AuthenticationType: { FACIAL_RECOGNITION: 2, FINGERPRINT: 1 },
@@ -41,12 +48,13 @@ vi.mock("../state", () => ({
   useApp: () => ({
     user: { id: "farmer" },
     security: h.mode,
-    route: { id: "08012345678" },
+    route: { id: h.phone },
     locale: "en",
     ui: (s: string) => s,
     t: (s: string) => s,
     error: (e: Error) => e.message,
     unlock: h.unlock,
+    recoverSecurity: h.recover,
     finishSignIn: h.finish,
     loadUser: async () => ({ id: "farmer" }),
     changeLocale: async () => {},
@@ -54,9 +62,10 @@ vi.mock("../state", () => ({
 }));
 vi.mock("./api", () => ({
   api: h.api,
+  sessionVersion: () => h.generation,
   API_URL: "http://localhost:3000",
   deviceId: async () => "device",
-  saveSession: async () => {},
+  saveSession: h.save,
 }));
 vi.mock("./farmer-security", () => ({
   readSecurity: async () => null,
@@ -65,12 +74,14 @@ vi.mock("./farmer-security", () => ({
   enableBiometric: async () => {},
 }));
 import { FarmerSecurity } from "../screens/farmer-security";
-import { Otp } from "../screens/verification-entry";
+import { Phone, Otp } from "../screens/verification-entry";
 let tree: ReactTestRenderer;
 const input = () => tree.root.findByType("TextInput" as any);
 beforeEach(() => {
   vi.clearAllMocks();
+  h.generation = 0;
   h.mode = "create";
+  h.phone = "08012345678";
   h.api.mockResolvedValue({});
   h.check.mockResolvedValue(undefined);
   h.create.mockResolvedValue(undefined);
@@ -123,4 +134,54 @@ it("submits the full pasted or autofilled OTP once, using the latest digits", as
     body: { phone: "08012345678", deviceId: "device", code: "123456" },
   });
   expect(h.finish).toHaveBeenCalledTimes(1);
+});
+
+it("shows recovery failures on the PIN screen and guards repeated recovery taps", async () => {
+  h.mode = "unlock";
+  let reject!: (error: Error) => void;
+  h.recover.mockReturnValue(
+    new Promise((_resolve, fail) => {
+      reject = fail;
+    }),
+  );
+  await act(async () => {
+    tree = create(<FarmerSecurity />);
+  });
+  const recovery = () =>
+    tree.root.findAllByType("Button" as any).find((n) => n.props.title === "Forgot your PIN?")!;
+  await act(async () => {
+    recovery().props.onPress();
+    recovery().props.onPress();
+  });
+  expect(h.recover).toHaveBeenCalledTimes(1);
+  expect(recovery().props.disabled).toBe(true);
+  await act(async () => reject(new Error("SMS unavailable")));
+  expect(tree.root.findByType("Notice" as any).props.text).toBe("SMS unavailable");
+  expect(recovery().props.disabled).toBe(false);
+});
+
+it("prefills the recovery phone in local format when returning from verification", async () => {
+  h.phone = "+2348012345678";
+  await act(async () => {
+    tree = create(<Phone />);
+  });
+  expect(input().props.value).toBe("8012345678");
+  expect(h.api).not.toHaveBeenCalled();
+});
+
+it("does not save a late OTP response after the session has changed", async () => {
+  let resolve!: (result: object) => void;
+  h.api.mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  await act(async () => {
+    tree = create(<Otp />);
+  });
+  await act(async () => input().props.onChangeText("123456"));
+  h.generation++;
+  await act(async () => resolve({ accessToken: "old-session" }));
+  expect(h.save).not.toHaveBeenCalled();
+  expect(h.finish).not.toHaveBeenCalled();
 });
