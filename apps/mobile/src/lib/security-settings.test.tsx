@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   Platform: { OS: "android" },
   View: "View",
+  ActivityIndicator: "ActivityIndicator",
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   KeyboardAvoidingView: "KeyboardAvoidingView",
@@ -22,6 +23,13 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: any) => styles },
   AppState: { addEventListener: () => ({ remove() {} }) },
 }));
+vi.mock("../components/app-sheet", async () => {
+  const { createElement } = await import("react");
+  return {
+    AppSheet: (props: any) =>
+      props.visible ? createElement("AppSheet", props, props.children, props.footer) : null,
+  };
+});
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
 vi.mock("./api", () => ({ api: h.api, sessionVersion: () => 0 }));
@@ -124,12 +132,7 @@ async function open(label: string) {
   await act(async () => control.props.onPress());
 }
 async function close() {
-  const control = tree.root
-    .findAllByType("Pressable" as any)
-    .find((node) =>
-      node.findAllByType("Text" as any).some((child) => child.props.children === "Close"),
-    )!;
-  await act(async () => control.props.onPress());
+  await act(async () => tree.root.findByType("AppSheet" as any).props.onClose());
 }
 const change = () => tree.root.findByType("Button" as any);
 it("requires matching four-digit PINs before offering a PIN change", async () => {
@@ -174,14 +177,20 @@ it("shows the Figma summary rows with biometric wording and actual session count
   expect(text).toContain("2 devices logged in");
   expect(tree.root.findAllByType("Field" as any)).toHaveLength(0);
 });
-it("requires the current PIN before revoking another phone", async () => {
+it("requires focused device confirmation and the current PIN before revoking another phone", async () => {
   await close();
-  await open("Active phones");
+  await open("Signed-in devices");
+  expect(tree.root.findAllByType("Field" as any)).toHaveLength(0);
+  expect(tree.root.findAllByType("Button" as any)).toHaveLength(0);
+  await open("Sign out Farm Android");
+  const confirm = () =>
+    tree.root
+      .findAllByType("Pressable" as any)
+      .find((node) => node.props.accessibilityLabel === "Sign out device")!;
+  expect(confirm().props.disabled).toBe(true);
+  expect(h.api).not.toHaveBeenCalled();
   await field("Current PIN", "1234");
-  const signOut = tree.root
-    .findAllByType("Button" as any)
-    .find((node) => node.props.title === "Sign out this phone")!;
-  await act(async () => signOut.props.onPress());
+  await act(async () => confirm().props.onPress());
   expect(h.check).toHaveBeenCalledWith("farmer", "1234");
   expect(h.api).toHaveBeenCalledWith("/auth/sessions/other", { method: "DELETE" });
 });
@@ -284,10 +293,81 @@ it("turns off the saved biometric preference only after verifying the current PI
 
 it("shows reported device details instead of numbered sample phones", async () => {
   await close();
-  await open("Active phones");
-  const labels = tree.root.findAllByType("Label" as any).map((node) => node.props.children);
+  await open("Signed-in devices");
+  const labels = tree.root.findAllByType("Text" as any).map((node) => node.props.children);
   expect(labels).toContain("Farmer’s iPhone");
   expect(labels).toContain("Farm Android");
   expect(labels).not.toContain("Phone 2");
   expect(labels).toContain("Last active 2026-10-29");
+});
+
+it("uses the shared modal shell for every security flow", async () => {
+  expect(tree.root.findByType("AppSheet" as any).props).toMatchObject({
+    testID: "security-sheet",
+    title: "Change PIN",
+  });
+  await close();
+  await open("Enable biometric unlock");
+  expect(tree.root.findByType("AppSheet" as any).props.title).toBe("Biometric");
+  await close();
+  await open("Signed-in devices");
+  expect(tree.root.findByType("AppSheet" as any).props.title).toBe("Signed-in devices");
+  await open("Sign out Farm Android");
+  expect(tree.root.findByType("AppSheet" as any).props.title).toBe("Sign out device");
+});
+it("identifies the current device and labels real activity without an online claim", async () => {
+  await close();
+  await open("Signed-in devices");
+  const text = tree.root.findAllByType("Text" as any).map((node) => node.props.children);
+  expect(text).toContain("This device");
+  expect(text).toContain("iOS");
+  expect(text).toContain("Android");
+  expect(text).toContain("2 signed-in devices");
+  expect(text).toContain("Activity not recorded yet");
+  const actions = tree.root
+    .findAllByType("Pressable" as any)
+    .map((node) => node.props.accessibilityLabel);
+  expect(actions).not.toContain("Sign out Farmer’s iPhone");
+  expect(actions).toContain("Refresh devices");
+});
+it("can return from device confirmation without signing out or keeping a PIN", async () => {
+  await close();
+  await open("Signed-in devices");
+  await open("Sign out Farm Android");
+  await field("Current PIN", "1234");
+  await open("Back to devices");
+  expect(h.api).not.toHaveBeenCalled();
+  expect(tree.root.findAllByType("Field" as any)).toHaveLength(0);
+  await open("Sign out Farm Android");
+  expect(tree.root.findByType("Field" as any).props.value).toBe("");
+});
+
+it("never signs a device out when PIN verification fails", async () => {
+  await close();
+  await open("Signed-in devices");
+  await open("Sign out Farm Android");
+  await field("Current PIN", "9999");
+  h.check.mockRejectedValue(new Error("Incorrect PIN"));
+  await open("Sign out device");
+  expect(h.api).not.toHaveBeenCalled();
+  expect(tree.root.findByType("AppSheet" as any).props.title).toBe("Sign out device");
+  expect(tree.root.findByType("Notice" as any).props.text).toBe("Incorrect PIN");
+});
+it("keeps the shared sheet busy and prevents dismissal during a device sign-out", async () => {
+  let resolve!: () => void;
+  h.api.mockReturnValue(
+    new Promise<void>((done) => {
+      resolve = done;
+    }),
+  );
+  await close();
+  await open("Signed-in devices");
+  await open("Sign out Farm Android");
+  await field("Current PIN", "1234");
+  await open("Sign out device");
+  expect(tree.root.findByType("AppSheet" as any).props.busy).toBe(true);
+  await close();
+  expect(tree.root.findByType("AppSheet" as any).props.title).toBe("Sign out device");
+  await act(async () => resolve());
+  expect(tree.root.findByType("AppSheet" as any).props.title).toBe("Signed-in devices");
 });

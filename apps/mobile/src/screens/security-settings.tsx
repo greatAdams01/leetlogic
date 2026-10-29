@@ -1,14 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Pressable,
-  Modal,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { AppSheet } from "../components/app-sheet";
 import * as LocalAuthentication from "expo-local-authentication";
 import { LocalizedText as Text } from "../localization";
 import { Page, Card, Label, Field, Button, Notice, Icon, colors } from "../components/ui";
@@ -17,11 +9,12 @@ import { api, sessionVersion } from "../lib/api";
 import { checkPin, createSecurity, enableBiometric } from "../lib/farmer-security";
 import { useFarmerBiometrics } from "../lib/use-farmer-biometrics";
 
-import { useConnectedDevices } from "../lib/connected-devices";
-type Panel = "pin" | "biometric" | "phones" | null;
+import { useConnectedDevices, type ConnectedDevice } from "../lib/connected-devices";
+type Panel = "pin" | "biometric" | "phones" | "revoke" | null;
 export function SecuritySettings() {
   const a = useApp();
   const [panel, setPanel] = useState<Panel>(null);
+  const [selectedDevice, setSelectedDevice] = useState<ConnectedDevice | null>(null);
   const [pin, setPin] = useState("");
   const [nextPin, setNextPin] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -44,6 +37,7 @@ export function SecuritySettings() {
     setNextPin("");
     setConfirm("");
     setError("");
+    if (next !== "revoke") setSelectedDevice(null);
     setPanel(next);
   };
   const perform = async (task: (active: () => boolean) => Promise<void>) => {
@@ -99,8 +93,135 @@ export function SecuritySettings() {
       <Text style={[styles.body, brown && { color: "#6b4a2f" }]}>{subtitle}</Text>
     </View>
   );
+  const deviceName = (device: ConnectedDevice) =>
+    device.deviceName || a.ui(device.current ? "This device" : "Device details unavailable");
+  const platformName = (device: ConnectedDevice) =>
+    device.platform === "ios"
+      ? "iOS"
+      : device.platform === "android"
+        ? "Android"
+        : device.platform === "web"
+          ? a.ui("Web browser")
+          : a.ui("Platform unavailable");
+  const selectDevice = (device: ConnectedDevice) => {
+    if (device.current || pending.current) return;
+    open("revoke");
+    setSelectedDevice(device);
+  };
+  const deviceCard = (device: ConnectedDevice, actionable: boolean) => (
+    <Card
+      key={device.id}
+      style={{ ...styles.deviceCard, ...(device.current ? styles.currentDevice : {}) }}
+    >
+      <View style={styles.deviceHeader}>
+        <View style={styles.deviceIcon}>
+          <Icon
+            name={
+              device.platform === "ios" || device.platform === "android"
+                ? "securityDevicePhone"
+                : "settingsDevices"
+            }
+            nativeSize={
+              device.platform === "ios" || device.platform === "android"
+                ? { width: 24, height: 24 }
+                : { width: 22, height: 22 }
+            }
+          />
+        </View>
+        <View style={{ flex: 1, gap: 5 }}>
+          <Text style={styles.deviceName}>{deviceName(device)}</Text>
+          <Text style={styles.devicePlatform}>{platformName(device)}</Text>
+        </View>
+        {actionable && !device.current && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={a.ui("Sign out {device}", { device: deviceName(device) })}
+            accessibilityHint={a.ui("Review this device and confirm with your PIN")}
+            disabled={busy}
+            onPress={() => selectDevice(device)}
+            style={styles.iconAction}
+          >
+            <Icon name="securityDeviceSignout" nativeSize={{ width: 20, height: 20 }} />
+          </Pressable>
+        )}
+      </View>
+      {device.current && (
+        <View style={styles.currentBadge}>
+          <Text style={styles.currentBadgeText}>This device</Text>
+        </View>
+      )}
+      <View style={styles.deviceActivity}>
+        <Icon name="securityDeviceClock" nativeSize={{ width: 18, height: 18 }} />
+        <Text style={styles.activityText}>
+          {device.lastUsedAt
+            ? a.ui("Last active {date}", { date: a.date(device.lastUsedAt) })
+            : a.ui("Activity not recorded yet")}
+        </Text>
+      </View>
+    </Card>
+  );
   const panelTitle =
-    panel === "pin" ? "Change PIN" : panel === "biometric" ? "Biometric" : "Active phones";
+    panel === "pin"
+      ? "Change PIN"
+      : panel === "biometric"
+        ? "Biometric"
+        : panel === "revoke"
+          ? "Sign out device"
+          : "Signed-in devices";
+  const footer =
+    panel === "pin" ? (
+      <Button
+        title="Change PIN"
+        loading={busy}
+        disabled={busy || !/^\d{4}$/.test(pin) || !/^\d{4}$/.test(nextPin) || confirm !== nextPin}
+        onPress={() =>
+          void perform(async (active) => {
+            await createSecurity(a.user!.id, nextPin);
+            if (enabled && active()) await enableBiometric(a.user!.id, true);
+            if (active()) {
+              setPanel(null);
+              setNextPin("");
+              setConfirm("");
+              a.notify("Your PIN has been updated.");
+            }
+          })
+        }
+      />
+    ) : panel === "biometric" ? (
+      <Button
+        title={enabled ? "Disable biometric unlock" : "Enable biometric unlock"}
+        loading={busy}
+        disabled={busy || auth.loading || (!available && !enabled) || !/^\d{4}$/.test(pin)}
+        onPress={updateBiometric}
+      />
+    ) : panel === "revoke" && selectedDevice ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={a.ui("Sign out device")}
+        accessibilityState={{ disabled: busy || !/^\d{4}$/.test(pin), busy }}
+        disabled={busy || !/^\d{4}$/.test(pin)}
+        style={[styles.revokeAction, (busy || !/^\d{4}$/.test(pin)) && { opacity: 0.45 }]}
+        onPress={() =>
+          void perform(async (active) => {
+            if (!selectedDevice || selectedDevice.current) return;
+            await api(`/auth/sessions/${selectedDevice.id}`, { method: "DELETE" });
+            if (active()) {
+              setPanel("phones");
+              setSelectedDevice(null);
+              a.notify("Device signed out.");
+              await phones.reload();
+            }
+          })
+        }
+      >
+        {busy ? (
+          <ActivityIndicator color="#9b3525" />
+        ) : (
+          <Icon name="securityDeviceSignout" nativeSize={{ width: 20, height: 20 }} />
+        )}
+        <Text style={styles.revokeText}>Sign out device</Text>
+      </Pressable>
+    ) : undefined;
   return (
     <Page
       contentStyle={styles.content}
@@ -191,7 +312,7 @@ export function SecuritySettings() {
         <View style={styles.divider} />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={a.ui("Active phones")}
+          accessibilityLabel={a.ui("Signed-in devices")}
           onPress={() => {
             open("phones");
             void phones.reload();
@@ -200,7 +321,7 @@ export function SecuritySettings() {
         >
           {settingIcon("settingsDevices")}
           {heading(
-            "Active phones",
+            "Signed-in devices",
             phones.loading || (!phones.data && !phones.error)
               ? "Checking…"
               : phones.error
@@ -228,168 +349,143 @@ export function SecuritySettings() {
           it.
         </Text>
       </Card>
-      <Modal
+      <AppSheet
         visible={panel !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => open(null)}
+        title={panelTitle}
+        onClose={() => open(null)}
+        busy={busy}
+        footer={footer}
+        contentKey={panel || undefined}
+        testID="security-sheet"
+        subtitle={
+          panel === "phones"
+            ? "Review where your account is signed in"
+            : panel === "revoke"
+              ? "Confirm before removing account access"
+              : "Confirm changes with your current PIN"
+        }
       >
-        <View style={styles.overlay}>
-          <SafeAreaView edges={["bottom"]} style={styles.sheet}>
-            <KeyboardAvoidingView
-              style={{ flexShrink: 1 }}
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-            >
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                style={{ flexShrink: 1 }}
-                contentContainerStyle={{ padding: 24, gap: 20 }}
+        {panel === "phones" ? (
+          <>
+            <View style={styles.devicesSummary}>
+              <View style={{ flex: 1, gap: 5 }}>
+                <Text style={styles.rowTitle}>
+                  {phones.loading
+                    ? a.ui("Checking…")
+                    : phones.error || !phones.data
+                      ? a.ui("Device list unavailable")
+                      : a.ui(
+                          phones.data.items.length === 1
+                            ? "1 signed-in device"
+                            : "{count} signed-in devices",
+                          { count: phones.data.items.length },
+                        )}
+                </Text>
+                <Text style={styles.activityText}>
+                  Devices stay listed until they sign out or their sign-in expires.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={a.ui("Refresh devices")}
+                accessibilityState={{ disabled: phones.loading || busy, busy: phones.loading }}
+                disabled={phones.loading || busy}
+                onPress={() => void phones.reload()}
+                style={styles.refreshAction}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                  <Text style={[styles.rowTitle, { flex: 1 }]}>{panelTitle}</Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={busy}
-                    onPress={() => open(null)}
-                    hitSlop={12}
-                  >
-                    <Text style={{ ...styles.body, color: colors.green }}>Close</Text>
-                  </Pressable>
-                </View>
-                {panel === "phones" ? (
-                  <>
-                    {phones.loading && <Label>Checking…</Label>}
-                    {!!phones.error && <Notice text={phones.error} error />}
-                    {!phones.loading && !phones.error && phones.data?.items.length === 0 && (
-                      <Label>No active devices found.</Label>
-                    )}
-                    {!phones.loading &&
-                      !phones.error &&
-                      phones.data?.items.map((phone) => (
-                        <Card key={phone.id}>
-                          <Label>
-                            {phone.deviceName ||
-                              (phone.current
-                                ? a.ui("This phone")
-                                : a.ui("Device details unavailable"))}
-                          </Label>
-                          {phone.current && <Label muted>This phone</Label>}
-                          {!!phone.platform && (
-                            <Label muted>
-                              {phone.platform === "ios"
-                                ? "iOS"
-                                : phone.platform === "android"
-                                  ? "Android"
-                                  : phone.platform === "web"
-                                    ? "Web browser"
-                                    : phone.platform}
-                            </Label>
-                          )}
-                          <Label muted>
-                            {phone.lastUsedAt
-                              ? a.ui("Last active {date}", { date: a.date(phone.lastUsedAt) })
-                              : a.ui("Signed in {date}", { date: a.date(phone.createdAt) })}
-                          </Label>
-                          {!phone.current && (
-                            <Button
-                              title="Sign out this phone"
-                              secondary
-                              disabled={busy || !/^\d{4}$/.test(pin)}
-                              onPress={() =>
-                                void perform(async (active) => {
-                                  await api(`/auth/sessions/${phone.id}`, { method: "DELETE" });
-                                  if (active()) await phones.reload();
-                                })
-                              }
-                            />
-                          )}
-                        </Card>
-                      ))}
-                    <Field
-                      label="Current PIN"
-                      value={pin}
-                      onChangeText={setPin}
-                      keyboardType="number-pad"
-                      secureTextEntry
-                      maxLength={4}
-                      editable={!busy}
-                    />
-                    <Label muted>Enter your current PIN to sign out another phone.</Label>
-                  </>
+                {phones.loading ? (
+                  <ActivityIndicator color={colors.green} />
                 ) : (
-                  <>
-                    <Label muted>Enter your current PIN to change your security settings.</Label>
-                    <Field
-                      label="Current PIN"
-                      value={pin}
-                      onChangeText={setPin}
-                      keyboardType="number-pad"
-                      secureTextEntry
-                      maxLength={4}
-                      editable={!busy}
-                    />
-                    {panel === "pin" ? (
-                      <>
-                        <Field
-                          label="New PIN"
-                          value={nextPin}
-                          onChangeText={setNextPin}
-                          keyboardType="number-pad"
-                          secureTextEntry
-                          maxLength={4}
-                          editable={!busy}
-                        />
-                        <Field
-                          label="Confirm new PIN"
-                          value={confirm}
-                          onChangeText={setConfirm}
-                          keyboardType="number-pad"
-                          secureTextEntry
-                          maxLength={4}
-                          editable={!busy}
-                        />
-                        <Button
-                          title="Change PIN"
-                          disabled={
-                            busy ||
-                            !/^\d{4}$/.test(pin) ||
-                            !/^\d{4}$/.test(nextPin) ||
-                            confirm !== nextPin
-                          }
-                          onPress={() =>
-                            void perform(async (active) => {
-                              await createSecurity(a.user!.id, nextPin);
-                              if (enabled && active()) await enableBiometric(a.user!.id, true);
-                              if (active()) {
-                                setPanel(null);
-                                setNextPin("");
-                                setConfirm("");
-                                a.notify("Your PIN has been updated.");
-                              }
-                            })
-                          }
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <Label muted>You can still use your PIN.</Label>
-                        <Button
-                          title={enabled ? "Disable biometric unlock" : "Enable biometric unlock"}
-                          disabled={
-                            busy || auth.loading || (!available && !enabled) || !/^\d{4}$/.test(pin)
-                          }
-                          onPress={updateBiometric}
-                        />
-                      </>
-                    )}
-                  </>
+                  <Icon name="settingsChangePin" nativeSize={{ width: 22, height: 22 }} />
                 )}
-                {!!error && <Notice text={error} error />}
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </SafeAreaView>
-        </View>
-      </Modal>
+              </Pressable>
+            </View>
+            {!phones.loading && !phones.error && phones.data?.items.length === 0 && (
+              <Notice text="No active devices found." />
+            )}
+            {!phones.loading &&
+              !phones.error &&
+              [...(phones.data?.items || [])]
+                .sort((left, right) => Number(right.current) - Number(left.current))
+                .map((device) => deviceCard(device, true))}
+            <Text style={styles.activityText}>
+              Activity shows the last recorded account use. Older devices may not have a saved name.
+            </Text>
+          </>
+        ) : panel === "revoke" && selectedDevice ? (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={a.ui("Back to devices")}
+              disabled={busy}
+              onPress={() => open("phones")}
+              style={styles.backToDevices}
+            >
+              <Icon name="settingsBack" nativeSize={{ width: 22, height: 22 }} />
+              <Text style={styles.currentBadgeText}>Back to devices</Text>
+            </Pressable>
+            {deviceCard(selectedDevice, false)}
+            <Label>
+              This device will need to sign in again. Your current device will stay signed in.
+            </Label>
+            <Field
+              label="Current PIN"
+              value={pin}
+              onChangeText={setPin}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              editable={!busy}
+            />
+          </>
+        ) : (
+          <>
+            <View style={styles.sheetIntro}>
+              {settingIcon(panel === "pin" ? "settingsChangePin" : "settingsBiometric")}
+              <Text style={[styles.body, { flex: 1 }]}>
+                {panel === "pin"
+                  ? "Choose a new 4-digit PIN for your account."
+                  : "Use your PIN to confirm this biometric preference."}
+              </Text>
+            </View>
+            <Field
+              label="Current PIN"
+              value={pin}
+              onChangeText={setPin}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              editable={!busy}
+            />
+            {panel === "pin" ? (
+              <>
+                <Field
+                  label="New PIN"
+                  value={nextPin}
+                  onChangeText={setNextPin}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  editable={!busy}
+                />
+                <Field
+                  label="Confirm new PIN"
+                  value={confirm}
+                  onChangeText={setConfirm}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  editable={!busy}
+                />
+              </>
+            ) : (
+              <Label muted>You can still use your PIN.</Label>
+            )}
+          </>
+        )}
+        {!!error && <Notice text={error} error />}
+        {panel === "phones" && !!phones.error && <Notice text={phones.error} error />}
+      </AppSheet>
     </Page>
   );
 }
@@ -445,11 +541,79 @@ const styles = StyleSheet.create({
     lineHeight: 20.3,
     color: colors.ink,
   },
-  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "#00000055" },
-  sheet: {
-    backgroundColor: colors.paper,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "90%",
+  deviceCard: {
+    padding: 16,
+    gap: 12,
+    borderRadius: 18,
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: colors.line,
   },
+  currentDevice: { backgroundColor: "#f0f7f2", borderColor: "#c9dfd0" },
+  deviceHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  deviceIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f2f0ec",
+  },
+  deviceName: { fontFamily: "NotoBold", fontSize: 17, lineHeight: 24, color: colors.ink },
+  devicePlatform: { fontFamily: "Noto", fontSize: 14, lineHeight: 20, color: colors.muted },
+  deviceActivity: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  activityText: {
+    fontFamily: "Noto",
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.muted,
+    flexShrink: 1,
+  },
+  currentBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "#dceee2",
+  },
+  currentBadgeText: { fontFamily: "NotoBold", fontSize: 13, lineHeight: 20, color: colors.green },
+  iconAction: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#fff4ef",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  refreshAction: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "white",
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  devicesSummary: { flexDirection: "row", alignItems: "center", gap: 12, paddingBottom: 4 },
+  sheetIntro: { flexDirection: "row", alignItems: "center", gap: 14 },
+  backToDevices: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    minHeight: 44,
+    alignSelf: "flex-start",
+  },
+  revokeAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: "#fff4ef",
+    borderWidth: 1,
+    borderColor: "#f2c9bc",
+  },
+  revokeText: { fontFamily: "NotoBold", fontSize: 16, color: "#9b3525" },
 });

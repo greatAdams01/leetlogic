@@ -1,4 +1,7 @@
 export const icons = {
+  securityDevicePhone: require("../assets/figma/security-device-phone.svg"),
+  securityDeviceSignout: require("../assets/figma/security-device-signout.svg"),
+  securityDeviceClock: require("../assets/figma/security-device-clock.svg"),
   settingsBack: require("../assets/figma/security-settings/back.svg"),
   settingsShield: require("../assets/figma/security-settings/shield.svg"),
   settingsChangePin: require("../assets/figma/security-settings/change-pin.svg"),
