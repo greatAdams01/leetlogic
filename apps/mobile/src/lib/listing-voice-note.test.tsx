@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import React from "react";
 import * as testRenderer from "react-test-renderer";
 import type { ReactTestRenderer } from "react-test-renderer";
@@ -22,10 +23,21 @@ const h = vi.hoisted(() => ({
   },
   player: { currentTime: 0, play: vi.fn(), pause: vi.fn(), seekTo: vi.fn() },
   audioMode: vi.fn(),
+  typeInstead: vi.fn(),
+  playback: {
+    playing: false,
+    didJustFinish: false,
+    currentTime: 0,
+    isLoaded: true,
+    isBuffering: false,
+  },
   mode: { isRecording: false, durationMillis: 1000 },
 }));
 vi.mock("react-native", () => ({
   View: "View",
+  Pressable: "Pressable",
+  ActivityIndicator: "ActivityIndicator",
+  StyleSheet: { create: (styles: any) => styles },
   AppState: {
     addEventListener: (_name: string, fn: unknown) => {
       h.appListener = fn;
@@ -46,7 +58,7 @@ vi.mock("expo-audio", () => ({
   },
   useAudioRecorderState: () => h.mode,
   useAudioPlayer: () => h.player,
-  useAudioPlayerStatus: () => ({ playing: false, didJustFinish: false }),
+  useAudioPlayerStatus: () => h.playback,
 }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "new-note" }));
 vi.mock("expo-file-system", () => ({
@@ -79,18 +91,29 @@ vi.mock("../state", () => ({
 }));
 vi.mock("../components/ui", async () => {
   const { createElement } = await import("react");
-  return Object.fromEntries(
-    ["Card", "Label", "Notice", "Button"].map((name) => [
-      name,
-      ({ children, ...props }: any) => createElement(name, props, children),
-    ]),
-  );
+  return {
+    colors: {
+      paper: "#faf7f0",
+      green: "#14532d",
+      action: "#2e9e4f",
+      ink: "#1c1c1c",
+      line: "#e2ddd5",
+    },
+    ...Object.fromEntries(
+      ["Card", "Label", "Notice", "Icon"].map((name) => [
+        name,
+        ({ children, ...props }: any) => createElement(name, props, children),
+      ]),
+    ),
+  };
 });
 import { ListingVoiceNote } from "../components/listing-voice-note";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let renderer: ReactTestRenderer;
 const button = (title: string) =>
-  renderer.root.findAllByType("Button" as never).find((n) => n.props.title === title)!;
+  renderer.root
+    .findAllByType("Pressable" as never)
+    .find((n) => n.props.accessibilityLabel === title)!;
 beforeEach(() => {
   vi.clearAllMocks();
   h.get.mockResolvedValue(null);
@@ -103,6 +126,13 @@ beforeEach(() => {
   h.recorder.isRecording = false;
   h.recorder.currentTime = 1;
   h.mode.isRecording = false;
+  Object.assign(h.playback, {
+    playing: false,
+    didJustFinish: false,
+    currentTime: 0,
+    isLoaded: true,
+    isBuffering: false,
+  });
 });
 afterEach(async () => {
   if (renderer) await testRenderer.act(async () => renderer.unmount());
@@ -110,7 +140,11 @@ afterEach(async () => {
 const mount = async () => {
   await testRenderer.act(async () => {
     renderer = testRenderer.create(
-      <ListingVoiceNote draftId="draft" onActivityChange={h.activity} />,
+      <ListingVoiceNote
+        draftId="draft"
+        onActivityChange={h.activity}
+        onTypeInstead={h.typeInstead}
+      />,
     );
   });
 };
@@ -219,4 +253,144 @@ describe("device-only listing voice note", () => {
     expect(h.recorder.stop).toHaveBeenCalled();
     expect(h.activity).toHaveBeenLastCalledWith(false);
   });
+});
+
+it("focuses typing without changing a saved recording", async () => {
+  await mount();
+  await testRenderer.act(async () => button("Type instead").props.onPress());
+  expect(h.typeInstead).toHaveBeenCalledTimes(1);
+  expect(h.permission).not.toHaveBeenCalled();
+  expect(h.remove).not.toHaveBeenCalled();
+});
+it("uses the large mic control as an explicit start/stop toggle", async () => {
+  await mount();
+  await testRenderer.act(async () => button("Record voice note").props.onPress());
+  expect(button("Stop recording")).toBeDefined();
+  await testRenderer.act(async () => button("Stop recording").props.onPress());
+  expect(h.recorder.stop).toHaveBeenCalledTimes(1);
+  expect(h.set).toHaveBeenCalledTimes(1);
+  expect(button("Play voice note")).toBeDefined();
+});
+it("does not lose the previous note if a replacement fails", async () => {
+  h.get.mockResolvedValue(
+    JSON.stringify({
+      uri: "file:///documents/listing-voice/farmer/saved.m4a",
+      durationMillis: 8000,
+      locale: "ig",
+    }),
+  );
+  await mount();
+  await testRenderer.act(async () => button("Record again").props.onPress());
+  await testRenderer.act(async () => h.listener({ isFinished: true, hasError: true, url: null }));
+  expect(button("Play voice note")).toBeDefined();
+  expect(h.remove).not.toHaveBeenCalled();
+  expect(h.set).not.toHaveBeenCalled();
+});
+it("replays a completed note from the beginning and supports pause", async () => {
+  h.get.mockResolvedValue(
+    JSON.stringify({
+      uri: "file:///documents/listing-voice/farmer/saved.m4a",
+      durationMillis: 8000,
+      locale: "ig",
+    }),
+  );
+  h.playback.didJustFinish = true;
+  await mount();
+  await testRenderer.act(async () => button("Play voice note").props.onPress());
+  expect(h.player.seekTo).toHaveBeenCalledWith(0);
+  h.playback.playing = true;
+  await testRenderer.act(async () =>
+    renderer.update(<ListingVoiceNote draftId="draft" onActivityChange={h.activity} />),
+  );
+  await testRenderer.act(async () => button("Pause voice note").props.onPress());
+  expect(h.player.pause).toHaveBeenCalled();
+});
+it("seeks to the tapped position using the real note duration", async () => {
+  h.get.mockResolvedValue(
+    JSON.stringify({
+      uri: "file:///documents/listing-voice/farmer/saved.m4a",
+      durationMillis: 8000,
+      locale: "ig",
+    }),
+  );
+  await mount();
+  const track = () =>
+    renderer.root
+      .findAllByType("Pressable" as never)
+      .find((node) => node.props.testID === "voice-note-progress")!;
+  await testRenderer.act(async () =>
+    track().props.onLayout({ nativeEvent: { layout: { width: 200 } } }),
+  );
+  await testRenderer.act(async () => track().props.onPress({ nativeEvent: { locationX: 100 } }));
+  expect(h.player.seekTo).toHaveBeenCalledWith(4);
+});
+it("does not show sample audio before a real note is saved", async () => {
+  await mount();
+  expect(button("Play voice note")).toBeUndefined();
+  expect(button("Remove voice note")).toBeUndefined();
+});
+
+it("renders the real saved duration, playback position, and native-size Figma assets", async () => {
+  h.get.mockResolvedValue(
+    JSON.stringify({
+      uri: "file:///documents/listing-voice/farmer/saved.m4a",
+      durationMillis: 8000,
+      locale: "ig",
+      levels: [
+        0.2, 0.4, 0.6, 0.3, 0.7, 0.5, 0.8, 0.4, 0.6, 0.2, 0.5, 0.7, 0.3, 0.6, 0.4, 0.5, 0.2, 0.3,
+      ],
+    }),
+  );
+  h.playback.currentTime = 2;
+  await mount();
+  const track = renderer.root
+    .findAllByType("Pressable" as never)
+    .find((node) => node.props.testID === "voice-note-progress")!;
+  expect(track.props.accessibilityValue).toMatchObject({ max: 8, now: 2, text: "0:02 / 0:08" });
+  const icons = renderer.root.findAllByType("Icon" as never);
+  expect(icons.find((node) => node.props.name === "listingVoiceMic")!.props.nativeSize).toEqual({
+    width: 40.9524,
+    height: 40.9524,
+  });
+  expect(icons.find((node) => node.props.name === "listingVoicePlay")!.props.nativeSize).toEqual({
+    width: 16.381,
+    height: 16.381,
+  });
+  expect(icons.find((node) => node.props.name === "listingVoiceSaved")!.props.nativeSize).toEqual({
+    width: 9.65972,
+    height: 7.32639,
+  });
+  if (process.env.VOICE_NOTE_PREVIEW) {
+    const clean = (node: any): any =>
+      typeof node === "string"
+        ? node
+        : !node
+          ? null
+          : {
+              type: node.type,
+              props: {
+                style: node.props.style,
+                name: node.props.name,
+                nativeSize: node.props.nativeSize,
+                muted: node.props.muted,
+              },
+              children: node.children?.map(clean),
+            };
+    writeFileSync(process.env.VOICE_NOTE_PREVIEW, JSON.stringify(clean(renderer.toJSON())));
+  }
+});
+
+it("keeps playable audio when optional waveform metadata is missing or invalid", async () => {
+  h.get.mockResolvedValue(
+    JSON.stringify({
+      uri: "file:///documents/listing-voice/farmer/saved.m4a",
+      durationMillis: 8000,
+      locale: "ig",
+      levels: ["invalid"],
+    }),
+  );
+  await mount();
+  expect(button("Play voice note")).toBeDefined();
+  await testRenderer.act(async () => button("Play voice note").props.onPress());
+  expect(h.player.play).toHaveBeenCalled();
 });

@@ -18,7 +18,7 @@ import { farmLocation } from "../lib/farm-location";
 import { Confirmation } from "../components/feedback";
 import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect, useRef } from "react";
-import { View, Pressable, Image, StyleSheet, BackHandler } from "react-native";
+import { View, Pressable, Image, StyleSheet, BackHandler, TextInput } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { choosePhoto, photoBody } from "../lib/produce-photo";
 import { useApp, useResource } from "../state";
@@ -46,6 +46,7 @@ export function Sell() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const descriptionInput = useRef<TextInput>(null);
   const voiceActive = useRef(false);
   const voiceActivity = (active: boolean) => {
     voiceActive.current = active;
@@ -344,6 +345,7 @@ export function Sell() {
             draftId={a.route.id || "new"}
             disabled={busy}
             onActivityChange={voiceActivity}
+            onTypeInstead={() => descriptionInput.current?.focus()}
           />
           <Card style={{ borderRadius: 16 }}>
             <Field
@@ -354,6 +356,7 @@ export function Sell() {
             />
             <Field
               label="Description *"
+              inputRef={descriptionInput}
               value={form.description}
               multiline
               maxLength={5000}

@@ -1,4 +1,8 @@
 export const icons = {
+  listingVoiceMic: require("../assets/figma/listing-voice/microphone.svg"),
+  listingVoicePlay: require("../assets/figma/listing-voice/play.svg"),
+  listingVoicePause: require("../assets/figma/listing-voice/pause.svg"),
+  listingVoiceSaved: require("../assets/figma/listing-voice/saved.svg"),
   securityDevicePhone: require("../assets/figma/security-device-phone.svg"),
   securityDeviceSignout: require("../assets/figma/security-device-signout.svg"),
   securityDeviceClock: require("../assets/figma/security-device-clock.svg"),

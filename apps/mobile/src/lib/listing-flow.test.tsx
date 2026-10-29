@@ -96,7 +96,10 @@ vi.mock("../components/ui", async () => {
       createElement(name, props, children);
   return {
     ...Object.fromEntries(
-      ["Page", "Heading", "Label", "Field", "Button", "Card", "Icon", "Notice"].map((n) => [n, host(n)]),
+      ["Page", "Heading", "Label", "Field", "Button", "Card", "Icon", "Notice"].map((n) => [
+        n,
+        host(n),
+      ]),
     ),
     s: {},
     colors: {},
@@ -108,7 +111,15 @@ let renderer: ReactTestRenderer;
 const nodes = (type: string) => renderer.root.findAllByType(type as never);
 const button = (title: string) => nodes("Button").find((n) => n.props.title === title)!;
 const valid = {
-  packaging: { unitsPerPackage: "1", weightKg: "2", length: "30", width: "20", height: "20", handling: "STANDARD" as const, notes: "" },
+  packaging: {
+    unitsPerPackage: "1",
+    weightKg: "2",
+    length: "30",
+    width: "20",
+    height: "20",
+    handling: "STANDARD" as const,
+    notes: "",
+  },
   title: "Tomatoes",
   description: "Fresh harvest",
   categoryId: "tomatoes",
@@ -319,4 +330,18 @@ it("uses the admin catalogue order and supports categories outside the bundled e
   } finally {
     h.catalogue.categories = original;
   }
+});
+
+it("moves from the voice-note helper to the real description field without altering the draft", async () => {
+  h.get.mockResolvedValue(JSON.stringify({ ...valid, price: "12.34", step: 2 }));
+  await act(async () => {
+    renderer = create(<Sell />);
+  });
+  const description = nodes("Field").find((node) => node.props.label === "Description *")!;
+  const focus = vi.fn();
+  description.props.inputRef.current = { focus };
+  await act(async () => nodes("ListingVoiceNote")[0]!.props.onTypeInstead());
+  expect(focus).toHaveBeenCalledTimes(1);
+  expect(description.props.value).toBe("Fresh harvest");
+  expect(nodes("ListingPage")[0]!.props.step).toBe(2);
 });
