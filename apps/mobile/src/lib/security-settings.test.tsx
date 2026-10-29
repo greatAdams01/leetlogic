@@ -67,6 +67,33 @@ vi.mock("./farmer-security", () => ({
   createSecurity: h.create,
   enableBiometric: h.enable,
 }));
+vi.mock("./connected-devices", () => ({
+  useConnectedDevices: () => ({
+    loading: false,
+    error: "",
+    data: {
+      items: [
+        {
+          id: "current",
+          current: true,
+          deviceName: "Farmer’s iPhone",
+          platform: "ios",
+          createdAt: "2026-10-28",
+          lastUsedAt: "2026-10-29",
+        },
+        {
+          id: "other",
+          current: false,
+          deviceName: "Farm Android",
+          platform: "android",
+          createdAt: "2026-10-28",
+          lastUsedAt: null,
+        },
+      ],
+    },
+    reload: h.reload,
+  }),
+}));
 import { SecuritySettings } from "../screens/security-settings";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer;
@@ -253,4 +280,14 @@ it("turns off the saved biometric preference only after verifying the current PI
   expect(h.check).toHaveBeenCalledWith("farmer", "1234");
   expect(h.authenticate).not.toHaveBeenCalled();
   expect(h.enable).toHaveBeenCalledWith("farmer", false);
+});
+
+it("shows reported device details instead of numbered sample phones", async () => {
+  await close();
+  await open("Active phones");
+  const labels = tree.root.findAllByType("Label" as any).map((node) => node.props.children);
+  expect(labels).toContain("Farmer’s iPhone");
+  expect(labels).toContain("Farm Android");
+  expect(labels).not.toContain("Phone 2");
+  expect(labels).toContain("Last active 2026-10-29");
 });

@@ -53,3 +53,27 @@ describe("customer device sessions", () => {
     });
   });
 });
+
+it("uses the latest real activity across all sessions on the same device", async () => {
+  const older = new Date("2026-10-28T10:00:00Z");
+  const latest = new Date("2026-10-29T10:00:00Z");
+  db.session.findMany.mockResolvedValue([
+    { id: "newer-login", deviceId: "phone-a", lastUsedAt: older, deviceName: "Old name" },
+    {
+      id: "current",
+      deviceId: "phone-a",
+      lastUsedAt: latest,
+      deviceName: "Actual device",
+      devicePlatform: "android",
+    },
+  ]);
+  expect(await activePhones("farmer", "current")).toEqual([
+    expect.objectContaining({
+      id: "current",
+      current: true,
+      lastUsedAt: latest,
+      deviceName: "Actual device",
+      platform: "android",
+    }),
+  ]);
+});

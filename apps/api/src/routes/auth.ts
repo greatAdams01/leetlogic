@@ -1,3 +1,4 @@
+import { reportedDevice } from "../services/reported-device.js";
 import { z } from "zod";
 import { activePhones, signOutPhone } from "../services/device-sessions.js";
 import { Router } from "express";
@@ -23,13 +24,11 @@ authRouter.post("/otp/request", async (req, res) => {
     ip: req.ip,
     requestId: req.requestId,
   });
-  res
-    .status(202)
-    .json({
-      message: "If the number can receive messages, a code has been sent.",
-      expiresInSeconds: 300,
-      resendAfterSeconds: 60,
-    });
+  res.status(202).json({
+    message: "If the number can receive messages, a code has been sent.",
+    expiresInSeconds: 300,
+    resendAfterSeconds: 60,
+  });
 });
 authRouter.post("/otp/verify", async (req, res) => {
   const body = verifyOtpSchema.parse(req.body);
@@ -58,6 +57,7 @@ authRouter.post("/otp/verify", async (req, res) => {
     subject: "CUSTOMER",
     principalId: user.id,
     deviceId: body.deviceId,
+    ...reportedDevice(req),
     capabilities: user.capabilities.map((x) => x.capability),
   });
   res.json({

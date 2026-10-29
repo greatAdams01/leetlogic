@@ -10,6 +10,8 @@ export async function createSession(
     subject: SessionSubject;
     principalId: string;
     deviceId: string;
+    deviceName?: string;
+    devicePlatform?: string;
     capabilities?: string[];
     permissions?: string[];
     tokenFamilyId?: string;
@@ -29,6 +31,9 @@ export async function createSession(
       tokenFamilyId: input.tokenFamilyId ?? randomUUID(),
       refreshTokenHash: hashToken(refreshToken),
       deviceId: input.deviceId,
+      deviceName: input.deviceName,
+      devicePlatform: input.devicePlatform,
+      lastUsedAt: new Date(),
       expiresAt,
     },
   });
@@ -89,6 +94,8 @@ export async function rotateSession(refreshToken: string, expectedSubject: Sessi
         subject: current.subject,
         principalId: current.userId ?? current.adminId!,
         deviceId: current.deviceId,
+        deviceName: current.deviceName ?? undefined,
+        devicePlatform: current.devicePlatform ?? undefined,
         capabilities,
         permissions: [...new Set(permissions)],
         tokenFamilyId: current.tokenFamilyId,

@@ -100,6 +100,10 @@ export async function api<T = any>(
       method: options.method || "GET",
       headers: {
         ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+        "X-LeetLogic-Device-Platform": Platform.OS,
+        ...(Constants.deviceName
+          ? { "X-LeetLogic-Device-Name": encodeURIComponent(Constants.deviceName.slice(0, 100)) }
+          : {}),
         ...(options.binary
           ? { "Content-Type": options.binary.contentType }
           : { "Content-Type": "application/json" }),

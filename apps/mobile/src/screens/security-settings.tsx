@@ -12,12 +12,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import { LocalizedText as Text } from "../localization";
 import { Page, Card, Label, Field, Button, Notice, Icon, colors } from "../components/ui";
-import { useApp, useResource } from "../state";
+import { useApp } from "../state";
 import { api, sessionVersion } from "../lib/api";
 import { checkPin, createSecurity, enableBiometric } from "../lib/farmer-security";
 import { useFarmerBiometrics } from "../lib/use-farmer-biometrics";
 
-type PhoneSession = { id: string; current: boolean; createdAt: string; lastUsedAt: string | null };
+import { useConnectedDevices } from "../lib/connected-devices";
 type Panel = "pin" | "biometric" | "phones" | null;
 export function SecuritySettings() {
   const a = useApp();
@@ -31,7 +31,7 @@ export function SecuritySettings() {
   const [error, setError] = useState("");
   const auth = useFarmerBiometrics(a.user!.id);
   const { enabled, available } = auth;
-  const phones = useResource<{ items: PhoneSession[] }>("/auth/sessions");
+  const phones = useConnectedDevices(a.user!.id, a.locale);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -201,7 +201,7 @@ export function SecuritySettings() {
           {settingIcon("settingsDevices")}
           {heading(
             "Active phones",
-            phones.loading
+            phones.loading || (!phones.data && !phones.error)
               ? "Checking…"
               : phones.error
                 ? "View signed-in phones"
@@ -260,29 +260,51 @@ export function SecuritySettings() {
                   <>
                     {phones.loading && <Label>Checking…</Label>}
                     {!!phones.error && <Notice text={phones.error} error />}
-                    {phones.data?.items.map((phone, index) => (
-                      <Card key={phone.id}>
-                        <Label>
-                          {phone.current
-                            ? "This phone"
-                            : a.ui("Phone {number}", { number: index + 1 })}
-                        </Label>
-                        <Label muted>{a.date(phone.lastUsedAt || phone.createdAt)}</Label>
-                        {!phone.current && (
-                          <Button
-                            title="Sign out this phone"
-                            secondary
-                            disabled={busy || !/^\d{4}$/.test(pin)}
-                            onPress={() =>
-                              void perform(async (active) => {
-                                await api(`/auth/sessions/${phone.id}`, { method: "DELETE" });
-                                if (active()) await phones.reload();
-                              })
-                            }
-                          />
-                        )}
-                      </Card>
-                    ))}
+                    {!phones.loading && !phones.error && phones.data?.items.length === 0 && (
+                      <Label>No active devices found.</Label>
+                    )}
+                    {!phones.loading &&
+                      !phones.error &&
+                      phones.data?.items.map((phone) => (
+                        <Card key={phone.id}>
+                          <Label>
+                            {phone.deviceName ||
+                              (phone.current
+                                ? a.ui("This phone")
+                                : a.ui("Device details unavailable"))}
+                          </Label>
+                          {phone.current && <Label muted>This phone</Label>}
+                          {!!phone.platform && (
+                            <Label muted>
+                              {phone.platform === "ios"
+                                ? "iOS"
+                                : phone.platform === "android"
+                                  ? "Android"
+                                  : phone.platform === "web"
+                                    ? "Web browser"
+                                    : phone.platform}
+                            </Label>
+                          )}
+                          <Label muted>
+                            {phone.lastUsedAt
+                              ? a.ui("Last active {date}", { date: a.date(phone.lastUsedAt) })
+                              : a.ui("Signed in {date}", { date: a.date(phone.createdAt) })}
+                          </Label>
+                          {!phone.current && (
+                            <Button
+                              title="Sign out this phone"
+                              secondary
+                              disabled={busy || !/^\d{4}$/.test(pin)}
+                              onPress={() =>
+                                void perform(async (active) => {
+                                  await api(`/auth/sessions/${phone.id}`, { method: "DELETE" });
+                                  if (active()) await phones.reload();
+                                })
+                              }
+                            />
+                          )}
+                        </Card>
+                      ))}
                     <Field
                       label="Current PIN"
                       value={pin}

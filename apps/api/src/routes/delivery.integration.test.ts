@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { prisma, Prisma } from "@leetlogic/database";
 import { createApp } from "../app.js";
-import { createSession } from "../services/sessions.js";
+import { createSession, rotateSession } from "../services/sessions.js";
 import { getConfig } from "../config.js";
 import { redis } from "../lib/redis.js";
 import { signAccessToken, verifyAccessToken } from "../lib/tokens.js";
@@ -1524,15 +1524,54 @@ suite("delivery and language database workflows", () => {
     const userId = verifyAccessToken(seller, "customer").sub;
     const currentId = verifyAccessToken(seller, "customer").sessionId;
     const deviceId = randomUUID();
-    const first = await createSession({ subject: "CUSTOMER", principalId: userId, deviceId });
-    const second = await createSession({ subject: "CUSTOMER", principalId: userId, deviceId });
-    const ids = [first, second].map(
+    const first = await createSession({
+      subject: "CUSTOMER",
+      principalId: userId,
+      deviceId,
+      deviceName: "Farm Android",
+      devicePlatform: "android",
+    });
+    const second = await createSession({
+      subject: "CUSTOMER",
+      principalId: userId,
+      deviceId,
+      deviceName: "Farm Android",
+      devicePlatform: "android",
+    });
+    const refreshed = await rotateSession(second.refreshToken, "CUSTOMER");
+    const refreshedId = verifyAccessToken(refreshed.accessToken, "customer").sessionId;
+    expect(await prisma.session.findUnique({ where: { id: refreshedId } })).toMatchObject({
+      deviceName: "Farm Android",
+      devicePlatform: "android",
+      lastUsedAt: expect.any(Date),
+    });
+    const ids = [first, refreshed].map(
       (session) => verifyAccessToken(session.accessToken, "customer").sessionId,
     );
+    const expired = await createSession({
+      subject: "CUSTOMER",
+      principalId: userId,
+      deviceId: randomUUID(),
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const expiredId = verifyAccessToken(expired.accessToken, "customer").sessionId;
     const list = await request(app)
       .get("/v1/auth/sessions")
-      .set({ Authorization: `Bearer ${seller}` });
+      .set({
+        Authorization: `Bearer ${seller}`,
+        "X-LeetLogic-Device-Name": encodeURIComponent("Farmer’s iPhone"),
+        "X-LeetLogic-Device-Platform": "ios",
+      });
     expect(list.status).toBe(200);
+    expect(list.body.items.some((item: { id: string }) => item.id === expiredId)).toBe(false);
+    expect(list.body.items).toContainEqual(
+      expect.objectContaining({
+        id: currentId,
+        deviceName: "Farmer’s iPhone",
+        platform: "ios",
+        lastUsedAt: expect.any(String),
+      }),
+    );
     expect(list.body.items.filter((item: { id: string }) => ids.includes(item.id))).toHaveLength(1);
     expect(list.body.items).toContainEqual(
       expect.objectContaining({ id: currentId, current: true }),

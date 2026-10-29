@@ -1,3 +1,4 @@
+import { reportedDevice } from "../services/reported-device.js";
 import { prisma } from "@leetlogic/database";
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../lib/errors.js";
@@ -31,6 +32,18 @@ export const requireAuth =
           : session.userId !== req.auth.sub || session.user?.status !== "ACTIVE")
       )
         throw new AppError(401, "SESSION_EXPIRED", "Please sign in again");
+      const device = subject === "customer" ? reportedDevice(req) : {};
+      if (
+        !session.lastUsedAt ||
+        Date.now() - session.lastUsedAt.getTime() > 60_000 ||
+        (device.deviceName && device.deviceName !== session.deviceName) ||
+        (device.devicePlatform && device.devicePlatform !== session.devicePlatform)
+      ) {
+        await prisma.session.updateMany({
+          where: { id: session.id, revokedAt: null, replacedById: null },
+          data: { lastUsedAt: new Date(), ...device },
+        });
+      }
       if (subject === "admin")
         req.auth.permissions = [
           ...new Set(
