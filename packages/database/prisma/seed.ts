@@ -74,6 +74,7 @@ async function main() {
 
   for (const unit of [
     { code: "KG", name: "Kilogram", allowsDecimal: true },
+    { code: "LITRE", name: "Litre", allowsDecimal: true },
     { code: "BAG", name: "Bag", allowsDecimal: false },
     { code: "BASKET", name: "Basket", allowsDecimal: false },
     { code: "CRATE", name: "Crate", allowsDecimal: false },

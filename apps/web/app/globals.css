@@ -963,6 +963,7 @@ main img[src$=".svg"] {
 .customer-panel button { background: #174f30; color: white; border: 0; border-radius: 6px; padding: 12px 18px; margin: 5px; cursor: pointer; }
 .customer-panel button:disabled { opacity: .5; cursor: not-allowed; }
 .customer-panel fieldset { display: grid; gap: 12px; border: 1px solid #dde4df; padding: 16px; }
+.customer-panel [hidden] { display: none; }
 .customer-panel article, .customer-panel aside { background: #f2f6f3; padding: 16px; margin: 16px 0; border-radius: 8px; }
 .customer-panel img { max-width: 100%; height: auto; }
 .customer-panel dt { font-weight: 600; margin-top: 10px; }

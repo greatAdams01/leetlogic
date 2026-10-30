@@ -1,3 +1,4 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { savedFarmPoint } from "../lib/farm-location";
 import { OrderDisputes } from "../components/order-disputes";
 import { OrderPayment } from "../components/order-payment";
@@ -165,7 +166,10 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
           <View style={s.between}>
             <Label muted>Items</Label>
             <Label style={checkout.strong}>
-              {data.order.quantity || 1} {a.unit(data.order.unitCode || "UNIT")} {data.order.title}
+              {data.order.quantity || 1}{" "}
+              {saleUnitLabel(data.order.salePackaging, a.ui) ||
+                a.unit(data.order.unitCode || "UNIT")}{" "}
+              {data.order.title}
             </Label>
           </View>
           <View style={s.between}>
@@ -406,7 +410,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         <Label style={checkout.priceLarge}>{money(data.order.totalMinor)}</Label>
         <Label muted>
           {data.order.suggestedPickup.state} · {data.order.quantity || 1}{" "}
-          {a.unit(data.order.unitCode || "UNIT")}
+          {saleUnitLabel(data.order.salePackaging, a.ui) || a.unit(data.order.unitCode || "UNIT")}
         </Label>
       </Card>
       <Card style={checkout.paymentDetails}>

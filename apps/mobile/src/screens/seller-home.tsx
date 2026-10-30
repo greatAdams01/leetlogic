@@ -1,3 +1,4 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -275,7 +276,8 @@ export function SellerHome() {
                       <Label style={styles.badge}>{a.status(item.status)}</Label>
                     </View>
                     <Label style={styles.price}>
-                      {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
+                      {money(item.unitPriceMinor)} /{" "}
+                      {saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode)}
                     </Label>
                     <Label style={styles.caption}>
                       {a.ui("{quantity} {unit} left · {location}", {
@@ -283,7 +285,7 @@ export function SellerHome() {
                           0,
                           Number(item.availableQuantity) - Number(item.reservedQuantity),
                         ),
-                        unit: a.unit(item.unitCode),
+                        unit: saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode),
                         location: item.locationAddress.city || item.locationAddress.state,
                       })}
                     </Label>
@@ -369,7 +371,7 @@ export function SellerHome() {
                   <Label style={styles.muted}>
                     {a.ui("{quantity} {unit} remaining · restock recommended", {
                       quantity: Number(item.availableQuantity) - Number(item.reservedQuantity),
-                      unit: a.unit(item.unitCode),
+                      unit: saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode),
                     })}
                   </Label>
                   <ListingControls item={item} onUpdated={listings.reload} />

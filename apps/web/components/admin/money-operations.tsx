@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-const money = (v: string) =>
-  new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(Number(v) / 100);
+import { formatMoney as money } from "../../../../packages/contracts/src/money";
 async function call(path = "", body?: unknown) {
   const r = await fetch(`/api/admin/${path}`, {
     method: body ? "POST" : "GET",

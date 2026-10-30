@@ -59,7 +59,7 @@ it("shares product details through WhatsApp only after the buyer chooses it", as
   );
   const link = new URL(h.open.mock.calls[0]![0]);
   expect(link.hostname).toBe("wa.me");
-  expect(link.searchParams.get("text")).toContain("Tomatoes\n₦8,000 / BASKET");
+  expect(link.searchParams.get("text")).toContain("Tomatoes\n₦8,000.00 / BASKET");
   expect(link.searchParams.get("text")).toContain(`/produce/${item.id}`);
   expect(tree.root.findAllByType("Sheet" as any)).toHaveLength(0);
 });

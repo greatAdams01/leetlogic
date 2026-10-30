@@ -1294,6 +1294,107 @@ suite("delivery and language database workflows", () => {
       ).status,
     ).toBe(201);
   });
+  it("persists the priced package, validates its category and weight, and retains it during packing assistance", async () => {
+    const sellerAuth = { Authorization: `Bearer ${seller}` };
+    const grain = await prisma.category.upsert({
+      where: { slug: "grains" },
+      create: { slug: "grains", isActive: true },
+      update: { isActive: true },
+    });
+    await prisma.unit.upsert({
+      where: { code: "BAG" },
+      create: { code: "BAG", name: "Bag", allowsDecimal: false },
+      update: { allowsDecimal: false },
+    });
+    await prisma.unit.upsert({
+      where: { code: "PIECE" },
+      create: { code: "PIECE", name: "Piece", allowsDecimal: false },
+      update: { allowsDecimal: false },
+    });
+    const salePackaging = { type: "BAG", size: 50, measure: "KG" };
+    const create = async (overrides = {}) => {
+      const photo = await prisma.producePhoto.create({
+        data: {
+          userId: verifyAccessToken(seller, "customer").sub,
+          mimeType: "image/jpeg",
+          checksum: "a".repeat(64),
+          storageKey: `test/${randomUUID()}`,
+        },
+      });
+      return request(app)
+        .post("/v1/listing-drafts")
+        .set(sellerAuth)
+        .send({
+          title: "Rice",
+          description: "Rice in 50 kg bags",
+          sourceLocale: "en",
+          categoryId: grain.id,
+          unitCode: "BAG",
+          quantity: "20",
+          unitPriceMinor: "6500000",
+          addressId,
+          photoIds: [photo.id],
+          salePackaging,
+          packaging: {
+            unitsPerPackage: 1,
+            weightKg: 50.5,
+            length: 80,
+            width: 50,
+            height: 25,
+            handling: "STANDARD",
+            notes: "",
+          },
+          ...overrides,
+        });
+    };
+    const submit = (id: string) =>
+      request(app)
+        .post(`/v1/listing-drafts/${id}/submit`)
+        .set(sellerAuth)
+        .send({ confirmed: true });
+    const draft = await create();
+    expect(draft.status).toBe(201);
+    const submitted = await submit(draft.body.id);
+    expect(submitted.status).toBe(201);
+    expect(submitted.body.listing).toMatchObject({
+      salePackaging,
+      unitPriceMinor: "6500000",
+      availableQuantity: "20",
+    });
+    await prisma.listing.update({
+      where: { id: submitted.body.listing.id },
+      data: { status: "ACTIVE" },
+    });
+    const publicItem = await request(app).get(
+      `/v1/marketplace/listings/${submitted.body.listing.id}`,
+    );
+    expect(publicItem.body.item.salePackaging).toEqual(salePackaging);
+    const incompatible = await create({
+      unitCode: "PIECE",
+      salePackaging: { type: "BOTTLE", size: 5, measure: "LITRE" },
+    });
+    expect((await submit(incompatible.body.id)).status).toBe(422);
+    const underweight = await create({
+      packaging: {
+        unitsPerPackage: 1,
+        weightKg: 2,
+        length: 80,
+        width: 50,
+        height: 25,
+        handling: "STANDARD",
+        notes: "",
+      },
+    });
+    expect((await submit(underweight.body.id)).status).toBe(422);
+    const assisted = await create({ packingAssistanceRequested: true, packaging: undefined });
+    const assistanceResult = await submit(assisted.body.id);
+    expect(assistanceResult.status).toBe(201);
+    expect(assistanceResult.body.listing).toMatchObject({
+      salePackaging,
+      packaging: null,
+      packingAssistanceRequested: true,
+    });
+  });
   it("keeps photo ownership, cover order, whole-unit quantities and moderation authoritative", async () => {
     const sellerAuth = { Authorization: `Bearer ${seller}` };
     await prisma.unit.upsert({

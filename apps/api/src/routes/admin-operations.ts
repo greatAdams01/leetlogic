@@ -1,4 +1,4 @@
-import { packagingSchema } from "@leetlogic/contracts";
+import { packagingSchema, salePackagingSchema, minimumPackedWeight } from "@leetlogic/contracts";
 import { queueBooking } from "./delivery.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -1203,9 +1203,17 @@ operationsRouter.patch(
           "INVALID_TRANSITION",
           "This listing is not waiting for packing assistance",
         );
+      const salePackage = salePackagingSchema.safeParse(listing.salePackaging);
       if (
         (!listing.unit.allowsDecimal && !Number.isInteger(body.packaging.unitsPerPackage)) ||
-        (listing.unitCode === "KG" && body.packaging.weightKg < body.packaging.unitsPerPackage)
+        body.packaging.weightKg <
+          Math.max(
+            listing.unitCode === "KG" ? body.packaging.unitsPerPackage : 0,
+            minimumPackedWeight(
+              salePackage.success ? salePackage.data : undefined,
+              body.packaging.unitsPerPackage,
+            ),
+          )
       )
         throw new AppError(
           422,

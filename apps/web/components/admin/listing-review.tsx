@@ -2,10 +2,9 @@
 import { useState, type ReactNode } from "react";
 import { verificationLabel as label } from "./verification-review";
 type Row = Record<string, any>;
-export const listingPrice = (value: string | number = "0") => {
-  const amount = BigInt(value);
-  return `₦${(amount / 100n).toLocaleString("en-NG")}.${(amount % 100n).toString().padStart(2, "0")}`;
-};
+export { formatMoney as listingPrice } from "../../../../packages/contracts/src/money";
+import { formatMoney as listingPrice } from "../../../../packages/contracts/src/money";
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 const date = (value?: string) =>
   value
     ? new Date(value).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })
@@ -137,7 +136,8 @@ export function ListingQueue({
               </td>
               <td>
                 <strong>
-                  {listingPrice(row.unitPriceMinor)} / {row.unit?.name || row.unitCode}
+                  {listingPrice(row.unitPriceMinor)} /{" "}
+                  {saleUnitLabel(row.salePackaging) || row.unit?.name || row.unitCode}
                 </strong>
                 <small>
                   {row.availableQuantity} in stock · {row.reservedQuantity} reserved
@@ -198,7 +198,8 @@ export function ListingReview({
         <div>
           <span className="verification-caption">UNIT PRICE</span>
           <strong>
-            {listingPrice(record.unitPriceMinor)} / {record.unit?.name || record.unitCode}
+            {listingPrice(record.unitPriceMinor)} /{" "}
+            {saleUnitLabel(record.salePackaging) || record.unit?.name || record.unitCode}
           </strong>
         </div>
         <div>
@@ -235,7 +236,9 @@ export function ListingReview({
           <dl>
             <Fact title="Product">{record.title}</Fact>
             <Fact title="Category">{category(record)}</Fact>
-            <Fact title="Selling unit">{record.unit?.name || record.unitCode}</Fact>
+            <Fact title="Selling unit">
+              {saleUnitLabel(record.salePackaging) || record.unit?.name || record.unitCode}
+            </Fact>
             <Fact title="Source language">
               {{ en: "English", pcm: "Nigerian Pidgin", ha: "Hausa", ig: "Igbo", yo: "Yoruba" }[
                 record.sourceLocale as string

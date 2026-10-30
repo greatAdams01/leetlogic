@@ -6,12 +6,8 @@ export function toMinor(value: string): string {
   if (amount <= 0n) throw new Error("Price must be greater than zero.");
   return amount.toString();
 }
-export function money(value: string | number | undefined): string {
-  const n = BigInt(value || 0);
-  const sign = n < 0n ? "-" : "";
-  const amount = n < 0n ? -n : n;
-  return `${sign}₦${(amount / 100n).toLocaleString("en-NG")}${amount % 100n ? "." + (amount % 100n).toString().padStart(2, "0") : ""}`;
-}
+import { formatMoney } from "../../../../packages/contracts/src/money";
+export const money = (value: string | number | undefined) => formatMoney(value || "0");
 export function quantity(value: string): string {
   if (!/^\d{1,9}(\.\d{1,3})?$/.test(value) || Number(value) <= 0)
     throw new Error("Enter a positive quantity with at most three decimal places.");
@@ -31,6 +27,7 @@ export const safeHttps = (url: string) => {
 };
 import type { Packaging } from "../../../../packages/contracts/src/packaging";
 export type Listing = {
+  salePackaging?: import("../../../../packages/contracts/src/sale-packaging").SalePackaging | null;
   packingAssistanceRequested?: boolean;
   packaging?: Packaging | null;
   distanceKm?: number;
@@ -82,7 +79,7 @@ export type Order = {
   status: string;
   totalMinor: string;
   quantity?: string;
-  listing: { title: string; unitCode?: string };
+  listing: { title: string; unitCode?: string; salePackaging?: Listing["salePackaging"] };
   delivery: { status: string; shippingMinor: string } | null;
 };
 export type Contact = {
@@ -108,6 +105,7 @@ export type DeliveryData = {
     suggestedPickup: Contact;
     quantity?: string;
     unitCode?: string;
+    salePackaging?: Listing["salePackaging"];
     packageSuggestion?: {
       farmer: Packaging;
       packageCount: number;

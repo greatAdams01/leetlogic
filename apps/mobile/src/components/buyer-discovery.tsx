@@ -1,3 +1,4 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { useApp } from "../state";
@@ -200,7 +201,10 @@ export function ProduceGrid({ items, compact = false }: { items: Listing[]; comp
             >
               <Label style={{ color: "#6b4a2f", fontSize: 20, fontFamily: "NotoBold" }}>
                 {money(item.unitPriceMinor)}
-                <Label muted style={{ fontSize: 12 }}>{` / ${a.unit(item.unitCode)}`}</Label>
+                <Label
+                  muted
+                  style={{ fontSize: 12 }}
+                >{` / ${saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode)}`}</Label>
               </Label>
               <Label muted style={{ fontSize: 12 }}>
                 {a.ui("{quantity} {unit} available", {
@@ -208,7 +212,7 @@ export function ProduceGrid({ items, compact = false }: { items: Listing[]; comp
                     0,
                     Number(item.availableQuantity) - Number(item.reservedQuantity),
                   ),
-                  unit: a.unit(item.unitCode),
+                  unit: saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode),
                 })}
               </Label>
             </View>
@@ -278,7 +282,7 @@ export function FeaturedProduce({ items }: { items: Listing[] }) {
                   0,
                   Number(item.availableQuantity) - Number(item.reservedQuantity),
                 ),
-                unit: a.unit(item.unitCode),
+                unit: saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode),
               })}
             </Label>
           </View>

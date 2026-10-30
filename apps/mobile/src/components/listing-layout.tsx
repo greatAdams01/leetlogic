@@ -14,7 +14,7 @@ export function ListingPage({
   complete = false,
   choosingMethod = false,
 }: {
-  step: 1 | 2 | 3 | 4;
+  step: 1 | 2 | 3 | 4 | 5;
   onBack?: () => void;
   onClose: () => void;
   footer: React.ReactNode;
@@ -31,7 +31,7 @@ export function ListingPage({
       contentKey={contentKey}
       contentStyle={{
         paddingHorizontal: step === 2 || step === 3 ? 24 : 20,
-        ...(step === 4 ? { gap: 12 } : {}),
+        ...(step === 5 ? { gap: 12 } : {}),
       }}
       header={
         <View style={styles.header}>
@@ -49,7 +49,7 @@ export function ListingPage({
                     ? "listingBack"
                     : step === 2
                       ? "listingInfoBack"
-                      : step === 4
+                      : step === 5
                         ? "listingReviewBack"
                         : "back"
                 }
@@ -58,20 +58,20 @@ export function ListingPage({
                     ? { width: 40, height: 40 }
                     : step === 2
                       ? { width: 24, height: 24 }
-                      : step === 4
+                      : step === 5
                         ? { width: 20.87, height: 20.87 }
                         : { width: 24, height: 24 }
                 }
               />
             )}
           </Pressable>
-          <View style={[styles.step, step === 4 && !complete && styles.reviewStep]}>
+          <View style={[styles.step, step === 5 && !complete && styles.reviewStep]}>
             {!complete && (
               <Text style={styles.stepText}>
-                {a.ui("Step {step} of 5", { step: choosingMethod ? 1 : step + 1 })}
+                {a.ui("Step {step} of 6", { step: choosingMethod ? 1 : step + 1 })}
               </Text>
             )}
-            {step === 4 && !complete && <Text style={styles.subtitle}>Review listing</Text>}
+            {step === 5 && !complete && <Text style={styles.subtitle}>Review listing</Text>}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -83,14 +83,14 @@ export function ListingPage({
               name={
                 complete
                   ? "listingSuccessClose"
-                  : step === 4
+                  : step === 5
                     ? "listingReviewClose"
                     : "listingClose"
               }
               nativeSize={
                 complete
                   ? { width: 20.8738, height: 20.8738 }
-                  : step === 4
+                  : step === 5
                     ? { width: 20.87, height: 20.87 }
                     : { width: 40, height: 40 }
               }
@@ -104,16 +104,16 @@ export function ListingPage({
     </Page>
   );
 }
-export function ListingProgress({ step, label }: { step: 1 | 2 | 3; label: string }) {
+export function ListingProgress({ step, label }: { step: 1 | 2 | 3 | 4; label: string }) {
   const a = useApp();
   return (
     <View style={styles.progress}>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexShrink: 1 }}>
-        <Text style={styles.chip}>{a.ui("Step {step} of 5", { step: step + 1 })}</Text>
+        <Text style={styles.chip}>{a.ui("Step {step} of 6", { step: step + 1 })}</Text>
         <Text style={styles.subtitle}>{label}</Text>
       </View>
       <View style={styles.bars}>
-        {[1, 2, 3, 4, 5].map((index) => (
+        {[1, 2, 3, 4, 5, 6].map((index) => (
           <View
             key={index}
             style={[styles.bar, index <= step + 1 && { backgroundColor: colors.green }]}
@@ -171,5 +171,5 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   bars: { flexDirection: "row", gap: 6 },
-  bar: { width: 28, height: 6, borderRadius: 8, backgroundColor: "#e5e2e1" },
+  bar: { width: 22, height: 6, borderRadius: 8, backgroundColor: "#e5e2e1" },
 });

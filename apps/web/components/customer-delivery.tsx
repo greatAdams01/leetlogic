@@ -6,10 +6,7 @@ import { TranslatedText } from "./translated-text";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 import type { MessageKey } from "../lib/locales/messages";
-const money = (minor: string) =>
-  new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(
-    Number(minor) / 100,
-  );
+import { formatMoney as money } from "../../../packages/contracts/src/money";
 export function CustomerDelivery({
   id,
   staff = false,

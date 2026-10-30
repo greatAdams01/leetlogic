@@ -163,27 +163,45 @@ describe("seller listing wizard", () => {
     await act(async () => button("Use guided voice · English").props.onPress());
     expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
   });
-  it("keeps details in their own step, validates them and preserves them when going back", async () => {
+  it("separates details, packaging and photos and keeps the selling basis explicit", async () => {
     await act(async () => {
       renderer = create(<Sell />);
     });
     expect(nodes("Field")).toHaveLength(0);
     expect(nodes("Button").some((node) => node.props.title === "Continue")).toBe(false);
     await act(async () => button("Type my listing").props.onPress());
-    const category = nodes("Pressable").find((n) => n.props.accessibilityRole === "radio")!;
-    await act(async () => category.props.onPress());
+    await act(async () =>
+      nodes("Pressable")
+        .find((node) => node.props.accessibilityRole === "radio")!
+        .props.onPress(),
+    );
     await act(async () => button("Continue").props.onPress());
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
-    await act(async () => button("Continue to photos").props.onPress());
+    expect(nodes("Field").some((node) => node.props.label === "Units in one package *")).toBe(
+      false,
+    );
+    await act(async () => button("Continue to packaging").props.onPress());
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
-    expect(nodes("Notice").some((n) => n.props.error)).toBe(true);
-    await act(async () => nodes("Select")[0]!.props.onChange("KG"));
     for (const [label, value] of [
       ["Product title *", "My tomatoes"],
       ["Description *", "Fresh produce"],
-      ["Available quantity *", "2"],
-      ["Price per KG · NGN *", "123"],
-      ["Units in one package *", "1"],
+    ]) {
+      await act(async () =>
+        nodes("Field")
+          .find((node) => node.props.label === label)!
+          .props.onChangeText(value),
+      );
+    }
+    await act(async () => button("Continue to packaging").props.onPress());
+    expect(nodes("ListingPage")[0]!.props.step).toBe(3);
+    await act(async () =>
+      nodes("Select")
+        .find((node) => node.props.label === "Packaging type *")!
+        .props.onChange("KG"),
+    );
+    for (const [label, value] of [
+      ["Available quantity (kg) *", "2"],
+      ["Price per kg · NGN *", "123"],
       ["Packed weight (kg) *", "2"],
       ["Package length (cm) *", "30"],
       ["Package width (cm) *", "20"],
@@ -191,15 +209,17 @@ describe("seller listing wizard", () => {
     ]) {
       await act(async () =>
         nodes("Field")
-          .find((n) => n.props.label === label)!
+          .find((node) => node.props.label === label)!
           .props.onChangeText(value),
       );
     }
     await act(async () => button("Continue to photos").props.onPress());
-    expect(nodes("ListingPage")[0]!.props.step).toBe(3);
+    expect(nodes("ListingPage")[0]!.props.step).toBe(4);
     expect(button("Review listing").props.disabled).toBe(true);
     await act(async () => nodes("ListingPage")[0]!.props.onBack());
-    expect(nodes("Field").find((n) => n.props.label === "Product title *")!.props.value).toBe(
+    expect(nodes("ListingPage")[0]!.props.step).toBe(3);
+    await act(async () => nodes("ListingPage")[0]!.props.onBack());
+    expect(nodes("Field").find((node) => node.props.label === "Product title *")!.props.value).toBe(
       "My tomatoes",
     );
   });
@@ -229,6 +249,96 @@ describe("seller listing wizard", () => {
     );
     expect(JSON.stringify(h.api.mock.calls)).not.toContain("file://");
     expect(h.go).toHaveBeenCalledWith("review", "draft");
+  });
+  it("prices a selected bag, resets the old basis after size/category changes and saves commercial packaging during assistance", async () => {
+    const categories = h.catalogue.categories,
+      units = h.catalogue.units;
+    h.catalogue.categories = [
+      { id: "grain", slug: "grains", translations: [{ locale: "en", name: "Grains" }] },
+      { id: "oil", slug: "oils", translations: [{ locale: "en", name: "Oils" }] },
+    ];
+    h.catalogue.units = [
+      { code: "BAG", allowsDecimal: false },
+      { code: "PIECE", allowsDecimal: false },
+      ...units,
+    ];
+    h.get.mockResolvedValueOnce(
+      JSON.stringify({
+        ...valid,
+        title: "Rice",
+        categoryId: "grain",
+        inputMethod: "type",
+        price: "12.34",
+        step: 3,
+        flowVersion: 2,
+      }),
+    );
+    try {
+      await act(async () => {
+        renderer = create(<Sell />);
+      });
+      const select = (label: string) => nodes("Select").find((node) => node.props.label === label)!;
+      await act(async () => select("Packaging type *").props.onChange("BAG"));
+      expect(select("Package size *").props.options.map((option: any) => option.value)).toContain(
+        "50",
+      );
+      await act(async () => select("Package size *").props.onChange("50"));
+      const change = async (label: string, value: string) =>
+        act(async () =>
+          nodes("Field")
+            .find((node) => node.props.label === label)!
+            .props.onChangeText(value),
+        );
+      await change("Available quantity (50 kg bag) *", "20");
+      await change("Price per 50 kg bag · NGN *", "65,000.00");
+      await act(async () => select("Package size *").props.onChange("25"));
+      expect(nodes("GuidedListing")[0]!.props.form).toMatchObject({ price: "", quantity: "" });
+      await act(async () => select("Package size *").props.onChange("50"));
+      await change("Available quantity (50 kg bag) *", "20");
+      await change("Price per 50 kg bag · NGN *", "65,000.00");
+      await act(async () => nodes("Confirmation")[0]!.props.onChange());
+      await act(async () => button("Continue to photos").props.onPress());
+      expect(nodes("ListingPage")[0]!.props.step).toBe(4);
+      await act(async () => button("Review listing").props.onPress());
+      expect(h.api).toHaveBeenCalledWith(
+        "/listing-drafts",
+        expect.objectContaining({
+          body: expect.objectContaining({
+            unitPriceMinor: "6500000",
+            quantity: "20",
+            unitCode: "BAG",
+            salePackaging: { type: "BAG", size: 50, measure: "KG" },
+            packingAssistanceRequested: true,
+          }),
+        }),
+      );
+      await act(async () => nodes("ListingPage")[0]!.props.onBack());
+      await act(async () => nodes("ListingPage")[0]!.props.onBack());
+      await act(async () => nodes("ListingPage")[0]!.props.onBack());
+      await act(async () =>
+        nodes("Pressable")
+          .find((node) => node.props.accessibilityLabel === "Oils")!
+          .props.onPress(),
+      );
+      expect(nodes("GuidedListing")[0]!.props.form).toMatchObject({
+        categoryId: "oil",
+        price: "",
+        quantity: "",
+        unitCode: "",
+        salePackaging: undefined,
+      });
+      await act(async () => button("Continue").props.onPress());
+      await act(async () => button("Continue to packaging").props.onPress());
+      expect(select("Packaging type *").props.options.map((option: any) => option.value)).toContain(
+        "BOTTLE",
+      );
+      expect(
+        select("Packaging type *").props.options.map((option: any) => option.value),
+      ).not.toContain("BAG");
+    } finally {
+      h.catalogue.categories = categories;
+      h.catalogue.units = units;
+    }
   });
   it("adds the uploaded photo only after the binary request succeeds and allows retry after failure", async () => {
     h.get.mockResolvedValue(JSON.stringify({ ...valid, photoIds: [], photos: [], step: 3 }));
@@ -278,12 +388,12 @@ describe("seller listing wizard", () => {
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
     expect(nodes("GuidedListing")[0]!.props.form.title).toBe("Tomatoes");
     await act(async () => nodes("GuidedListing")[0]!.props.onActivityChange(true));
-    expect(button("Continue to photos").props.disabled).toBe(true);
+    expect(button("Continue to packaging").props.disabled).toBe(true);
     expect(nodes("ListingPage")[0]!.props.onBack).toBeUndefined();
-    await act(async () => button("Continue to photos").props.onPress());
+    await act(async () => button("Continue to packaging").props.onPress());
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
     await act(async () => nodes("GuidedListing")[0]!.props.onActivityChange(false));
-    expect(button("Continue to photos").props.disabled).toBe(false);
+    expect(button("Continue to packaging").props.disabled).toBe(false);
   });
   it("keeps the voice draft on the device when a new listing reaches review", async () => {
     const voice = JSON.stringify({

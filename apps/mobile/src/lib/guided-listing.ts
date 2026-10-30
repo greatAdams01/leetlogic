@@ -1,6 +1,7 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import type { ListingForm, ListingUnit } from "./listing-form";
 import { emptyPacking, packingError } from "./packaging";
-import { quantity, toMinor } from "./domain";
+import { quantity, toMinor, money } from "./domain";
 
 export type VoiceField =
   | "title"
@@ -326,6 +327,16 @@ export function commitAnswer(
   field: VoiceField,
   answer: VoiceAnswer,
 ): ListingForm {
+  if (field === "categoryId" && form.categoryId !== answer.value)
+    return {
+      ...form,
+      categoryId: answer.value,
+      salePackaging: undefined,
+      unitCode: "",
+      quantity: "",
+      price: "",
+      packaging: { ...emptyPacking },
+    };
   if (field === "packing")
     return {
       ...form,
@@ -339,6 +350,7 @@ export function commitAnswer(
     return {
       ...form,
       unitCode: answer.value,
+      salePackaging: undefined,
       quantity: "",
       price: "",
       packaging: { ...emptyPacking },
@@ -355,5 +367,5 @@ export function voiceFields(form: ListingForm) {
 }
 export function listingReadback(form: ListingForm, catalogue: VoiceCatalogue): string {
   const address = catalogue.addresses.find((a) => a.id === form.addressId);
-  return `Your listing: ${form.title}. ${form.description}. Category: ${catalogue.categories.find((c) => c.id === form.categoryId)?.translations.find((t) => t.locale === "en")?.name || "not selected"}. Available: ${form.quantity} ${form.unitCode}. Price: ${form.price} naira per ${form.unitCode}. Pickup: ${address ? `${address.line1}, ${address.city}, ${address.state}` : "missing farm address"}. Delivery: ${form.shippingScope === "LOCAL" ? "within your state" : "nationwide"}. ${form.packingAssistanceRequested ? "The team must complete package measurements before buyers can purchase." : packingError(form.packaging) ? "Package measurements are incomplete." : `Each package contains ${form.packaging!.unitsPerPackage} selling units, weighs ${form.packaging!.weightKg} kilograms, and measures ${form.packaging!.length} by ${form.packaging!.width} by ${form.packaging!.height} centimetres. Handling: ${form.packaging!.handling.replace(/_/g, " ")}.`} ${form.photos.length} photos. Review and correct any details. Only the submit button can send your listing for review.`;
+  return `Your listing: ${form.title}. ${form.description}. Category: ${catalogue.categories.find((c) => c.id === form.categoryId)?.translations.find((t) => t.locale === "en")?.name || "not selected"}. Available: ${form.quantity} ${form.unitCode}. Price: ${/^\d+(\.\d{1,2})?$/.test(form.price) && Number(form.price) > 0 ? money(toMinor(form.price)) : "not entered"} per ${saleUnitLabel(form.salePackaging) || form.unitCode}. Pickup: ${address ? `${address.line1}, ${address.city}, ${address.state}` : "missing farm address"}. Delivery: ${form.shippingScope === "LOCAL" ? "within your state" : "nationwide"}. ${form.packingAssistanceRequested ? "The team must complete package measurements before buyers can purchase." : packingError(form.packaging) ? "Package measurements are incomplete." : `Each package contains ${form.packaging!.unitsPerPackage} selling units, weighs ${form.packaging!.weightKg} kilograms, and measures ${form.packaging!.length} by ${form.packaging!.width} by ${form.packaging!.height} centimetres. Handling: ${form.packaging!.handling.replace(/_/g, " ")}.`} ${form.photos.length} photos. Review and correct any details. Only the submit button can send your listing for review.`;
 }

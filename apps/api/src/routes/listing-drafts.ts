@@ -1,4 +1,9 @@
-import { packagingSchema } from "@leetlogic/contracts";
+import {
+  packagingSchema,
+  salePackagingSchema,
+  salePackagingMatches,
+  minimumPackedWeight,
+} from "@leetlogic/contracts";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
@@ -9,6 +14,7 @@ import { serialize } from "../services/delivery.js";
 export const listingDraftRouter = Router();
 listingDraftRouter.use(requireAuth("customer"));
 export const draftSchema = z.object({
+  salePackaging: salePackagingSchema.optional(),
   packaging: packagingSchema.optional(),
   packingAssistanceRequested: z.boolean().default(false),
   title: z.string().trim().min(2).max(160),
@@ -150,6 +156,14 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
     const unit = await tx.unit.findUnique({ where: { code: body.unitCode } });
     if (!category?.isActive || !unit)
       throw new AppError(422, "INVALID_CATALOGUE", "Choose a valid category and unit");
+    if (body.salePackaging) {
+      if (!salePackagingMatches(body.salePackaging, category.slug, body.title, body.unitCode))
+        throw new AppError(
+          422,
+          "INVALID_PACKAGING",
+          "Choose packaging that matches this category and selling unit.",
+        );
+    }
     if (!unit.allowsDecimal && !/^\d+$/.test(body.quantity))
       throw new AppError(
         422,
@@ -164,8 +178,11 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
       );
     if (
       body.packaging &&
-      body.unitCode === "KG" &&
-      body.packaging.weightKg < body.packaging.unitsPerPackage
+      body.packaging.weightKg <
+        Math.max(
+          body.unitCode === "KG" ? body.packaging.unitsPerPackage : 0,
+          minimumPackedWeight(body.salePackaging, body.packaging.unitsPerPackage),
+        )
     )
       throw new AppError(
         422,
@@ -203,6 +220,7 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         availableQuantity: body.quantity,
         shippingScope: body.shippingScope,
         packingAssistanceRequested: body.packingAssistanceRequested,
+        ...(body.salePackaging ? { salePackaging: body.salePackaging } : {}),
         ...(!body.packingAssistanceRequested && body.packaging
           ? { packaging: body.packaging }
           : {}),

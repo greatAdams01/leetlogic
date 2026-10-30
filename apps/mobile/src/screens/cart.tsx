@@ -1,3 +1,4 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, Pressable, StyleSheet, View } from "react-native";
 import { useApp, useResource } from "../state";
@@ -69,7 +70,7 @@ function CartRow({
       <View style={cartStyles.quantityRow}>
         <View>
           <Label muted style={cartStyles.quantityLabel}>
-            {quantity} {a.unit(item.listing.unitCode).toLowerCase()}
+            {quantity} {(saleUnitLabel(item.listing.salePackaging, a.ui) || a.unit(item.listing.unitCode)).toLowerCase()}
           </Label>
           <Label style={cartStyles.price}>
             {money(produceTotal(quantity, item.listing.unitPriceMinor) || "0")}

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, useRef } from "react";
+import { MoneyInput } from "./money-input";
 import Link from "next/link";
 import {
   paymentActions,
@@ -9,8 +10,7 @@ import { isHostedPaymentUrl } from "../../../packages/contracts/src/payment-urls
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 import { ui, localizedError, localizedStatus } from "../../mobile/src/lib/localization";
-const money = (v: string) =>
-  new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(Number(v) / 100);
+import { formatMoney as money } from "../../../packages/contracts/src/money";
 function useCopy() {
   const { locale } = useLanguage();
   return {
@@ -158,6 +158,7 @@ export function CustomerPayment({
   );
 }
 export function CustomerFinance() {
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
   const { say, error, status } = useCopy();
   const [data, setData] = useState<any>(null),
     [notice, setNotice] = useState(""),
@@ -315,7 +316,7 @@ export function CustomerFinance() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const form = new FormData(e.currentTarget);
-                  const value = String(form.get("amount"));
+                  const value = withdrawalAmount;
                   if (!/^\d{1,10}(\.\d{1,2})?$/.test(value)) {
                     setNotice(say("Enter a price in naira with at most two decimal places."));
                     return;
@@ -341,6 +342,7 @@ export function CustomerFinance() {
                       mutationKey: withdrawalKey.current.key,
                     });
                     withdrawalForm.reset();
+                    setWithdrawalAmount("");
                     withdrawalKey.current = { input: "", key: "" };
                   });
                 }}
@@ -359,7 +361,12 @@ export function CustomerFinance() {
                 </label>
                 <label>
                   {say("Amount to receive (NGN)")}
-                  <input name="amount" required inputMode="decimal" />
+                  <MoneyInput
+                    name="amount"
+                    value={withdrawalAmount}
+                    onChange={setWithdrawalAmount}
+                    required
+                  />
                 </label>
                 <p>
                   {say("Withdrawal fee")}:{" "}

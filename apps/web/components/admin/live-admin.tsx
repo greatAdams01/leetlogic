@@ -1,4 +1,5 @@
 "use client";
+import { formatMoney } from "../../../../packages/contracts/src/money";
 import { Categories } from "./categories";
 import { ListingQueue, ListingReview } from "./listing-review";
 import { VerificationReview, verificationLabel } from "./verification-review";
@@ -1392,7 +1393,5 @@ const statuses: Record<string, string[]> = {
 };
 
 function formatMinor(value: unknown) {
-  const amount = BigInt(String(value));
-  const absolute = amount < 0n ? -amount : amount;
-  return `${amount < 0n ? "−" : ""}₦${new Intl.NumberFormat("en-NG").format(absolute / 100n)}.${String(absolute % 100n).padStart(2, "0")}`;
+  return formatMoney(String(value));
 }

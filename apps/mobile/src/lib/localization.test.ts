@@ -119,6 +119,7 @@ describe("complete mobile interface localization", () => {
       resolve("src/components/buyer-location.tsx"),
       resolve("src/components/buyer-discovery.tsx"),
       resolve("src/components/packing-fields.tsx"),
+      resolve("src/components/sale-packaging.tsx"),
       resolve("src/components/order-disputes.tsx"),
       resolve("src/components/buyer-escrow.tsx"),
       resolve("src/components/buyer-search.tsx"),

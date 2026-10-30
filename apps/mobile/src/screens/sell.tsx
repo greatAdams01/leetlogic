@@ -1,15 +1,17 @@
+import { SalePackagingForm } from "../components/sale-packaging";
+import { saleUnitLabel, packagingOptions } from "../../../../packages/contracts/src/sale-packaging";
 import { PackingFieldsForm } from "../components/packing-fields";
 import { emptyPacking } from "../lib/packaging";
 import { GuidedListing, ReadListingAloud } from "../components/guided-listing";
 import { listingReadback } from "../lib/guided-listing";
 import { AppSheet } from "../components/app-sheet";
-import { Select } from "../components/Select";
 import { ListingPage, ListingProgress } from "../components/listing-layout";
 import { listingCategories } from "../lib/listing-art";
 import {
   emptyListing,
   restoreListing,
   listingDetailsError,
+  listingDescriptionError,
   listingPayload,
   moveCover,
   type ListingForm,
@@ -42,7 +44,7 @@ export function Sell() {
   const a = useApp(),
     r = useResource<Catalogue>("/listing-drafts/catalogue");
   const [form, setForm] = useState<ListingForm>(emptyListing),
-    [step, setStep] = useState<1 | 2 | 3>(1);
+    [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [ready, setReady] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -69,6 +71,7 @@ export function Sell() {
             ...next,
             inputMethod: next.inputMethod ?? null,
             step: nextStep,
+            flowVersion: 2,
             photoId: next.photos[0]?.id,
           }),
         ),
@@ -84,7 +87,17 @@ export function Sell() {
           const parsed = JSON.parse(cached);
           if (active) {
             setForm(restoreListing(parsed));
-            setStep([1, 2, 3].includes(parsed.step) ? parsed.step : a.route.id ? 2 : 1);
+            setStep(
+              [1, 2, 3, 4].includes(parsed.step)
+                ? parsed.flowVersion === 2
+                  ? parsed.step
+                  : parsed.step === 3
+                    ? 4
+                    : parsed.step
+                : a.route.id
+                  ? 2
+                  : 1,
+            );
           }
         } else if (a.route.id) {
           const draft = await api<{ fields: any; listingId: string | null }>(
@@ -128,14 +141,41 @@ export function Sell() {
   }, [ready, farm?.id]);
   useEffect(() => {
     const target = r.data?.categoryAliases?.[form.categoryId];
-    if (ready && target) setForm((current) => ({ ...current, categoryId: target }));
+    if (ready && target)
+      setForm((current) => ({
+        ...current,
+        categoryId: target,
+        salePackaging: undefined,
+        unitCode: "",
+        quantity: "",
+        price: "",
+        packaging: { ...emptyPacking },
+      }));
   }, [ready, form.categoryId, r.data?.categoryAliases]);
   const category = r.data?.categories.find((item) => item.id === form.categoryId);
+  useEffect(() => {
+    if (
+      ready &&
+      category &&
+      form.salePackaging &&
+      !packagingOptions(category.slug, form.title).some(
+        (option) => option.value === form.salePackaging?.type,
+      )
+    )
+      setForm((current) => ({
+        ...current,
+        salePackaging: undefined,
+        unitCode: "",
+        quantity: "",
+        price: "",
+        packaging: { ...emptyPacking },
+      }));
+  }, [ready, category?.slug, form.title, form.salePackaging?.type]);
   const categoryName = (item: Category) =>
     item.translations.find((text) => text.locale === a.locale)?.name ||
     item.translations.find((text) => text.locale === "en")?.name ||
     item.slug;
-  const goStep = (next: 1 | 2 | 3) => {
+  const goStep = (next: 1 | 2 | 3 | 4) => {
     if (!running.current && !voiceActive.current) {
       setError("");
       setStep(next);
@@ -153,7 +193,7 @@ export function Sell() {
   };
   const back = () => {
     if (running.current || voiceActive.current) return;
-    if (step > 1) goStep((step - 1) as 1 | 2);
+    if (step > 1) goStep((step - 1) as 1 | 2 | 3);
     else if (form.inputMethod) {
       setError("");
       setGuided(false);
@@ -168,7 +208,20 @@ export function Sell() {
     return () => subscription.remove();
   }, [step, form]);
   const field = <K extends keyof ListingForm>(key: K, value: ListingForm[K]) =>
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) =>
+      key === "categoryId" && current.categoryId !== value
+        ? {
+            ...current,
+            [key]: value,
+            salePackaging: undefined,
+            unitCode: "",
+            quantity: "",
+            price: "",
+            packaging: { ...emptyPacking },
+            packingAssistanceRequested: false,
+          }
+        : { ...current, [key]: value },
+    );
   const upload = async (camera: boolean) => {
     if (running.current || photoChoice === null) return;
     running.current = true;
@@ -202,13 +255,22 @@ export function Sell() {
       if (category) goStep(2);
       return;
     }
-    const invalid = listingDetailsError(form, r.data?.units || []);
+    if (step === 3 && !form.salePackaging) {
+      setError(a.ui("Choose a packaging type and enter a valid package size."));
+      return;
+    }
+    const invalid =
+      step === 2 ? listingDescriptionError(form) : listingDetailsError(form, r.data?.units || []);
     if (invalid) {
       setError(a.ui(invalid));
       return;
     }
     if (step === 2) {
       goStep(3);
+      return;
+    }
+    if (step === 3) {
+      goStep(4);
       return;
     }
     if (!form.photos.length) {
@@ -235,7 +297,7 @@ export function Sell() {
       }
       await AsyncStorage.setItem(
         `listing-draft:${a.user!.id}:${draft.id}`,
-        JSON.stringify({ ...form, step: 3 }),
+        JSON.stringify({ ...form, step: 4, flowVersion: 2 }),
       );
       if (storage !== `listing-draft:${a.user!.id}:${draft.id}`)
         await AsyncStorage.removeItem(storage);
@@ -270,8 +332,10 @@ export function Sell() {
                   : step === 1
                     ? "Continue"
                     : step === 2
-                      ? "Continue to photos"
-                      : "Review listing"
+                      ? "Continue to packaging"
+                      : step === 3
+                        ? "Continue to photos"
+                        : "Review listing"
               }
               loading={busy}
               disabled={
@@ -282,7 +346,7 @@ export function Sell() {
                 !!r.error ||
                 !form.inputMethod ||
                 !category ||
-                (step === 3 && !form.photos.length)
+                (step === 4 && !form.photos.length)
               }
               icon="listingForward"
               iconNativeSize={{ width: 13, height: 13 }}
@@ -316,8 +380,12 @@ export function Sell() {
           />
           <Label>
             {process.env.EXPO_PUBLIC_LISTING_VOICE_PROVIDER === "server"
-              ? a.ui("Voice answers are sent to LeetLogic for transcription and deleted after processing.")
-              : a.ui("Voice asks one question at a time and reads your answers back. English speech stays on your device.")}
+              ? a.ui(
+                  "Voice answers are sent to LeetLogic for transcription and deleted after processing.",
+                )
+              : a.ui(
+                  "Voice asks one question at a time and reads your answers back. English speech stays on your device.",
+                )}
           </Label>
         </Card>
       )}
@@ -443,44 +511,6 @@ export function Sell() {
             <Label muted style={listingStyles.help}>
               Describe freshness, variety and package size.
             </Label>
-            <Select
-              label="Selling unit *"
-              value={form.unitCode}
-              options={(r.data?.units || []).map((unit) => ({
-                value: unit.code,
-                label: a.unit(unit.code),
-              }))}
-              onChange={(value) =>
-                setForm((current) =>
-                  current.unitCode === value
-                    ? current
-                    : {
-                        ...current,
-                        unitCode: value,
-                        quantity: "",
-                        price: "",
-                        packaging: { ...emptyPacking },
-                      },
-                )
-              }
-            />
-            <Label muted style={listingStyles.help}>
-              {r.data?.units.find((unit) => unit.code === form.unitCode)?.allowsDecimal
-                ? "Decimals are allowed for this unit."
-                : "Whole units only. Enter the number of complete packs or pieces."}
-            </Label>
-            <Field
-              label={a.ui("Price per {unit} · NGN *", { unit: a.unit(form.unitCode) })}
-              value={form.price}
-              keyboardType="decimal-pad"
-              onChangeText={(value) => field("price", value)}
-            />
-            <Field
-              label="Available quantity *"
-              value={form.quantity}
-              keyboardType="decimal-pad"
-              onChangeText={(value) => field("quantity", value)}
-            />
           </Card>
           <Text style={listingStyles.section}>Location and delivery</Text>
           <Card style={{ borderRadius: 16 }}>
@@ -496,19 +526,6 @@ export function Sell() {
             </Label>
             {!address && <Button title="Farm location" secondary onPress={() => a.go("seller")} />}
           </Card>
-          <Confirmation
-            checked={!!form.packingAssistanceRequested}
-            onChange={() => field("packingAssistanceRequested", !form.packingAssistanceRequested)}
-            label="Ask our team to help with package measurements"
-          />
-          {form.packingAssistanceRequested ? (
-            <Notice text="Your listing will wait for our team to complete package measurements. Buyers cannot purchase it until then." />
-          ) : (
-            <PackingFieldsForm
-              value={form.packaging || emptyPacking}
-              onChange={(value) => field("packaging", value)}
-            />
-          )}
           <Label style={{ fontFamily: "NotoBold" }}>Delivery scope *</Label>
           {(
             [
@@ -557,10 +574,41 @@ export function Sell() {
             cold-chain orders need staff review.
           </Label>
         </>
+      ) : step === 3 ? (
+        <>
+          <ListingProgress step={3} label="Packaging and price" />
+          <Text style={listingStyles.title}>How do you sell this produce?</Text>
+          <Card>
+            <SalePackagingForm
+              form={form}
+              categorySlug={category?.slug || ""}
+              units={r.data?.units || []}
+              onChange={setForm}
+            />
+          </Card>
+          <Text style={listingStyles.section}>Delivery measurements</Text>
+          <Label muted>
+            These measurements describe one parcel for the courier. They do not change your selling
+            price or stock quantity.
+          </Label>
+          <Confirmation
+            checked={!!form.packingAssistanceRequested}
+            onChange={() => field("packingAssistanceRequested", !form.packingAssistanceRequested)}
+            label="Ask our team to help with package measurements"
+          />
+          {form.packingAssistanceRequested ? (
+            <Notice text="Your listing will wait for our team to complete package measurements. Buyers cannot purchase it until then." />
+          ) : (
+            <PackingFieldsForm
+              value={form.packaging || emptyPacking}
+              onChange={(value) => field("packaging", value)}
+            />
+          )}
+        </>
       ) : (
         <>
           <View style={s.between}>
-            <Label>{a.ui("Step {step} of 5", { step: 4 })}</Label>
+            <Label>{a.ui("Step {step} of 6", { step: 5 })}</Label>
             <View style={s.row}>
               <Text style={s.badge}>
                 {a.ui("{count} of 4 photos", { count: form.photos.length })}
@@ -754,7 +802,7 @@ export function Review() {
   if (submitted)
     return (
       <ListingPage
-        step={4}
+        step={5}
         complete
         onClose={() => a.reset("myListings")}
         footer={
@@ -801,10 +849,12 @@ export function Review() {
               <Text style={s.badge}>{a.status(submitted.status)}</Text>
             </View>
             <Label>
-              {form?.quantity} {a.unit(form?.unitCode || "")}
+              {form?.quantity} ×{" "}
+              {saleUnitLabel(form?.salePackaging, a.ui) || a.unit(form?.unitCode || "")}
             </Label>
             <Label style={{ fontFamily: "NotoBold" }}>
-              {form ? money(toMinor(form.price)) : ""} / {a.unit(form?.unitCode || "")}
+              {form ? money(toMinor(form.price)) : ""} per{" "}
+              {saleUnitLabel(form?.salePackaging, a.ui) || a.unit(form?.unitCode || "")}
             </Label>
           </View>
         </Card>
@@ -812,7 +862,7 @@ export function Review() {
     );
   return (
     <ListingPage
-      step={4}
+      step={5}
       onBack={busy ? undefined : () => a.go("sell", a.route.id)}
       onClose={() => {
         if (!busy) a.reset("myListings");
@@ -878,8 +928,15 @@ export function Review() {
           {[
             ["Produce", form.title],
             ...(categoryLabel ? [["Category", categoryLabel]] : []),
-            ["Quantity", `${form.quantity} ${a.unit(form.unitCode)}`],
-            ["Price", `${money(toMinor(form.price))} / ${a.unit(form.unitCode)}`],
+            [
+              "Quantity",
+              `${form.quantity} × ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`,
+            ],
+            ...(form.salePackaging ? [["Packaging", saleUnitLabel(form.salePackaging, a.ui)]] : []),
+            [
+              "Price",
+              `${money(toMinor(form.price))} per ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`,
+            ],
             [
               "Farm location",
               address
@@ -1099,7 +1156,7 @@ export function MyListings() {
             <Notice text="Packing assistance requested. Our team must complete package measurements before buyers can purchase." />
           )}
           <Label>
-            {money(i.unitPriceMinor)} / {a.unit(i.unitCode)}
+            {money(i.unitPriceMinor)} / {saleUnitLabel(i.salePackaging, a.ui) || a.unit(i.unitCode)}
           </Label>
           <ListingControls item={i} onUpdated={r.reload} />
         </Card>

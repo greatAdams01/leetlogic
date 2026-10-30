@@ -8,6 +8,10 @@ Native development/release builds are required: Expo Go does not contain the new
 
 ## Required fields
 
+The listing has six steps: Voice or Type, category, produce details, packaging and price, photos, and review. Guided Voice fills the category and details conversationally, then opens the packaging step to confirm how the produce is sold. Category-dependent package and size dropdowns include custom sizes and an Other / Custom option. Quantity counts the chosen selling units; the price is for one such unit. Changing the category or selling package clears incompatible price, stock, and parcel measurements.
+
+Commercial `salePackaging` describes the priced selling unit (for example, one 50 kg bag), independently of courier `packaging` measurements. Commercial details remain available when packing assistance is requested. No courier measurements are guessed. Monetary displays use thousands separators and exactly two decimal places; editable amounts preserve an unformatted decimal string and convert to integer kobo at the API boundary. Saved device drafts use `flowVersion: 2`; the former photos step is restored to its new position.
+
 | Field                | Requirement                                                                                     | Voice behavior                                                                          |
 | -------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Produce title        | 2–160 characters                                                                                | Ask what is being sold; read back the title                                             |
@@ -35,7 +39,7 @@ Package notes are optional. Package units permit at most three decimal places, m
 5. Ambiguous quantities (for example “one or two”), invalid catalogue entries, fractional pieces, excessive precision and out-of-range measurements do not advance the flow.
 6. Changing the selling unit invalidates quantity, price and packaging values so they must be confirmed again.
 7. Pause, backgrounding, permission loss, unavailable speech or recognition failure stop active speech/listening. Late results cannot update the draft. Confirmed answers survive resume/restart and switching to Type.
-8. Full measurements and assisted packing both reach photos and final review. Missing required nonpacking fields still block progression. Missing saved farm address requires profile setup; the app does not invent an address.
+8. Full measurements and assisted packing both reach the packaging confirmation step, then photos and final review. Missing required nonpacking fields still block progression. Missing saved farm address requires profile setup; the app does not invent an address.
 9. Assisted listings submit as PENDING_REVIEW with an explicit assistance flag. Staff cannot activate them; farmer resume, public discovery and buyer order creation also reject them, including incorrectly activated database records.
 10. Authorized catalog staff complete measurements through the standard admin action dialog, supply a reason and generate an audit record. Values must match the listing unit. Completion leaves the listing PENDING_REVIEW; publication remains a separate moderation action.
 11. Final review displays all normal listing fields, photos and packing-help status and offers spoken readback. Editing uses the existing draft editor and clears final confirmation. Submission requires the existing confirmation control and physical Submit listing button, approved farmer, valid fields and owned photos.

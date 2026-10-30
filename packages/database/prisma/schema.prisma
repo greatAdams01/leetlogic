@@ -503,6 +503,7 @@ model Unit {
 }
 
 model Listing {
+  salePackaging Json? @map("sale_packaging")
   packingAssistanceRequested Boolean @default(false) @map("packing_assistance_requested")
   packaging Json?
   id                String                 @id @default(uuid()) @db.Uuid

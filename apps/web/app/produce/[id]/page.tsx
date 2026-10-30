@@ -1,3 +1,5 @@
+import { formatMoney } from "../../../../../packages/contracts/src/money";
+import { saleUnitLabel } from "../../../../../packages/contracts/src/sale-packaging";
 import type { Metadata } from "next";
 import { cache } from "react";
 const read = cache(async (id: string) => {
@@ -78,12 +80,8 @@ export default async function SharedProduce({ params }: { params: Promise<{ id: 
           </div>
           <p>{item.description}</p>
           <p>
-            <strong>
-              {new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(
-                Number(item.unitPriceMinor) / 100,
-              )}
-            </strong>{" "}
-            / {item.unitCode.toLowerCase()}
+            <strong>{formatMoney(item.unitPriceMinor)}</strong> per{" "}
+            {saleUnitLabel(item.salePackaging) || item.unitCode.toLowerCase()}
           </p>
           <p>
             View this produce in the LeetLogic app to choose a quantity and arrange delivery. Stock,

@@ -1,5 +1,10 @@
 import { quantity, toMinor } from "./domain";
 import {
+  salePackagingSchema,
+  minimumPackedWeight,
+  type SalePackaging,
+} from "../../../../packages/contracts/src/sale-packaging";
+import {
   emptyPacking,
   packingFields,
   packingValue,
@@ -8,6 +13,7 @@ import {
 } from "./packaging";
 export type ListingPhoto = { id: string; uri?: string };
 export type ListingForm = {
+  salePackaging?: SalePackaging;
   packaging?: PackingFields;
   packingAssistanceRequested?: boolean;
   inputMethod?: "type" | "voice";
@@ -61,10 +67,18 @@ export function restoreListing(input: any): ListingForm {
       .slice(0, 4),
   };
 }
-export function listingDetailsError(form: ListingForm, units: ListingUnit[]): string {
+export function listingDescriptionError(form: ListingForm): string {
   if (form.title.trim().length < 2) return "Enter a product title with at least two characters.";
   if (!form.description.trim()) return "Describe your produce before continuing.";
   if (form.description.length > 5000) return "Keep the description within 5,000 characters.";
+  if (!form.addressId) return "Complete your farm address before listing produce.";
+  return "";
+}
+export function listingDetailsError(form: ListingForm, units: ListingUnit[]): string {
+  const descriptionError = listingDescriptionError(form);
+  if (descriptionError) return descriptionError;
+  if (form.salePackaging && !salePackagingSchema.safeParse(form.salePackaging).success)
+    return "Choose a packaging type and enter a valid package size.";
   const unit = units.find((item) => item.code === form.unitCode);
   if (!unit) return "Choose a selling unit.";
   try {
@@ -79,15 +93,17 @@ export function listingDetailsError(form: ListingForm, units: ListingUnit[]): st
   } catch {
     return "Enter a price in naira with at most two decimal places.";
   }
-  if (!form.addressId) return "Complete your farm address before listing produce.";
   if (form.packingAssistanceRequested) return "";
   const packing = packingError(form.packaging);
   if (packing) return packing;
   if (!unit.allowsDecimal && !Number.isInteger(Number(form.packaging?.unitsPerPackage)))
     return "Enter whole selling units in each package.";
   if (
-    form.unitCode === "KG" &&
-    Number(form.packaging?.weightKg) < Number(form.packaging?.unitsPerPackage)
+    Number(form.packaging?.weightKg) <
+    Math.max(
+      form.unitCode === "KG" ? Number(form.packaging?.unitsPerPackage) : 0,
+      minimumPackedWeight(form.salePackaging, Number(form.packaging?.unitsPerPackage)),
+    )
   )
     return "Packed weight must include the produce weight and its packaging.";
   return "";
@@ -103,6 +119,7 @@ export function listingPayload(form: ListingForm, locale: string) {
     addressId: form.addressId,
     sourceLocale: form.inputMethod === "voice" ? "en" : locale,
     shippingScope: form.shippingScope,
+    ...(form.salePackaging ? { salePackaging: salePackagingSchema.parse(form.salePackaging) } : {}),
     packingAssistanceRequested: !!form.packingAssistanceRequested,
     ...(form.packingAssistanceRequested
       ? {}

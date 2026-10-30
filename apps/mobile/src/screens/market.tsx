@@ -1,3 +1,4 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { ReservationTimer } from "../components/reservation-timer";
 import { ProductActions } from "../components/product-actions";
 import { BuyerSearch } from "../components/buyer-search";
@@ -404,7 +405,7 @@ export function Product() {
               <Label muted style={{ flex: 1, textAlign: "right" }}>
                 {a.ui("{quantity} {unit} available", {
                   quantity: available,
-                  unit: a.unit(item.unitCode),
+                  unit: (saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode)),
                 })}
               </Label>
             </View>
@@ -417,7 +418,7 @@ export function Product() {
               }}
             >
               <Label>
-                {money(item.unitPriceMinor)} / {a.unit(item.unitCode)}
+                {money(item.unitPriceMinor)} / {(saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode))}
               </Label>
               {item.packaging && (
                 <Label style={{ color: colors.green }}>
@@ -438,7 +439,7 @@ export function Product() {
               <View style={{ flex: 1 }}>
                 <Label>Order quantity</Label>
                 <Label muted style={{ fontSize: 12 }}>
-                  {a.unit(item.unitCode)}
+                  {(saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode))}
                 </Label>
               </View>
               <Pressable
@@ -672,7 +673,7 @@ export function Orders() {
             {checkout && <ReservationTimer expiresAt={i.reservationExpiresAt} />}
             <View style={{ gap: 3 }}>
               <Label style={{ fontFamily: "NotoBold", fontSize: 20 }}>{i.listing.title}</Label>
-              <Label muted>{i.quantity || 1} {a.unit(i.listing.unitCode || "UNIT")}</Label>
+              <Label muted>{i.quantity || 1} {(saleUnitLabel(i.listing.salePackaging, a.ui) || a.unit(i.listing.unitCode || "UNIT"))}</Label>
             </View>
             <View style={s.between}>
               <View><Label muted style={s.small}>Produce</Label><Label style={{ fontSize: 22, color: "#6b4a2f", fontFamily: "NotoBold" }}>{money(i.totalMinor)}</Label></View>

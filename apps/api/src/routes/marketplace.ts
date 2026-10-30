@@ -23,6 +23,7 @@ export const publicListing = {
   categoryId: true,
   shippingScope: true,
   packaging: true,
+  salePackaging: true,
   packingAssistanceRequested: true,
   farmerProfile: { select: { farmName: true, verificationStatus: true } },
   locationAddress: { select: { state: true, city: true, lga: true } },

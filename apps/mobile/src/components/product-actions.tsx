@@ -1,3 +1,4 @@
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React, { useState } from "react";
 import { Linking, Pressable, Share, View } from "react-native";
 import { useApp } from "../state";
@@ -24,7 +25,7 @@ export function ProductActions({
     const base =
       process.env.EXPO_PUBLIC_WEB_URL ||
       (__DEV__ ? API_URL.replace(/:3000$/, ":3001") : "https://leetlogicglobal.netlify.app");
-    return `${item.title}\n${money(item.unitPriceMinor)} / ${a.unit(item.unitCode)}\n${item.farmerProfile.farmName}\n${productShareUrl(base, item.id)}`;
+    return `${item.title}\n${money(item.unitPriceMinor)} / ${saleUnitLabel(item.salePackaging, a.ui) || a.unit(item.unitCode)}\n${item.farmerProfile.farmName}\n${productShareUrl(base, item.id)}`;
   };
   const share = async (whatsapp: boolean) => {
     setError("");

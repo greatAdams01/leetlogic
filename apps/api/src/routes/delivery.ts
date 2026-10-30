@@ -176,7 +176,7 @@ customerDeliveryRouter.get("/", async (req, res) => {
       totalMinor: true,
       reservationExpiresAt: true,
       quantity: true,
-      listing: { select: { title: true, unitCode: true } },
+      listing: { select: { title: true, unitCode: true, salePackaging: true } },
       delivery: { select: { status: true, shippingMinor: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -365,6 +365,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           totalMinor: order.totalMinor,
           quantity: order.quantity,
           unitCode: order.listing.unitCode,
+          salePackaging: order.listing.salePackaging,
           packageSuggestion: packageSuggestion(
             order.packagingSnapshot ?? order.listing.packaging,
             order.quantity,

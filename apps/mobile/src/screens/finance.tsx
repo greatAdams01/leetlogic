@@ -1,3 +1,4 @@
+import { MoneyField } from "../components/money-field";
 import { AppSheet } from "../components/app-sheet";
 import React, { useState, useRef, useEffect } from "react";
 import { Linking, AppState, ScrollView, AccessibilityInfo } from "react-native";
@@ -346,12 +347,11 @@ export function Finance() {
                       onChange={setDestination}
                       disabled={busy}
                     />
-                    <Field
+                    <MoneyField
                       label="Amount to receive (NGN)"
                       editable={!busy}
                       value={amount}
                       onChangeText={setAmount}
-                      keyboardType="decimal-pad"
                     />
                     <Button
                       title="Use full amount"
