@@ -9,6 +9,9 @@ import {
 export type ListingPhoto = { id: string; uri?: string };
 export type ListingForm = {
   packaging?: PackingFields;
+  packingAssistanceRequested?: boolean;
+  inputMethod?: "type" | "voice";
+  voiceCursor?: string;
   title: string;
   description: string;
   categoryId: string;
@@ -44,6 +47,7 @@ export function restoreListing(input: any): ListingForm {
   return {
     ...emptyListing,
     ...input,
+    inputMethod: input.inputMethod === "voice" ? "voice" : "type",
     price,
     packaging: packingFields(input.packaging),
     photos: photos
@@ -70,6 +74,7 @@ export function listingDetailsError(form: ListingForm, units: ListingUnit[]): st
     return "Enter a price in naira with at most two decimal places.";
   }
   if (!form.addressId) return "Complete your farm address before listing produce.";
+  if (form.packingAssistanceRequested) return "";
   const packing = packingError(form.packaging);
   if (packing) return packing;
   if (!unit.allowsDecimal && !Number.isInteger(Number(form.packaging?.unitsPerPackage)))
@@ -90,9 +95,12 @@ export function listingPayload(form: ListingForm, locale: string) {
     quantity: quantity(form.quantity),
     unitPriceMinor: toMinor(form.price),
     addressId: form.addressId,
-    sourceLocale: locale,
+    sourceLocale: form.inputMethod === "voice" ? "en" : locale,
     shippingScope: form.shippingScope,
-    packaging: packingValue(form.packaging || emptyPacking),
+    packingAssistanceRequested: !!form.packingAssistanceRequested,
+    ...(form.packingAssistanceRequested
+      ? {}
+      : { packaging: packingValue(form.packaging || emptyPacking) }),
     photoIds: form.photos.map((photo) => photo.id),
     photoId: form.photos[0]?.id,
   };

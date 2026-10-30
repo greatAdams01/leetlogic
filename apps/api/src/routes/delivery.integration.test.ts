@@ -1096,14 +1096,20 @@ suite("delivery and language database workflows", () => {
       }
     }
   });
-  it("keeps voice gated and requires explicit confirmation for owned typed drafts", async () => {
+  it("declares device-checked English voice support and requires explicit confirmation for owned drafts", async () => {
     expect(
       (
         await request(app)
           .get("/v1/listing-drafts/capabilities")
           .set({ Authorization: `Bearer ${seller}` })
-      ).body.voice.enabled,
-    ).toBe(false);
+      ).body.voice,
+    ).toMatchObject({
+      enabled: true,
+      mode: "GUIDED_ON_DEVICE",
+      locales: ["en"],
+      requiresDeviceCapabilityCheck: true,
+      cloudFallback: false,
+    });
     const photo = await prisma.producePhoto.create({
       data: {
         userId: verifyAccessToken(seller, "customer").sub,
@@ -1166,6 +1172,127 @@ suite("delivery and language database workflows", () => {
           .send({ confirmed: true })
       ).body.listing.id,
     ).toBe(submit.body.listing.id);
+  });
+  it("keeps assisted packing off sale until authorized staff complete and audit the measurements", async () => {
+    const sellerAuth = { Authorization: `Bearer ${seller}` };
+    const photo = await prisma.producePhoto.create({
+      data: {
+        userId: verifyAccessToken(seller, "customer").sub,
+        mimeType: "image/jpeg",
+        checksum: "e".repeat(64),
+        storageKey: `test/${randomUUID()}`,
+      },
+    });
+    const draft = await request(app)
+      .post("/v1/listing-drafts")
+      .set(sellerAuth)
+      .send({
+        title: "Assisted yam",
+        description: "Freshly harvested yam",
+        sourceLocale: "en",
+        categoryId,
+        unitCode: "KG",
+        quantity: "20",
+        unitPriceMinor: "50000",
+        addressId,
+        photoIds: [photo.id],
+        packingAssistanceRequested: true,
+      });
+    expect(draft.status).toBe(201);
+    const submitted = await request(app)
+      .post(`/v1/listing-drafts/${draft.body.id}/submit`)
+      .set(sellerAuth)
+      .send({ confirmed: true });
+    expect(submitted.status).toBe(201);
+    const listing = submitted.body.listing;
+    expect(listing).toMatchObject({
+      status: "PENDING_REVIEW",
+      packingAssistanceRequested: true,
+      packaging: null,
+    });
+    const base = `/v1/admin/listings/${listing.id}`;
+    expect(
+      (
+        await request(app)
+          .post(`${base}/status`)
+          .set(admin())
+          .send({ status: "ACTIVE", reason: "Ready for purchase" })
+      ).body.error.code,
+    ).toBe("PACKING_ASSISTANCE_PENDING");
+    // Even an incorrectly activated record cannot be bought, discovered or resumed by the seller.
+    await prisma.listing.update({ where: { id: listing.id }, data: { status: "ACTIVE" } });
+    expect(
+      (
+        await request(app)
+          .post("/v1/marketplace/orders")
+          .set(customer())
+          .set("Idempotency-Key", randomUUID())
+          .send({ listingId: listing.id, quantity: "1" })
+      ).body.error.code,
+    ).toBe("INVENTORY_UNAVAILABLE");
+    expect((await request(app).get(`/v1/marketplace/listings/${listing.id}`)).status).toBe(404);
+    await prisma.listing.update({ where: { id: listing.id }, data: { status: "PAUSED" } });
+    expect(
+      (
+        await request(app)
+          .patch(`/v1/marketplace/my-listings/${listing.id}/inventory`)
+          .set(sellerAuth)
+          .send({ status: "ACTIVE" })
+      ).body.error.code,
+    ).toBe("PACKING_ASSISTANCE_PENDING");
+    await prisma.listing.update({ where: { id: listing.id }, data: { status: "PENDING_REVIEW" } });
+    const completion = {
+      reason: "Measured with the farmer",
+      packaging: {
+        unitsPerPackage: 2,
+        weightKg: 3,
+        length: 40,
+        width: 30,
+        height: 20,
+        handling: "STANDARD",
+        notes: "Keep dry",
+      },
+    };
+    expect(
+      (await request(app).patch(`${base}/packaging`).set(sellerAuth).send(completion)).status,
+    ).toBe(401);
+    expect(
+      (
+        await request(app)
+          .patch(`${base}/packaging`)
+          .set(admin())
+          .send({ ...completion, packaging: { ...completion.packaging, weightKg: 1 } })
+      ).status,
+    ).toBe(422);
+    const completed = await request(app).patch(`${base}/packaging`).set(admin()).send(completion);
+    expect(completed.status).toBe(200);
+    expect(completed.body).toMatchObject({
+      status: "PENDING_REVIEW",
+      packingAssistanceRequested: false,
+      packaging: completion.packaging,
+    });
+    expect(
+      await prisma.auditLog.count({
+        where: { entityId: listing.id, action: "listing.packaging.completed" },
+      }),
+    ).toBe(1);
+    expect(
+      (
+        await request(app)
+          .post(`${base}/status`)
+          .set(admin())
+          .send({ status: "ACTIVE", reason: "Measurements and listing verified" })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post("/v1/marketplace/orders")
+          .set(customer())
+          .set("Idempotency-Key", randomUUID())
+          .send({ listingId: listing.id, quantity: "1" })
+      ).status,
+    ).toBe(201);
   });
   it("keeps photo ownership, cover order, whole-unit quantities and moderation authoritative", async () => {
     const sellerAuth = { Authorization: `Bearer ${seller}` };
@@ -1660,7 +1787,11 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .patch(path)
           .set({ Authorization: `Bearer ${seller}` })
-          .send({ ...fields, title: "Updated beans" })
+          .send({
+            ...fields,
+            title: "Updated beans",
+            description: "Dry beans harvested this season",
+          })
       ).status,
     ).toBe(200);
     const submitted = await request(app)

@@ -1,3 +1,4 @@
+import { packagingSchema } from "@leetlogic/contracts";
 import { queueBooking } from "./delivery.js";
 import { Router } from "express";
 import { z } from "zod";
@@ -276,6 +277,12 @@ operationsRouter.post(
         where: { id: listingId },
         include: { farmerProfile: true },
       });
+      if (body.status === "ACTIVE" && listing.packingAssistanceRequested)
+        throw new AppError(
+          409,
+          "PACKING_ASSISTANCE_PENDING",
+          "Complete package measurements before approving this listing",
+        );
       if (body.status === "ACTIVE" && listing.farmerProfile.verificationStatus !== "APPROVED")
         throw new AppError(409, "SELLER_UNVERIFIED", "Only verified farmers can publish listings");
       if (
@@ -1172,3 +1179,56 @@ operationsRouter.get("/lookups", async (req, res) => {
     });
   }
 });
+
+// Complete assisted packing separately from moderation; this never publishes a listing.
+operationsRouter.patch(
+  "/listings/:id/packaging",
+  requirePermission("catalog.manage"),
+  async (req, res) => {
+    const body = reasonSchema.extend({ packaging: packagingSchema }).parse(req.body);
+    const listingId = id.parse(req.params.id);
+    const item = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM listings WHERE id = ${listingId}::uuid FOR UPDATE`;
+      const listing = await tx.listing.findUniqueOrThrow({
+        where: { id: listingId },
+        include: { unit: true },
+      });
+      if (
+        listing.deletedAt ||
+        !listing.packingAssistanceRequested ||
+        listing.status !== "PENDING_REVIEW"
+      )
+        throw new AppError(
+          409,
+          "INVALID_TRANSITION",
+          "This listing is not waiting for packing assistance",
+        );
+      if (
+        (!listing.unit.allowsDecimal && !Number.isInteger(body.packaging.unitsPerPackage)) ||
+        (listing.unitCode === "KG" && body.packaging.weightKg < body.packaging.unitsPerPackage)
+      )
+        throw new AppError(
+          422,
+          "INVALID_PACKING",
+          "Package units and weight must match the selling unit",
+        );
+      const updated = await tx.listing.update({
+        where: { id: listingId },
+        data: { packaging: body.packaging, packingAssistanceRequested: false },
+      });
+      await audit(
+        req,
+        {
+          action: "listing.packaging.completed",
+          entityType: "listing",
+          entityId: listingId,
+          before: { packaging: listing.packaging, packingAssistanceRequested: true },
+          after: body,
+        },
+        tx,
+      );
+      return updated;
+    });
+    res.json(json(item));
+  },
+);

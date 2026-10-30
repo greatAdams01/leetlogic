@@ -31,6 +31,7 @@ export const safeHttps = (url: string) => {
 };
 import type { Packaging } from "../../../../packages/contracts/src/packaging";
 export type Listing = {
+  packingAssistanceRequested?: boolean;
   packaging?: Packaging | null;
   distanceKm?: number;
   unit?: { name: string; allowsDecimal: boolean };

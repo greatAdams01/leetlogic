@@ -23,6 +23,7 @@ export const publicListing = {
   categoryId: true,
   shippingScope: true,
   packaging: true,
+  packingAssistanceRequested: true,
   farmerProfile: { select: { farmName: true, verificationStatus: true } },
   locationAddress: { select: { state: true, city: true, lga: true } },
   media: {
@@ -44,6 +45,7 @@ marketplaceRouter.get("/categories", async (_req, res) =>
               listings: {
                 where: {
                   status: "ACTIVE",
+                  packingAssistanceRequested: false,
                   deletedAt: null,
                   farmerProfile: { verificationStatus: "APPROVED" },
                 },
@@ -53,6 +55,7 @@ marketplaceRouter.get("/categories", async (_req, res) =>
           listings: {
             where: {
               status: "ACTIVE",
+              packingAssistanceRequested: false,
               deletedAt: null,
               farmerProfile: { verificationStatus: "APPROVED" },
             },
@@ -116,7 +119,7 @@ marketplaceRouter.get("/listings", async (req, res) => {
           )))) AS distance
         FROM listings l JOIN addresses a ON a.id = l.location_address_id
         JOIN farmer_profiles f ON f.id = l.farmer_profile_id
-        WHERE l.status = 'ACTIVE' AND l.deleted_at IS NULL AND f.verification_status = 'APPROVED'
+        WHERE l.status = 'ACTIVE' AND l.packing_assistance_requested = false AND l.deleted_at IS NULL AND f.verification_status = 'APPROVED'
           AND a.deleted_at IS NULL AND a.latitude IS NOT NULL AND a.longitude IS NOT NULL
           AND a.latitude BETWEEN -90 AND 90 AND a.longitude BETWEEN -180 AND 180
           ${q.maxPriceMinor ? Prisma.sql`AND l.unit_price_minor <= ${BigInt(q.maxPriceMinor)}` : Prisma.empty}
@@ -131,6 +134,7 @@ marketplaceRouter.get("/listings", async (req, res) => {
       where: {
         id: { in: ranked.map((row) => row.id) },
         status: "ACTIVE",
+        packingAssistanceRequested: false,
         deletedAt: null,
         farmerProfile: { verificationStatus: "APPROVED" },
       },
@@ -150,6 +154,7 @@ marketplaceRouter.get("/listings", async (req, res) => {
   const items = await prisma.listing.findMany({
     where: {
       status: "ACTIVE",
+      packingAssistanceRequested: false,
       deletedAt: null,
       farmerProfile: { verificationStatus: "APPROVED" },
       ...(q.categoryId ? { categoryId: q.categoryId } : {}),
@@ -183,6 +188,7 @@ marketplaceRouter.get("/listings/:id", async (req, res) => {
     where: {
       id: uuid.parse(req.params.id),
       status: "ACTIVE",
+      packingAssistanceRequested: false,
       deletedAt: null,
       farmerProfile: { verificationStatus: "APPROVED" },
     },
@@ -260,6 +266,12 @@ marketplaceRouter.patch("/my-listings/:id/inventory", async (req, res) => {
       (current.status === "SOLD_OUT" && stock.gt(current.reservedQuantity)
         ? "ACTIVE"
         : current.status);
+    if (status === "ACTIVE" && current.packingAssistanceRequested)
+      throw new AppError(
+        409,
+        "PACKING_ASSISTANCE_PENDING",
+        "Our team must complete package measurements before this listing can be active.",
+      );
     const updated = await tx.listing.update({
       where: { id },
       data: { availableQuantity: stock, status },

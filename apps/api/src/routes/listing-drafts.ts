@@ -10,6 +10,7 @@ export const listingDraftRouter = Router();
 listingDraftRouter.use(requireAuth("customer"));
 export const draftSchema = z.object({
   packaging: packagingSchema.optional(),
+  packingAssistanceRequested: z.boolean().default(false),
   title: z.string().trim().min(2).max(160),
   description: z.string().trim().max(5000),
   sourceLocale: z.enum(["en", "pcm", "ig", "ha", "yo"]),
@@ -32,10 +33,11 @@ export const draftSchema = z.object({
 listingDraftRouter.get("/capabilities", (_req, res) =>
   res.json({
     voice: {
-      enabled: false,
-      reason: "FREE_IGBO_SPEECH_PROVIDER_NOT_VALIDATED",
-      requiredRecordings: 50,
-      requiredNumericAccuracy: 0.95,
+      enabled: true,
+      mode: "GUIDED_ON_DEVICE",
+      locales: ["en"],
+      requiresDeviceCapabilityCheck: true,
+      cloudFallback: false,
     },
     typedEntry: true,
   }),
@@ -131,6 +133,8 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
     if (!draft) throw new AppError(404, "DRAFT_NOT_FOUND", "Draft not found");
     if (draft.listingId) return tx.listing.findUniqueOrThrow({ where: { id: draft.listingId } });
     const body = draftSchema.parse(draft.fields);
+    if (!body.description.trim())
+      throw new AppError(422, "DESCRIPTION_REQUIRED", "Describe your produce before submitting.");
     const farmer = await tx.farmerProfile.findUnique({ where: { userId: req.auth!.sub } });
     if (farmer?.verificationStatus !== "APPROVED")
       throw new AppError(
@@ -168,7 +172,7 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         "PACKED_WEIGHT_TOO_LOW",
         "Packed weight must include the produce weight and its packaging.",
       );
-    if (!body.packaging)
+    if (!body.packaging && !body.packingAssistanceRequested)
       throw new AppError(
         422,
         "PACKING_REQUIRED",
@@ -198,7 +202,10 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
         unitPriceMinor: BigInt(body.unitPriceMinor),
         availableQuantity: body.quantity,
         shippingScope: body.shippingScope,
-        ...(body.packaging ? { packaging: body.packaging } : {}),
+        packingAssistanceRequested: body.packingAssistanceRequested,
+        ...(!body.packingAssistanceRequested && body.packaging
+          ? { packaging: body.packaging }
+          : {}),
         status: "PENDING_REVIEW",
       },
     });

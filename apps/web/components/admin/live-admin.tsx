@@ -189,6 +189,7 @@ function Fields({ fields, values = {} }: { fields: Field[]; values?: Row }) {
               type={field.type === "optional" ? "text" : field.type || "text"}
               defaultValue={values[field.name] ?? field.value ?? ""}
               required={field.type !== "optional"}
+              step={field.type === "number" ? "any" : undefined}
               maxLength={field.type === "password" ? 128 : 500}
             />
           )}
@@ -489,10 +490,16 @@ function Workspace({ route, title }: { route: string; title: string }) {
     try {
       if (action.stepUp)
         await api("auth/totp/step-up", "POST", { code: new FormData(form).get("stepUpCode") });
-      await api(action.path, action.method || "POST", {
-        ...values(form, action.fields),
-        ...action.extra,
-      });
+      const entered = values(form, action.fields);
+      const payload = action.path.endsWith("/packaging")
+        ? {
+            reason: entered.reason,
+            packaging: Object.fromEntries(
+              Object.entries(entered).filter(([key]) => key !== "reason"),
+            ),
+          }
+        : { ...entered, ...action.extra };
+      await api(action.path, action.method || "POST", payload);
       setNotice(`${action.label} completed.`);
       setAction(undefined);
       await load();
@@ -993,6 +1000,31 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   record={selected}
                   busy={busy}
                   canDecide={!!can("catalog.manage")}
+                  onCompletePacking={() =>
+                    open(
+                      "Complete package measurements",
+                      `listings/${selected.id}/packaging`,
+                      [
+                        {
+                          name: "unitsPerPackage",
+                          label: "Selling units per package",
+                          type: "number",
+                        },
+                        { name: "weightKg", label: "Total packed weight (kg)", type: "number" },
+                        { name: "length", label: "Length (cm)", type: "number" },
+                        { name: "width", label: "Width (cm)", type: "number" },
+                        { name: "height", label: "Height (cm)", type: "number" },
+                        {
+                          name: "handling",
+                          label: "Handling",
+                          options: ["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"],
+                        },
+                        { name: "notes", label: "Packing notes", type: "optional" },
+                        reason,
+                      ],
+                      { method: "PATCH" },
+                    )
+                  }
                   onStatus={(status) =>
                     open(
                       `${status === "ACTIVE" ? "Approve" : status === "REJECTED" ? "Reject" : status === "PAUSED" ? "Pause" : "Archive"} listing`,

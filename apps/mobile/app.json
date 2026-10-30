@@ -13,7 +13,7 @@
         "NSCameraUsageDescription": "Take a photo of the produce you want to list.",
         "NSPhotoLibraryUsageDescription": "Choose a photo of your produce.",
         "NSLocationWhenInUseUsageDescription": "Use your location to find nearby farmers and confirm your farm pickup point.",
-        "NSMicrophoneUsageDescription": "Record a private voice note for your produce listing."
+        "NSMicrophoneUsageDescription": "Answer guided produce listing questions using your microphone."
       }
     },
     "android": {
@@ -70,7 +70,17 @@
           "faceIDPermission": "Use Face ID to unlock your LeetLogic farmer account."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Answer guided produce listing questions using your microphone.",
+          "speechRecognitionPermission": "Transcribe guided listing answers on your device.",
+          "androidSpeechServicePackages": [
+            "com.google.android.as"
+          ]
+        }
+      ]
     ]
   }
 }

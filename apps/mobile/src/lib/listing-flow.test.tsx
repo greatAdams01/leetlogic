@@ -70,7 +70,10 @@ vi.mock("./listing-art", () => ({ listingCategories: { vegetables: "Vegetables" 
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
 vi.mock("../screens/market", () => ({ ListingPhoto: "ListingPhoto" }));
 vi.mock("../components/seller-listing-controls", () => ({ ListingControls: "ListingControls" }));
-vi.mock("../components/listing-voice-note", () => ({ ListingVoiceNote: "ListingVoiceNote" }));
+vi.mock("../components/guided-listing", () => ({
+  GuidedListing: "GuidedListing",
+  ReadListingAloud: "ReadListingAloud",
+}));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
 vi.mock("../components/feedback", () => ({ Confirmation: "Confirmation" }));
 vi.mock("../components/app-sheet", async () => {
@@ -149,6 +152,7 @@ describe("seller listing wizard", () => {
     });
     expect(nodes("Field")).toHaveLength(0);
     expect(button("Continue").props.disabled).toBe(true);
+    await act(async () => button("Type my listing").props.onPress());
     const category = nodes("Pressable").find((n) => n.props.accessibilityRole === "radio")!;
     await act(async () => category.props.onPress());
     await act(async () => button("Continue").props.onPress());
@@ -255,13 +259,13 @@ describe("seller listing wizard", () => {
       renderer = create(<Sell />);
     });
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
-    expect(nodes("ListingVoiceNote")[0]!.props.draftId).toBe("draft");
-    await act(async () => nodes("ListingVoiceNote")[0]!.props.onActivityChange(true));
+    expect(nodes("GuidedListing")[0]!.props.form.title).toBe("Tomatoes");
+    await act(async () => nodes("GuidedListing")[0]!.props.onActivityChange(true));
     expect(button("Continue to photos").props.disabled).toBe(true);
     expect(nodes("ListingPage")[0]!.props.onBack).toBeUndefined();
     await act(async () => button("Continue to photos").props.onPress());
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
-    await act(async () => nodes("ListingVoiceNote")[0]!.props.onActivityChange(false));
+    await act(async () => nodes("GuidedListing")[0]!.props.onActivityChange(false));
     expect(button("Continue to photos").props.disabled).toBe(false);
   });
   it("keeps the voice draft on the device when a new listing reaches review", async () => {
@@ -320,6 +324,7 @@ it("uses the admin catalogue order and supports categories outside the bundled e
     await act(async () => {
       renderer = create(<Sell />);
     });
+    await act(async () => button("Type my listing").props.onPress());
     const radios = nodes("Pressable").filter((node) => node.props.accessibilityRole === "radio");
     expect(radios.map((node) => node.props.accessibilityLabel)).toEqual([
       "Seasonal crops",
@@ -332,16 +337,19 @@ it("uses the admin catalogue order and supports categories outside the bundled e
   }
 });
 
-it("moves from the voice-note helper to the real description field without altering the draft", async () => {
-  h.get.mockResolvedValue(JSON.stringify({ ...valid, price: "12.34", step: 2 }));
+it("switches from guided voice to typing without losing confirmed draft answers", async () => {
+  h.get.mockResolvedValue(
+    JSON.stringify({ ...valid, inputMethod: "voice", price: "12.34", step: 2 }),
+  );
   await act(async () => {
     renderer = create(<Sell />);
   });
-  const description = nodes("Field").find((node) => node.props.label === "Description *")!;
-  const focus = vi.fn();
-  description.props.inputRef.current = { focus };
-  await act(async () => nodes("ListingVoiceNote")[0]!.props.onTypeInstead());
-  expect(focus).toHaveBeenCalledTimes(1);
-  expect(description.props.value).toBe("Fresh harvest");
+  await act(async () => button("Continue guided voice").props.onPress());
+  expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
+  await act(async () => nodes("GuidedListing")[0]!.props.onClose());
+  expect(nodes("GuidedListing")[0]!.props.visible).toBe(false);
+  expect(nodes("Field").find((node) => node.props.label === "Description *")!.props.value).toBe(
+    "Fresh harvest",
+  );
   expect(nodes("ListingPage")[0]!.props.step).toBe(2);
 });

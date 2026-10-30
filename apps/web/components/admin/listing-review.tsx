@@ -173,11 +173,13 @@ export function ListingReview({
   canDecide,
   busy,
   onStatus,
+  onCompletePacking,
 }: {
   record: Row;
   canDecide: boolean;
   busy: boolean;
   onStatus: (status: string) => void;
+  onCompletePacking?: () => void;
 }) {
   const farm = record.farmerProfile || {},
     user = farm.user || {},
@@ -240,6 +242,20 @@ export function ListingReview({
               ] || record.sourceLocale}
             </Fact>
           </dl>
+          {record.packingAssistanceRequested && (
+            <section className="listing-section">
+              <h3>Package measurements needed</h3>
+              <p>
+                The farmer requested packing help. Confirm the measurements with the farmer before
+                completing this form. Purchases and publication are blocked until this is completed.
+              </p>
+              {canDecide && record.status === "PENDING_REVIEW" && (
+                <button type="button" disabled={busy} onClick={onCompletePacking}>
+                  Complete package measurements
+                </button>
+              )}
+            </section>
+          )}
           {record.packaging && (
             <>
               <h4>Packing & handling</h4>
@@ -309,7 +325,11 @@ export function ListingReview({
         {canDecide && editable && (
           <div className="live-actions">
             {record.status !== "ACTIVE" && (
-              <button type="button" disabled={busy || !approved} onClick={() => onStatus("ACTIVE")}>
+              <button
+                type="button"
+                disabled={busy || !approved || !!record.packingAssistanceRequested}
+                onClick={() => onStatus("ACTIVE")}
+              >
                 {record.status === "PENDING_REVIEW" ? "Approve listing" : "Publish listing"}
               </button>
             )}

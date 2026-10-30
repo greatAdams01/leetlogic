@@ -1,6 +1,7 @@
 import { PackingFieldsForm } from "../components/packing-fields";
-import { emptyPacking, packingError } from "../lib/packaging";
-import { ListingVoiceNote } from "../components/listing-voice-note";
+import { emptyPacking } from "../lib/packaging";
+import { GuidedListing, ReadListingAloud } from "../components/guided-listing";
+import { listingReadback } from "../lib/guided-listing";
 import { AppSheet } from "../components/app-sheet";
 import { Select } from "../components/Select";
 import { ListingPage, ListingProgress } from "../components/listing-layout";
@@ -46,6 +47,7 @@ export function Sell() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [guided, setGuided] = useState(false);
   const descriptionInput = useRef<TextInput>(null);
   const voiceActive = useRef(false);
   const voiceActivity = (active: boolean) => {
@@ -222,7 +224,12 @@ export function Sell() {
           await AsyncStorage.removeItem(voiceKey);
         }
       }
-      await AsyncStorage.removeItem(storage);
+      await AsyncStorage.setItem(
+        `listing-draft:${a.user!.id}:${draft.id}`,
+        JSON.stringify({ ...form, step: 3 }),
+      );
+      if (storage !== `listing-draft:${a.user!.id}:${draft.id}`)
+        await AsyncStorage.removeItem(storage);
       a.go("review", draft.id);
     } catch (e) {
       setError(a.error(e));
@@ -262,6 +269,7 @@ export function Sell() {
               !ready ||
               r.loading ||
               !!r.error ||
+              !form.inputMethod ||
               !category ||
               (step === 3 && !form.photos.length)
             }
@@ -273,7 +281,62 @@ export function Sell() {
       }
     >
       {r.error && <Notice text={r.error} error />}
-      {step === 1 ? (
+      {ready && !form.inputMethod && (
+        <Card>
+          <Label>How would you like to create your listing?</Label>
+          <Button title="Type my listing" onPress={() => field("inputMethod", "type")} />
+          <Button
+            title="Use guided voice · English"
+            secondary
+            disabled={!r.data}
+            onPress={() => {
+              field("inputMethod", "voice");
+              setGuided(true);
+            }}
+          />
+          <Label>
+            Voice asks one question at a time and reads your answers back. English speech stays on
+            your device.
+          </Label>
+        </Card>
+      )}
+      {ready && form.inputMethod && (
+        <Button
+          title={form.inputMethod === "voice" ? "Continue guided voice" : "Switch to guided voice"}
+          secondary
+          disabled={busy}
+          onPress={() => {
+            field("inputMethod", "voice");
+            setGuided(true);
+          }}
+        />
+      )}
+      {r.data && (
+        <GuidedListing
+          visible={guided}
+          form={form}
+          catalogue={r.data}
+          onChange={async (nextForm) => {
+            clearTimeout(timer.current);
+            try {
+              await saveLocal(nextForm);
+              setForm(nextForm);
+            } catch {
+              throw new Error(a.ui("Could not save this draft on your device."));
+            }
+          }}
+          onActivityChange={voiceActivity}
+          onClose={() => {
+            setGuided(false);
+            field("inputMethod", "type");
+          }}
+          onDone={() => {
+            setGuided(false);
+            setStep(3);
+          }}
+        />
+      )}
+      {!form.inputMethod ? null : step === 1 ? (
         <>
           <ListingProgress step={1} label="Classification" />
           <View style={{ gap: 6 }}>
@@ -341,12 +404,6 @@ export function Sell() {
           {r.data?.verificationStatus !== "APPROVED" && (
             <Notice text="You can save and review drafts while your seller application is in progress. Approval is required before submitting produce for sale." />
           )}
-          <ListingVoiceNote
-            draftId={a.route.id || "new"}
-            disabled={busy}
-            onActivityChange={voiceActivity}
-            onTypeInstead={() => descriptionInput.current?.focus()}
-          />
           <Card style={{ borderRadius: 16 }}>
             <Field
               label="Product title *"
@@ -372,7 +429,19 @@ export function Sell() {
                 value: unit.code,
                 label: a.unit(unit.code),
               }))}
-              onChange={(value) => field("unitCode", value)}
+              onChange={(value) =>
+                setForm((current) =>
+                  current.unitCode === value
+                    ? current
+                    : {
+                        ...current,
+                        unitCode: value,
+                        quantity: "",
+                        price: "",
+                        packaging: { ...emptyPacking },
+                      },
+                )
+              }
             />
             <Label muted style={listingStyles.help}>
               {r.data?.units.find((unit) => unit.code === form.unitCode)?.allowsDecimal
@@ -406,10 +475,19 @@ export function Sell() {
             </Label>
             {!address && <Button title="Farm location" secondary onPress={() => a.go("seller")} />}
           </Card>
-          <PackingFieldsForm
-            value={form.packaging || emptyPacking}
-            onChange={(value) => field("packaging", value)}
+          <Confirmation
+            checked={!!form.packingAssistanceRequested}
+            onChange={() => field("packingAssistanceRequested", !form.packingAssistanceRequested)}
+            label="Ask our team to help with package measurements"
           />
+          {form.packingAssistanceRequested ? (
+            <Notice text="Your listing will wait for our team to complete package measurements. Buyers cannot purchase it until then." />
+          ) : (
+            <PackingFieldsForm
+              value={form.packaging || emptyPacking}
+              onChange={(value) => field("packaging", value)}
+            />
+          )}
           <Label style={{ fontFamily: "NotoBold" }}>Delivery scope *</Label>
           {(
             [
@@ -611,6 +689,7 @@ export function Review() {
   );
   const running = useRef(false);
   const form = r.data ? restoreListing(r.data.fields) : null;
+  useEffect(() => setConfirmed(false), [r.data?.fields]);
   const selectedCategory = catalogue.data?.categories.find((item) => item.id === form?.categoryId);
   const categoryLabel =
     selectedCategory?.translations.find((item) => item.locale === a.locale)?.name ||
@@ -621,8 +700,10 @@ export function Review() {
   }, [busy]);
   const canSubmit = a.user?.farmerProfile?.verificationStatus === "APPROVED";
   const address = a.user?.addresses.find((item) => item.id === form?.addressId);
+  const reviewError = form && catalogue.data ? listingDetailsError(form, catalogue.data.units) : "";
   const submit = async () => {
-    if (!confirmed || !canSubmit || !form || running.current) return;
+    if (!confirmed || !canSubmit || !form || !catalogue.data || reviewError || running.current)
+      return;
     running.current = true;
     setBusy(true);
     setError("");
@@ -728,7 +809,8 @@ export function Review() {
               !form ||
               !canSubmit ||
               !form.photos.length ||
-              !!packingError(form.packaging) ||
+              !catalogue.data ||
+              !!reviewError ||
               !!r.data?.listingId
             }
             icon="listingSubmit"
@@ -748,8 +830,10 @@ export function Review() {
         <Text style={listingStyles.title}>Check this.</Text>
         <Label muted>Review your produce details before submitting.</Label>
       </View>
-      {form && packingError(form.packaging) && (
-        <Notice text="Add the packed weight, dimensions and handling before submitting this listing." />
+      {!!reviewError && <Notice text={reviewError} />}
+      {form && catalogue.data && <ReadListingAloud text={listingReadback(form, catalogue.data)} />}
+      {form?.packingAssistanceRequested && (
+        <Notice text="Packing assistance requested. Our team must complete package measurements before buyers can purchase." />
       )}
       <View style={{ gap: 8 }}>
         <Label style={{ fontFamily: "NotoBold" }}>Uploaded photos</Label>
@@ -990,6 +1074,9 @@ export function MyListings() {
           <ListingPhoto item={i} />
           <Label style={{ fontFamily: "NotoBold" }}>{i.title}</Label>
           <Text style={s.badge}>{a.status(i.status)}</Text>
+          {i.packingAssistanceRequested && (
+            <Notice text="Packing assistance requested. Our team must complete package measurements before buyers can purchase." />
+          )}
           <Label>
             {money(i.unitPriceMinor)} / {a.unit(i.unitCode)}
           </Label>

@@ -31,6 +31,7 @@ export async function createBuyerOrder(
   if (
     !listing ||
     listing.deletedAt ||
+    listing.packingAssistanceRequested ||
     listing.status !== "ACTIVE" ||
     listing.farmerProfile.verificationStatus !== "APPROVED" ||
     listing.availableQuantity.minus(listing.reservedQuantity).lt(quantity)
