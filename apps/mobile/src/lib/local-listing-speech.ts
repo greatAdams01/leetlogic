@@ -12,7 +12,13 @@ const speaker = requireOptionalNativeModule<Speaker>("LeetLogicLocalSpeech");
 let cancelListening: (() => void) | undefined;
 export const speechSetupMessage =
   "Voice listing is unavailable right now. You can continue by typing. Your saved answers will be kept.";
+export const serverVoiceEnabled = process.env.EXPO_PUBLIC_LISTING_VOICE_PROVIDER === "server";
+export async function finishListingAnswer() {
+  if (serverVoiceEnabled) (await import("./server-listing-speech")).finishServerAnswer();
+  else recognition?.stop();
+}
 export async function localSpeechAvailable(): Promise<string | null> {
+  if (serverVoiceEnabled) return (await import("./server-listing-speech")).serverSpeechAvailable();
   if (
     Platform.OS === "web" ||
     !recognition ||
@@ -35,6 +41,8 @@ export async function localSpeechAvailable(): Promise<string | null> {
   );
 }
 export async function requestLocalSpeechPermission() {
+  if (serverVoiceEnabled)
+    return (await import("./server-listing-speech")).requestServerSpeechPermission();
   if (!recognition) throw new Error(speechSetupMessage);
   const permission = await recognition.requestPermissionsAsync();
   if (!permission.granted)
@@ -43,6 +51,7 @@ export async function requestLocalSpeechPermission() {
     );
 }
 export async function speakListing(text: string) {
+  if (serverVoiceEnabled) return (await import("./server-listing-speech")).speakServerListing(text);
   if (!speaker) throw new Error(speechSetupMessage);
   try {
     await speaker.speak(text);
@@ -51,12 +60,18 @@ export async function speakListing(text: string) {
   }
 }
 export async function stopListingSpeech() {
+  if (serverVoiceEnabled)
+    return (await import("./server-listing-speech")).stopServerListingSpeech();
   cancelListening?.();
   recognition?.abort();
   await speaker?.stop();
 }
 /** One bounded turn, final transcript only, no persisted audio, no network fallback. */
-export function listenListing(locale: string): Promise<string> {
+export function listenListing(locale: string, onTranscribing?: () => void): Promise<string> {
+  if (serverVoiceEnabled)
+    return import("./server-listing-speech").then((module) =>
+      module.listenServerListing(locale, onTranscribing),
+    );
   if (!recognition) return Promise.reject(new Error(speechSetupMessage));
   cancelListening?.();
   return new Promise((resolve, reject) => {

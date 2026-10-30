@@ -12,6 +12,7 @@ export function ListingPage({
   children,
   contentKey,
   complete = false,
+  choosingMethod = false,
 }: {
   step: 1 | 2 | 3 | 4;
   onBack?: () => void;
@@ -21,6 +22,7 @@ export function ListingPage({
   children: React.ReactNode;
   contentKey?: string;
   complete?: boolean;
+  choosingMethod?: boolean;
 }) {
   const a = useApp();
   return (
@@ -64,7 +66,11 @@ export function ListingPage({
             )}
           </Pressable>
           <View style={[styles.step, step === 4 && !complete && styles.reviewStep]}>
-            {!complete && <Text style={styles.stepText}>{a.ui("Step {step} of 4", { step })}</Text>}
+            {!complete && (
+              <Text style={styles.stepText}>
+                {a.ui("Step {step} of 5", { step: choosingMethod ? 1 : step + 1 })}
+              </Text>
+            )}
             {step === 4 && !complete && <Text style={styles.subtitle}>Review listing</Text>}
           </View>
           <Pressable
@@ -103,14 +109,14 @@ export function ListingProgress({ step, label }: { step: 1 | 2 | 3; label: strin
   return (
     <View style={styles.progress}>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexShrink: 1 }}>
-        <Text style={styles.chip}>{a.ui("Step {step} of 4", { step })}</Text>
+        <Text style={styles.chip}>{a.ui("Step {step} of 5", { step: step + 1 })}</Text>
         <Text style={styles.subtitle}>{label}</Text>
       </View>
       <View style={styles.bars}>
-        {[1, 2, 3, 4].map((index) => (
+        {[1, 2, 3, 4, 5].map((index) => (
           <View
             key={index}
-            style={[styles.bar, index <= step && { backgroundColor: colors.green }]}
+            style={[styles.bar, index <= step + 1 && { backgroundColor: colors.green }]}
           />
         ))}
       </View>

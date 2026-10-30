@@ -47,7 +47,13 @@ export function restoreListing(input: any): ListingForm {
   return {
     ...emptyListing,
     ...input,
-    inputMethod: input.inputMethod === "voice" ? "voice" : "type",
+    inputMethod:
+      input.inputMethod === "voice" || input.inputMethod === "type"
+        ? input.inputMethod
+        : input.inputMethod !== null &&
+            (input.categoryId || input.title || input.description || photos.length)
+          ? "type"
+          : undefined,
     price,
     packaging: packingFields(input.packaging),
     photos: photos

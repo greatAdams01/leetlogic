@@ -65,7 +65,12 @@ export function Sell() {
       .then(() =>
         AsyncStorage.setItem(
           storage,
-          JSON.stringify({ ...next, step: nextStep, photoId: next.photos[0]?.id }),
+          JSON.stringify({
+            ...next,
+            inputMethod: next.inputMethod ?? null,
+            step: nextStep,
+            photoId: next.photos[0]?.id,
+          }),
         ),
       );
     return writes.current;
@@ -149,7 +154,11 @@ export function Sell() {
   const back = () => {
     if (running.current || voiceActive.current) return;
     if (step > 1) goStep((step - 1) as 1 | 2);
-    else void close();
+    else if (form.inputMethod) {
+      setError("");
+      setGuided(false);
+      setForm((current) => ({ ...current, inputMethod: undefined }));
+    } else void close();
   };
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -242,14 +251,15 @@ export function Sell() {
   return (
     <ListingPage
       step={step}
+      choosingMethod={!form.inputMethod}
       onBack={busy || voiceBusy ? undefined : back}
       onClose={() => void close()}
       loading={r.loading || !ready}
-      contentKey={String(step)}
+      contentKey={!form.inputMethod ? "method" : String(step)}
       footer={
         <>
           {error && <Notice text={error} error />}
-          {step === 1 && category && (
+          {form.inputMethod && step === 1 && category && (
             <Label>{a.ui("Selected: {category}", { category: categoryName(category) })}</Label>
           )}
           {form.inputMethod && (
@@ -285,6 +295,7 @@ export function Sell() {
       {r.error && <Notice text={r.error} error />}
       {ready && !form.inputMethod && (
         <Card>
+          <Text style={listingStyles.title}>Choose Voice or Type</Text>
           <Label>How would you like to create your listing?</Label>
           <Button
             title="Use guided voice · English"
@@ -304,8 +315,9 @@ export function Sell() {
             onPress={() => field("inputMethod", "type")}
           />
           <Label>
-            Voice asks one question at a time and reads your answers back. English speech stays on
-            your device.
+            {process.env.EXPO_PUBLIC_LISTING_VOICE_PROVIDER === "server"
+              ? a.ui("Voice answers are sent to LeetLogic for transcription and deleted after processing.")
+              : a.ui("Voice asks one question at a time and reads your answers back. English speech stays on your device.")}
           </Label>
         </Card>
       )}
@@ -548,7 +560,7 @@ export function Sell() {
       ) : (
         <>
           <View style={s.between}>
-            <Label>Step 3 of 4</Label>
+            <Label>{a.ui("Step {step} of 5", { step: 4 })}</Label>
             <View style={s.row}>
               <Text style={s.badge}>
                 {a.ui("{count} of 4 photos", { count: form.photos.length })}

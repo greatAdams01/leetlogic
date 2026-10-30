@@ -14,6 +14,8 @@ import {
 } from "../lib/guided-listing";
 import {
   localSpeechAvailable,
+  serverVoiceEnabled,
+  finishListingAnswer,
   requestLocalSpeechPermission,
   speakListing,
   listenListing,
@@ -94,14 +96,16 @@ export function GuidedListing({
     const hear = async () => {
       if (!current()) throw new Error("Paused");
       setPhase("Listening — speak now");
-      const text = await listenListing(locale!);
+      const text = await listenListing(locale!, () => {
+        if (current()) setPhase("Transcribing your answer…");
+      });
       if (!current()) throw new Error("Paused");
       setTranscript(text);
       return text;
     };
     let locale: string | null = null;
     try {
-      setPhase("Checking offline English speech");
+      setPhase(serverVoiceEnabled ? "Checking voice service" : "Checking offline English speech");
       try {
         locale = await localSpeechAvailable();
       } catch {
@@ -229,13 +233,20 @@ export function GuidedListing({
       visible={visible}
       title="Guided voice listing"
       onShow={() => void run()}
-      subtitle="English · processed on your device"
+      subtitle={
+        serverVoiceEnabled
+          ? "English · recordings sent to LeetLogic for transcription"
+          : "English · processed on your device"
+      }
       onClose={() => {
         pause();
         onClose();
       }}
       footer={
         <View style={{ gap: 10 }}>
+          {serverVoiceEnabled && phase.startsWith("Listening") && (
+            <Button title="Done speaking" onPress={() => void finishListingAnswer()} />
+          )}
           {busy ? (
             <Button title="Pause" onPress={pause} />
           ) : (

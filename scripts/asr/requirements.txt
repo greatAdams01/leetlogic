@@ -1,7 +1,14 @@
 # Runtime versions used by the initial CPU evaluation; see the result JSON for all resolved versions.
-omnilingual-asr==0.1.0
+omnilingual-asr @ https://github.com/facebookresearch/omnilingual-asr/archive/81f51e224ce9e74b02cc2a3eaf21b2d91d743455.tar.gz
 fairseq2==0.6
 torch==2.8.0
 torchaudio==2.8.0
 psutil==5.9.8
 soundfile==0.14.0
+
+# fairseq2 0.6 requires NumPy 1.x; newer PyArrow wheels require NumPy 2.x.
+numpy==1.26.4
+pyarrow==20.0.0
+
+# Decode phone M4A/AAC recordings with a bundled local ffmpeg binary.
+imageio-ffmpeg==0.6.0

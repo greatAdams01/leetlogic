@@ -1,3 +1,4 @@
+import { listingSpeechRouter } from "./routes/listing-speech.js";
 import { shoppingRouter } from "./routes/shopping.js";
 import {
   buyerTransactionsRouter,
@@ -107,6 +108,7 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.use("/v1/admin/delivery-orders", staffDeliveryRouter);
   app.use("/v1/webhooks", deliveryWebhookRouter);
   app.use("/v1/translations", languageRouter);
+  app.use("/v1/listing-drafts/voice", listingSpeechRouter);
   app.use("/v1/listing-drafts", listingDraftRouter);
   app.use("/v1/content", contentRouter);
   app.use("/v1/marketplace", marketplaceRouter);

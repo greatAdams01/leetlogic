@@ -28,7 +28,7 @@ Do not interpret `status.json: complete` as a production accuracy or VPS-capacit
 
 ## Reproduce
 
-Use Python 3.12. Create an isolated environment and install `requirements.txt`. Meta's `fairseq2n` binary must match the pinned Torch version; Linux builds need the matching CPU wheel and system libsndfile. The default macOS CPU run deliberately uses float32 rather than GPU-only reference figures.
+Use Python 3.12. Create an isolated environment and install `requirements.txt`. The requirements pin Meta’s v2-capable source revision (package 0.2.0); the older PyPI 0.1.0 release lacks v2 support. NumPy 1.26.4 and PyArrow 20.0.0 are pinned to avoid an incompatible newer PyArrow wheel. Meta's `fairseq2n` binary must match the pinned Torch version; Linux builds need the matching CPU wheel and system libsndfile. The default macOS CPU run deliberately uses float32 rather than GPU-only reference figures.
 
 ```sh
 python3.12 -m venv .local/asr-benchmark/venv
@@ -63,3 +63,11 @@ say -v Daniel -r 145 -o .local/asr-benchmark/english-short.aiff \
 6. Select and enforce container memory/CPU budgets from those measurements, reserve headroom for PostgreSQL/OS/queue buffers, then repeat under the proposed limits. Do not choose a long-term VPS plan from model parameter count, GPU VRAM figures or the M1 benchmark alone.
 
 Sources: [Meta inference guide](https://github.com/facebookresearch/omnilingual-asr/blob/main/src/omnilingual_asr/models/inference/README.md), [model cards](https://github.com/facebookresearch/omnilingual-asr/blob/main/src/omnilingual_asr/cards/models/rc_models_v2.yaml), [fairseq2 installation](https://github.com/facebookresearch/fairseq2#installation).
+
+## Completed local run
+
+See [the 30 October 2026 results](../../docs/asr-local-benchmark-2026-10-30.md) for measured performance and the accuracy limitations.
+
+## Run as an app transcription service
+
+See [local app-testing instructions](../../docs/local-asr-app-testing.md) for the three terminal commands: Python worker, backend configuration, and Metro's opt-in server voice provider. Starting the benchmark runner is not the same as starting the HTTP service.

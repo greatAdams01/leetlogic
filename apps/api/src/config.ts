@@ -10,6 +10,12 @@ const encryptionKeySchema = z.string().refine((value) => {
 }, "TOTP_ENCRYPTION_KEY must be either 64 hexadecimal characters or a Base64-encoded 32-byte key");
 
 const schema = z.object({
+  LISTING_ASR_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((x) => x === "true"),
+  LISTING_ASR_URL: z.string().url().default("http://127.0.0.1:8091"),
+  LISTING_ASR_TOKEN: z.string().default(""),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_FORMAT: z.enum(["pretty", "json"]).optional(),
   BACHS_MODE: z.enum(["sandbox", "live"]).default("sandbox"),

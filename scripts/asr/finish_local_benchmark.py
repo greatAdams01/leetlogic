@@ -38,7 +38,7 @@ def main():
         while True:
             install_log = (folder / "install.log").read_text(errors="replace")
             download_log = (folder / "checkpoint-download.log").read_text(errors="replace")
-            installed = "Successfully installed" in install_log
+            installed = subprocess.run([str(python),"-c", "import importlib.metadata as m; [m.version(p) for p in ['torch','torchaudio','fairseq2','omnilingual-asr','soundfile','psutil']]"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode == 0
             downloaded = checkpoint.with_suffix(".download.json").exists() and checkpoint.stat().st_size == 1304065508
             parts = folder / (checkpoint.name+".parts")
             received = sum(p.stat().st_size for p in parts.glob("*.part"))
@@ -47,7 +47,7 @@ def main():
                 break
             if "error: subprocess-exited-with-error" in install_log or "ResolutionImpossible" in install_log:
                 raise RuntimeError("Dependency installation failed. Inspect install.log before retrying.")
-            if "Traceback (most recent call last)" in download_log:
+            if not downloaded and "Traceback (most recent call last)" in download_log:
                 raise RuntimeError("Checkpoint downloader failed. It can resume from saved parts.")
             if time.monotonic() >= deadline:
                 raise TimeoutError("Download wait limit reached. Partial downloads are preserved.")

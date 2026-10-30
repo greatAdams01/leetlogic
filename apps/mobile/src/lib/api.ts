@@ -92,6 +92,7 @@ export async function api<T = any>(
     body?: unknown;
     key?: string;
     imageResponse?: boolean;
+    signal?: AbortSignal;
     binary?: { bytes: Uint8Array; contentType: string };
   } = {},
 ): Promise<T> {
@@ -114,7 +115,9 @@ export async function api<T = any>(
         : options.binary
           ? { body: new Uint8Array(options.binary.bytes) }
           : {}),
-      signal: AbortSignal.timeout(options.imageResponse ? 70000 : options.binary ? 60000 : 25000),
+      signal:
+        options.signal ??
+        AbortSignal.timeout(options.imageResponse ? 70000 : options.binary ? 60000 : 25000),
     });
   let response: Response;
   try {

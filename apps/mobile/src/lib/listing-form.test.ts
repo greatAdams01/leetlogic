@@ -31,6 +31,11 @@ const valid = {
   photos: [{ id: "one", uri: "file:///private/photo.jpg" }],
 };
 describe("listing drafts", () => {
+  it("keeps the method chooser for untouched drafts and an explicit return to it", () => {
+    expect(restoreListing(emptyListing).inputMethod).toBeUndefined();
+    expect(restoreListing({ ...valid, inputMethod: null }).inputMethod).toBeUndefined();
+    expect(restoreListing(valid).inputMethod).toBe("type");
+  });
   it("recovers legacy drafts and exact saved minor amounts", () => {
     expect(restoreListing({ photoId: "old", unitPriceMinor: "999999999999" })).toMatchObject({
       price: "9999999999.99",

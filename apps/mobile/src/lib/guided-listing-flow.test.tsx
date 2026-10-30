@@ -23,6 +23,8 @@ vi.mock("react-native", () => ({
   },
 }));
 vi.mock("./local-listing-speech", () => ({
+  serverVoiceEnabled: false,
+  finishListingAnswer: vi.fn(),
   localSpeechAvailable: h.available,
   requestLocalSpeechPermission: h.permission,
   speakListing: h.speak,

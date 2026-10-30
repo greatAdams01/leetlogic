@@ -1,4 +1,5 @@
 import React from "react";
+import { emptyListing } from "./listing-form";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
@@ -146,6 +147,22 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
 });
 describe("seller listing wizard", () => {
+  it("restores an untouched draft to the method chooser and returns there from categories", async () => {
+    h.get.mockResolvedValue(JSON.stringify({ ...emptyListing, step: 1 }));
+    await act(async () => {
+      renderer = create(<Sell />);
+    });
+    expect(nodes("ListingPage")[0]!.props.choosingMethod).toBe(true);
+    expect(
+      nodes("Pressable").filter((node) => node.props.accessibilityRole === "radio"),
+    ).toHaveLength(0);
+    await act(async () => button("Type my listing").props.onPress());
+    expect(nodes("ListingPage")[0]!.props.choosingMethod).toBe(false);
+    await act(async () => nodes("ListingPage")[0]!.props.onBack());
+    expect(nodes("ListingPage")[0]!.props.choosingMethod).toBe(true);
+    await act(async () => button("Use guided voice · English").props.onPress());
+    expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
+  });
   it("keeps details in their own step, validates them and preserves them when going back", async () => {
     await act(async () => {
       renderer = create(<Sell />);
