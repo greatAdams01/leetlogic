@@ -252,31 +252,33 @@ export function Sell() {
           {step === 1 && category && (
             <Label>{a.ui("Selected: {category}", { category: categoryName(category) })}</Label>
           )}
-          <Button
-            title={
-              busy
-                ? "Saving…"
-                : step === 1
-                  ? "Continue"
-                  : step === 2
-                    ? "Continue to photos"
-                    : "Review listing"
-            }
-            loading={busy}
-            disabled={
-              busy ||
-              voiceBusy ||
-              !ready ||
-              r.loading ||
-              !!r.error ||
-              !form.inputMethod ||
-              !category ||
-              (step === 3 && !form.photos.length)
-            }
-            icon="listingForward"
-            iconNativeSize={{ width: 13, height: 13 }}
-            onPress={() => void next()}
-          />
+          {form.inputMethod && (
+            <Button
+              title={
+                busy
+                  ? "Saving…"
+                  : step === 1
+                    ? "Continue"
+                    : step === 2
+                      ? "Continue to photos"
+                      : "Review listing"
+              }
+              loading={busy}
+              disabled={
+                busy ||
+                voiceBusy ||
+                !ready ||
+                r.loading ||
+                !!r.error ||
+                !form.inputMethod ||
+                !category ||
+                (step === 3 && !form.photos.length)
+              }
+              icon="listingForward"
+              iconNativeSize={{ width: 13, height: 13 }}
+              onPress={() => void next()}
+            />
+          )}
         </>
       }
     >
@@ -284,15 +286,22 @@ export function Sell() {
       {ready && !form.inputMethod && (
         <Card>
           <Label>How would you like to create your listing?</Label>
-          <Button title="Type my listing" onPress={() => field("inputMethod", "type")} />
           <Button
             title="Use guided voice · English"
-            secondary
+            icon="listingVoiceMic"
+            iconNativeSize={{ width: 24, height: 24 }}
             disabled={!r.data}
             onPress={() => {
               field("inputMethod", "voice");
               setGuided(true);
             }}
+          />
+          <Button
+            title="Type my listing"
+            secondary
+            icon="listingKeyboard"
+            iconNativeSize={{ width: 24, height: 24 }}
+            onPress={() => field("inputMethod", "type")}
           />
           <Label>
             Voice asks one question at a time and reads your answers back. English speech stays on

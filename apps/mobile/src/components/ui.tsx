@@ -115,7 +115,7 @@ export function Button({
   secondary,
   testID,
   loading = false,
-  icon = "arrow",
+  icon = secondary ? false : "arrow",
   iconNativeSize,
 }: {
   title: string;
@@ -147,7 +147,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={secondary ? colors.green : colors.white} />
       ) : (
-        !secondary && icon && <Icon name={icon} size={20} nativeSize={iconNativeSize} />
+        icon && <Icon name={icon} size={20} nativeSize={iconNativeSize} />
       )}
     </Pressable>
   );

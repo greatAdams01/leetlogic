@@ -1,4 +1,5 @@
 export const icons = {
+  listingKeyboard: require("../assets/figma/listing-keyboard.svg"),
   listingVoiceMic: require("../assets/figma/listing-voice/microphone.svg"),
   listingVoicePlay: require("../assets/figma/listing-voice/play.svg"),
   listingVoicePause: require("../assets/figma/listing-voice/pause.svg"),

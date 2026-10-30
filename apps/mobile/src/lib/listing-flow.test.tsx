@@ -151,7 +151,7 @@ describe("seller listing wizard", () => {
       renderer = create(<Sell />);
     });
     expect(nodes("Field")).toHaveLength(0);
-    expect(button("Continue").props.disabled).toBe(true);
+    expect(nodes("Button").some((node) => node.props.title === "Continue")).toBe(false);
     await act(async () => button("Type my listing").props.onPress());
     const category = nodes("Pressable").find((n) => n.props.accessibilityRole === "radio")!;
     await act(async () => category.props.onPress());
