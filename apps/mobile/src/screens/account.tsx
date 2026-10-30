@@ -202,11 +202,11 @@ export function Profile() {
       </Card>
       {seller && (
         <Button
-          title="Enable paid-order notifications"
+          title="Enable farmer notifications"
           secondary
           onPress={() =>
             void registerOrderPush(true)
-              .then(() => a.notify("Paid-order notifications are enabled."))
+              .then(() => a.notify("Listing approval and paid-order notifications are enabled."))
               .catch((e) => setError(a.error(e)))
           }
         />
@@ -453,19 +453,21 @@ export function Addresses() {
 export function Notifications() {
   const a = useApp(),
     r = useResource<{
-      items: { id: string; orderId: string; messageKey: string; createdAt: string }[];
+      items: { id: string; orderId?: string; listingId?: string; title?: string; messageKey: string; createdAt: string }[];
     }>(`/orders/notifications?view=${a.role === "SELLER" ? "seller" : "buyer"}`);
   return (
     <Page title="Notifications" back={a.back} loading={r.loading}>
       {r.error && <Notice text={r.error} error />}
       {!r.loading && !r.data?.items.length && (
-        <Notice text="Paid orders and delivery updates will appear here." />
+        <Notice text="Listing approvals, paid orders and delivery updates will appear here." />
       )}
       {r.data?.items.map((i) => (
-        <Pressable key={i.id} onPress={() => a.go("delivery", i.orderId)}>
+        <Pressable key={i.id} accessibilityRole="button" onPress={() => i.messageKey === "listing.approved" ? a.go("myListings") : i.orderId && a.go("delivery", i.orderId)}>
           <Card>
             <Label>
-              {i.messageKey === "order.paid"
+              {i.messageKey === "listing.approved"
+                ? a.ui("Your listing “{title}” has been approved and is now live.", { title: i.title || "" })
+                : i.messageKey === "order.paid"
                 ? "New paid order. Review it and prepare your produce."
                 : a.t(i.messageKey as any) || a.status(i.messageKey.split(".").pop() || "Update")}
             </Label>

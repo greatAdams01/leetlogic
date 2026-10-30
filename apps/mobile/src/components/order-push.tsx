@@ -34,6 +34,10 @@ export function OrderPush() {
         });
         const open = (response: NotificationResponse) => {
           const data = response.notification.request.content.data;
+          if (active && data?.kind === "listing-approved" && data.userId === a.user!.id && typeof data.listingId === "string") {
+            a.go("myListings");
+            void notifications.clearLastNotificationResponseAsync();
+          }
           if (
             active &&
             data?.kind === "paid-order" &&

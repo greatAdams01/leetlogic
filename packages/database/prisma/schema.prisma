@@ -139,6 +139,7 @@ model User {
   riskAlerts     RiskAlert[]
   mobilePushDevices MobilePushDevice[]
   paidOrderNotifications PaidOrderNotification[]
+  listingApprovalNotifications ListingApprovalNotification[]
 
   @@map("users")
 }
@@ -503,6 +504,7 @@ model Unit {
 }
 
 model Listing {
+  approvalNotification ListingApprovalNotification?
   salePackaging Json? @map("sale_packaging")
   packingAssistanceRequested Boolean @default(false) @map("packing_assistance_requested")
   packaging Json?
@@ -1128,4 +1130,20 @@ model PaidOrderNotification {
   @@index([userId, createdAt])
   @@index([sentAt, nextRunAt])
   @@map("paid_order_notifications")
+}
+
+model ListingApprovalNotification {
+  id String @id @default(uuid()) @db.Uuid
+  listingId String @unique @db.Uuid
+  userId String @db.Uuid
+  title String @db.VarChar(160)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  sentAt DateTime? @db.Timestamptz(6)
+  nextRunAt DateTime @default(now()) @db.Timestamptz(6)
+  attempts Int @default(0)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  @@index([userId, createdAt])
+  @@index([sentAt, nextRunAt])
+  @@map("listing_approval_notifications")
 }

@@ -16,11 +16,16 @@ export async function registerOrderPush(requestPermission = false) {
     return;
   }
   const notifications = await import("expo-notifications");
-  if (Platform.OS === "android")
+  if (Platform.OS === "android") {
     await notifications.setNotificationChannelAsync("paid-orders", {
       name: "Paid orders",
       importance: notifications.AndroidImportance.HIGH,
     });
+    await notifications.setNotificationChannelAsync("listing-updates", {
+      name: "Listing updates",
+      importance: notifications.AndroidImportance.HIGH,
+    });
+  }
   let permission = await notifications.getPermissionsAsync();
   if (!permission.granted && requestPermission)
     permission = await notifications.requestPermissionsAsync();

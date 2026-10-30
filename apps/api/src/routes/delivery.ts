@@ -141,8 +141,16 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
           take: 50,
         })
       : [];
+  const approved = view === "seller"
+    ? await prisma.listingApprovalNotification.findMany({
+        where: { userId: req.auth!.sub },
+        select: { id: true, listingId: true, title: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      })
+    : [];
   res.json({
-    items: [...items, ...paid.map((i) => ({ ...i, messageKey: "order.paid" }))]
+    items: [...items, ...paid.map((i) => ({ ...i, messageKey: "order.paid" })), ...approved.map((i) => ({ ...i, messageKey: "listing.approved" }))]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 50),
   });

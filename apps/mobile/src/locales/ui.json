@@ -6938,5 +6938,9 @@
   ["Listing progress", "Listing progress", "Ci gaban tallan kaya", "Ọganihu ndepụta", "Ìlọsíwájú àkọsílẹ̀ ọjà"],
   ["per", "per", "kowace", "maka", "fún"],
   ["×", "×", "×", "×", "×"],
-  ["Container", "Container", "Jarka", "Akpa mmiri", "Kẹ́ẹ̀gì"]
+  ["Container", "Container", "Jarka", "Akpa mmiri", "Kẹ́ẹ̀gì"],
+  ["Enable farmer notifications", "Turn on farmer alerts", "Kunna sanarwar manomi", "Gbanye ọkwa onye ọrụ ugbo", "Tan ìfitónilétí àgbẹ̀"],
+  ["Listing approval and paid-order notifications are enabled.", "Listing approval and paid-order alerts don turn on.", "An kunna sanarwar amincewar talla da odar da aka biya.", "Agbanyela ọkwa nnabata ndepụta na oda akwụgoro ụgwọ.", "Ìfitónilétí ìfọwọ́sí ọjà àti àṣẹ tí a ti sanwó ti ṣiṣẹ́."],
+  ["Listing approvals, paid orders and delivery updates will appear here.", "Listing approval, paid orders and delivery updates go show here.", "Amincewar talla, odar da aka biya da sabunta jigila za su bayyana a nan.", "Nnabata ndepụta, oda akwụgoro ụgwọ na mmelite mbufe ga-apụta ebe a.", "Ìfọwọ́sí ọjà, àṣẹ tí a ti sanwó àti ìròyìn ìfiránṣẹ́ yóò hàn níbí."],
+  ["Your listing “{title}” has been approved and is now live.", "Your listing “{title}” don get approval and e dey live now.", "An amince da tallanka “{title}” kuma yana kan kasuwa yanzu.", "A nabatala ndepụta gị “{title}” ma ọ dị ugbu a.", "A ti fọwọ́ sí àkọsílẹ̀ ọjà rẹ “{title}”, ó sì ti wà fún títà báyìí."]
 ]

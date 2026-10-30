@@ -1,3 +1,4 @@
+import { sendFarmerPush } from "./push-notifications.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "@leetlogic/database";
 
@@ -15,51 +16,13 @@ export async function sendPaidOrderNotifications() {
     });
     if (!claimed.count) continue;
     try {
-      const devices = await prisma.mobilePushDevice.findMany({ where: { userId: row.userId } });
-      let retry = false;
-      for (const device of devices) {
-        const session = await prisma.session.findFirst({
-          where: {
-            tokenFamilyId: device.sessionFamilyId,
-            userId: row.userId,
-            user: { status: "ACTIVE" },
-            revokedAt: null,
-            replacedById: null,
-            expiresAt: { gt: new Date() },
-          },
-        });
-        if (!session) continue;
-        const response = await fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          signal: AbortSignal.timeout(10000),
-          headers: {
-            "Content-Type": "application/json",
-            ...(process.env.EXPO_ACCESS_TOKEN
-              ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            to: device.token,
-            title: "New paid order",
-            body: "A buyer has paid for your produce. Open LeetLogic to review the order.",
-            sound: "default",
-            channelId: "paid-orders",
-            data: { kind: "paid-order", orderId: row.orderId, userId: row.userId },
-          }),
-        });
-        if (!response.ok) {
-          retry = true;
-          continue;
-        }
-        const result = (await response.json()) as {
-          data?: { status?: string; details?: { error?: string } };
-        };
-        if (result.data?.details?.error === "DeviceNotRegistered") {
-          await prisma.mobilePushDevice.deleteMany({
-            where: { token: device.token, sessionFamilyId: device.sessionFamilyId },
-          });
-        } else if (result.data?.status !== "ok") retry = true;
-      }
+      const retry = await sendFarmerPush({
+        userId: row.userId,
+        title: "New paid order",
+        body: "A buyer has paid for your produce. Open LeetLogic to review the order.",
+        channelId: "paid-orders",
+        data: { kind: "paid-order", orderId: row.orderId, userId: row.userId },
+      });
       // No registered devices: the notification remains available in the inbox.
       if (!retry)
         await prisma.paidOrderNotification.update({

@@ -299,6 +299,12 @@ operationsRouter.post(
       });
       if (!changed.count)
         throw new AppError(409, "STALE_RECORD", "Listing changed. Refresh and try again.");
+      if (body.status === "ACTIVE" && ["PENDING_REVIEW", "REJECTED"].includes(listing.status))
+        await tx.listingApprovalNotification.upsert({
+          where: { listingId },
+          create: { listingId, userId: listing.farmerProfile.userId, title: listing.title },
+          update: {},
+        });
       await audit(
         req,
         {
