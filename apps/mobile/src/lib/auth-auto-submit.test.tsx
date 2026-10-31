@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   unlock: vi.fn(),
   recover: vi.fn(),
   register: vi.fn(),
+  intent: "LOGIN",
   mode: "create",
   phone: "08012345678",
 }));
@@ -49,6 +50,7 @@ vi.mock("../state", () => ({
   useApp: () => ({
     user: { id: "farmer" },
     security: h.mode,
+    authIntent: h.intent,
     route: { id: h.phone },
     locale: "en",
     ui: (s: string) => s,
@@ -84,6 +86,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.generation = 0;
   h.mode = "create";
+  h.intent = "LOGIN";
   h.phone = "08012345678";
   h.api.mockResolvedValue({});
   h.check.mockResolvedValue(undefined);
@@ -219,4 +222,27 @@ it("allows an expired code to be resent immediately instead of waiting on the ol
   h.api.mockResolvedValueOnce({});
   await act(async () => resend.props.onPress());
   expect(h.api).toHaveBeenLastCalledWith("/auth/otp/request", expect.objectContaining({ body: expect.objectContaining({ phone: h.phone, intent: "LOGIN" }) }));
+});
+
+it.each(["LOGIN", "REGISTER"])("keeps verification copy specific to %s after an expired code and resend", async (intent) => {
+  h.intent = intent;
+  h.api.mockRejectedValueOnce(Object.assign(new Error("Expired"), { code: "OTP_EXPIRED" }));
+  await act(async () => { tree = create(<Otp />); });
+  const title = intent === "LOGIN" ? "Log In" : "Verify Your Account";
+  const label = intent === "LOGIN" ? "Log In" : "Verify & Continue";
+  const description = intent === "LOGIN"
+    ? "Enter the verification code sent to your phone number to log in."
+    : "Enter the verification code sent to your phone number to complete your registration.";
+  const check = () => {
+    expect(tree.root.findAllByType("Text" as any).filter((n) => n.props.children === title).length).toBeGreaterThan(0);
+    expect(tree.root.findAllByType("Text" as any).some((n) => n.props.children === description)).toBe(true);
+    expect(tree.root.findAllByType("Pressable" as any).some((n) => n.props.accessibilityLabel === label)).toBe(true);
+  };
+  check();
+  await act(async () => input().props.onChangeText("123456"));
+  const resend = tree.root.findAllByType("Pressable" as any).find((n) => n.props.accessibilityState && n.props.accessibilityRole === "button" && !n.props.accessibilityLabel)!;
+  h.api.mockResolvedValueOnce({});
+  await act(async () => resend.props.onPress());
+  check();
+  expect(h.api).toHaveBeenLastCalledWith("/auth/otp/request", expect.objectContaining({ body: expect.objectContaining({ intent }) }));
 });

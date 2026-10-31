@@ -56,7 +56,7 @@ function VerificationLayout({
             <Icon name={otp ? "otpBack" : "phoneBack"} nativeSize={{ width: 24, height: 24 }} />
           </Pressable>
           <Text accessibilityRole="header" style={otp ? v.otpHeaderTitle : v.headerTitle}>
-            Verification
+            {a.authIntent === "REGISTER" ? a.ui("Verify Your Account") : a.ui("Log In")}
           </Text>
           {!otp && a.authIntent === "REGISTER" && (
             <Pressable
@@ -80,14 +80,16 @@ function ContinueButton({
   disabled,
   onPress,
   verifying = false,
+  label = "Continue",
 }: {
   busy: boolean;
   disabled?: boolean;
   onPress: () => void;
   verifying?: boolean;
+  label?: string;
 }) {
   const a = useApp();
-  const title = busy ? (verifying ? "Verifying…" : "Sending…") : "Continue";
+  const title = busy ? (verifying ? "Verifying…" : "Sending…") : label;
   return (
     <Pressable
       accessibilityRole="button"
@@ -355,7 +357,12 @@ export function Otp() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={v.otpBody}>
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="header" style={v.heading}>
-            Enter your verification code
+            {a.authIntent === "REGISTER" ? a.ui("Verify Your Account") : a.ui("Log In")}
+          </Text>
+          <Text style={[v.explanation, { marginTop: 0 }]}>
+            {a.authIntent === "REGISTER"
+              ? a.ui("Enter the verification code sent to your phone number to complete your registration.")
+              : a.ui("Enter the verification code sent to your phone number to log in.")}
           </Text>
           <Text style={[v.explanation, { marginTop: 0 }]}>
             {a.ui("Sent to {phone} · Valid for 5 minutes", {
@@ -430,6 +437,7 @@ export function Otp() {
         </View>
         <SafeAreaView edges={["bottom"]} style={v.otpFooter}>
           <ContinueButton
+            label={a.authIntent === "REGISTER" ? a.ui("Verify & Continue") : a.ui("Log In")}
             verifying={!resending}
             busy={busy}
             disabled={code.length !== 6}
