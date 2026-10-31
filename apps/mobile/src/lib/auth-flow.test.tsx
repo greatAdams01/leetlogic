@@ -85,12 +85,12 @@ it("logs out immediately to the app start and never carries seller intent to ano
   expect(current.role).toBe("BUYER");
   expect(current.user).toBeNull();
   await act(async () => {
-    await current.finishSignIn({ id: "different", farmerProfile: null } as any);
+    await current.finishSignIn({ id: "different", farmerProfile: null, capabilities: [{ capability: "BUYER" }] } as any);
   });
-  expect(current.route.name).toBe("role");
-  expect(h.store.get("account-role:different")).toBeUndefined();
+  expect(current.route.name).toBe("home");
+  expect(h.store.get("account-role:different")).toBe("BUYER");
 });
-it("lets buyers browse without a phone code or farmer security", async () => {
+it("requires buyer registration to verify a phone number", async () => {
   await act(async () => {
     tree = create(
       <AppProvider>
@@ -101,7 +101,8 @@ it("lets buyers browse without a phone code or farmer security", async () => {
   await act(async () => {
     await current.selectRole("BUYER");
   });
-  expect(current.route.name).toBe("home");
+  expect(current.route.name).toBe("phone");
+  expect(current.authIntent).toBe("REGISTER");
   expect(current.user).toBeNull();
   expect(current.security).toBeNull();
 });
@@ -130,6 +131,7 @@ it("returns a guest from the Orders sign-in prompt to browsing", async () => {
 
 const farmer = {
   id: "farmer",
+  capabilities: [{ capability: "SELLER" }],
   phoneE164: "+2348012345678",
   farmerProfile: { verificationStatus: "APPROVED" },
 } as any;
@@ -189,8 +191,8 @@ it("returns from recovery verification to the saved phone number without onboard
 it("does not carry farmer recovery intent into a different verified account", async () => {
   await lockedFarmer();
   await act(async () => current.recoverSecurity());
-  await act(async () => current.finishSignIn({ id: "other", farmerProfile: null } as any));
-  expect(current.route.name).toBe("role");
+  await act(async () => current.finishSignIn({ id: "other", farmerProfile: null, capabilities: [{ capability: "BUYER" }] } as any));
+  expect(current.route.name).toBe("home");
   expect(current.role).toBe("BUYER");
 });
 

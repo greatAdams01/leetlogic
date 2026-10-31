@@ -39,6 +39,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [role, setRole] = useState<"BUYER" | "SELLER">("BUYER"),
     [overrides, setOverrides] = useState<Record<string, string>>({});
   const [security, setSecurity] = useState<"create" | "unlock" | null>(null);
+  const [authIntent, setAuthIntent] = useState<"LOGIN" | "REGISTER">("LOGIN");
   const recoverAccount = useRef<string | null>(null);
   const roleIntent = useRef<"BUYER" | "SELLER" | null>(null);
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
@@ -142,22 +143,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return localeWrites.current;
   };
   const selectRole = async (selected: "BUYER" | "SELLER") => {
-    recoverAccount.current = null;
-    roleIntent.current = selected;
-    if (!user) {
+    if (user) {
+      if (signInRole(user, null, null) !== selected)
+        throw new Error("Your account role cannot be changed. Please contact support.");
       setRole(selected);
-      reset(selected === "BUYER" ? "home" : "phone");
+      setSecurity(selected === "SELLER" ? ((await readSecurity(user.id)) ? "unlock" : "create") : null);
+      reset(restoredAccount(user, null).route);
       return;
     }
-    const version = sessionVersion();
-    await AsyncStorage.setItem(accountRoleKey(user.id), selected);
-    const restored = restoredAccount(user, selected);
-    const nextSecurity =
-      selected === "SELLER" ? ((await readSecurity(user.id)) ? "unlock" : "create") : null;
-    if (sessionVersion() !== version) return;
-    setSecurity(nextSecurity);
+    recoverAccount.current = null;
+    roleIntent.current = selected;
+    setAuthIntent("REGISTER");
     setRole(selected);
-    reset(restored.route);
+    reset("phone");
   };
   const finishSignIn = async (account: Customer) => {
     const version = sessionVersion();
@@ -166,15 +164,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const saved = await AsyncStorage.getItem(accountRoleKey(account.id));
     if (sessionVersion() !== version) return;
     const selected = signInRole(account, saved, recovering ? "SELLER" : intent);
-    if (!selected) {
-      roleIntent.current = null;
-      recoverAccount.current = null;
-      setSecurity(null);
-      setRole("BUYER");
-      setUser(account);
-      reset("role");
-      return;
-    }
     const restored = restoredAccount(account, selected);
     await AsyncStorage.setItem(accountRoleKey(account.id), restored.role);
     // OTP establishes account ownership; only explicit recovery permits replacing a PIN.
@@ -212,6 +201,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [user, role, security]);
   const signOut = async () => {
+    setAuthIntent("LOGIN");
     // Start revocation with the current token, then clear local access immediately.
     const revoke = api("/auth/logout", { method: "POST" }).catch(() => {});
     setUser(null);
@@ -247,6 +237,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setRole,
           signOut,
           selectRole,
+          authIntent,
+          startLogin: () => {
+            roleIntent.current = null;
+            setAuthIntent("LOGIN");
+            reset("phone");
+          },
           finishSignIn,
           security,
           unlock: () => setSecurity(null),
@@ -262,6 +258,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (sessionVersion() !== version) return;
             const revoke = api("/auth/logout", { method: "POST" }).catch(() => {});
             await clearSession();
+            setAuthIntent("LOGIN");
             recoverAccount.current = account.id;
             roleIntent.current = null;
             setUser(null);
@@ -314,6 +311,8 @@ export function useApp() {
     setUser: (u: Customer | null) => void;
     loadUser: (publish?: boolean) => Promise<Customer>;
     ready: boolean;
+    authIntent: "LOGIN" | "REGISTER";
+    startLogin: () => void;
     role: "BUYER" | "SELLER";
     setRole: (r: "BUYER" | "SELLER") => void;
     signOut: () => Promise<void>;

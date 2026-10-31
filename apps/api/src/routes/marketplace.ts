@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma, Prisma } from "@leetlogic/database";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { serialize, deliveryEvent } from "../services/delivery.js";
 import { audit } from "../services/audit.js";
@@ -199,7 +199,7 @@ marketplaceRouter.get("/listings/:id", async (req, res) => {
   res.json(serialize({ item }));
 });
 marketplaceRouter.use(requireAuth("customer"));
-marketplaceRouter.get("/my-listings", async (req, res) =>
+marketplaceRouter.get("/my-listings", requireRole("SELLER"), async (req, res) =>
   res.json(
     serialize({
       items: await prisma.listing.findMany({
@@ -212,7 +212,7 @@ marketplaceRouter.get("/my-listings", async (req, res) =>
   ),
 );
 // Inventory controls apply only to already moderated listings owned by this farmer.
-marketplaceRouter.patch("/my-listings/:id/inventory", async (req, res) => {
+marketplaceRouter.patch("/my-listings/:id/inventory", requireRole("SELLER"), async (req, res) => {
   const id = uuid.parse(req.params.id);
   const body = z
     .object({
@@ -303,7 +303,7 @@ marketplaceRouter.patch("/my-listings/:id/inventory", async (req, res) => {
   });
   res.json(serialize({ item }));
 });
-marketplaceRouter.post("/orders", async (req, res) => {
+marketplaceRouter.post("/orders", requireRole("BUYER"), async (req, res) => {
   const body = z
     .object({ listingId: uuid, quantity: z.string().regex(/^\d{1,9}(\.\d{1,3})?$/) })
     .parse(req.body);

@@ -2,13 +2,13 @@ import { Router } from "express";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { prisma, Prisma } from "@leetlogic/database";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { serialize } from "../services/delivery.js";
 import { createBuyerOrder } from "../services/buyer-order.js";
 import { publicListing } from "./marketplace.js";
 export const shoppingRouter = Router();
-shoppingRouter.use(requireAuth("customer"));
+shoppingRouter.use(requireAuth("customer"), requireRole("BUYER"));
 const id = z.string().uuid(),
   qty = z.string().regex(/^\d{1,9}(\.\d{1,3})?$/),
   price = z.string().regex(/^\d{1,18}$/);

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
 import { getConfig } from "../config.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
 import {
@@ -24,7 +24,7 @@ import {
 } from "../providers/identity/dojah.js";
 
 export const identityRouter = Router();
-identityRouter.use(requireAuth("customer"));
+identityRouter.use(requireAuth("customer"), requireRole("SELLER"));
 async function ownedCase(userId: string) {
   const farmer = await prisma.farmerProfile.findUnique({ where: { userId } });
   if (!farmer) throw new AppError(404, "SELLER_PROFILE_REQUIRED", "Create a seller profile first");

@@ -11,6 +11,8 @@ export function CustomerAccount() {
   const [orders, setOrders] = useState<any[]>([]);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
+  const [intent, setIntent] = useState<"LOGIN" | "REGISTER">("LOGIN");
+  const [role, setRole] = useState<"BUYER" | "SELLER">("BUYER");
   const [sent, setSent] = useState(false);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -18,7 +20,7 @@ export function CustomerAccount() {
     customerApi("me")
       .then((data) => {
         setUser(data.user);
-        return customerApi("orders");
+        return customerApi(`orders?view=${data.user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "seller" : "buyer"}`);
       })
       .then(async (data) => {
         setOrders(data.items);
@@ -35,11 +37,11 @@ export function CustomerAccount() {
     setNotice("");
     try {
       if (!sent) {
-        await customerApi("auth/otp/request", { phone });
+        await customerApi("auth/otp/request", { phone, intent, ...(intent === "REGISTER" ? { role } : {}) });
         setSent(true);
         setNotice(t("auth.sent"));
       } else {
-        const data = await customerApi("auth/otp/verify", { phone, code });
+        const data = await customerApi("auth/otp/verify", { phone, code, intent, ...(intent === "REGISTER" ? { role } : {}) });
         setLocale(data.user.preferredLocale);
         await load();
       }
@@ -51,9 +53,19 @@ export function CustomerAccount() {
   }
   return (
     <section className="customer-panel">
-      <h1>{t("auth.title")}</h1>
+      <h1>{user ? (user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "Seller Dashboard" : "Buyer Dashboard") : t("auth.title")}</h1>
       {!user ? (
         <form onSubmit={submit}>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button type="button" disabled={busy} aria-pressed={intent === "LOGIN"} onClick={() => { setIntent("LOGIN"); setSent(false); setCode(""); setNotice(""); }}>Log In</button>
+            <button type="button" disabled={busy} aria-pressed={intent === "REGISTER"} onClick={() => { setIntent("REGISTER"); setSent(false); setCode(""); setNotice(""); }}>Create Account</button>
+          </div>
+          {intent === "REGISTER" && !sent && <label>Account type
+            <select value={role} onChange={(e) => setRole(e.target.value as "BUYER" | "SELLER")}>
+              <option value="BUYER">Buyer</option><option value="SELLER">Seller / Farmer</option>
+            </select>
+          </label>}
+
           <label>
             {t("auth.phone")}
             <input
@@ -108,9 +120,9 @@ export function CustomerAccount() {
           >
             {t("auth.signout")}
           </button>
-          <p>
+          {user.capabilities?.some((entry: any) => entry.capability === "SELLER") && <p>
             <Link href="/sell">{t("nav.sell")}</Link>
-          </p>
+          </p>}
           <h2>{t("delivery.title")}</h2>
           {notifications.map((n) => (
             <p key={n.id}>

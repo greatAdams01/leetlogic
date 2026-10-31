@@ -11,6 +11,8 @@ export const phoneSchema = z
 export const requestOtpSchema = z.object({
   phone: z.string().min(10).max(20),
   deviceId: z.string().min(8).max(128),
+  intent: z.enum(["LOGIN", "REGISTER"]).default("LOGIN"),
+  role: z.enum(["BUYER", "SELLER"]).optional(),
 });
 export const verifyOtpSchema = requestOtpSchema.extend({ code: z.string().regex(/^\d{6}$/) });
 export const refreshSchema = z.object({ refreshToken: z.string().min(32) });

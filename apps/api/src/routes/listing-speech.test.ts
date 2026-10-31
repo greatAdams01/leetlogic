@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
 vi.mock("../config.js", () => ({ getConfig: () => h.config }));
 vi.mock("../lib/redis.js", () => ({ redis: () => ({ eval: h.limit }) }));
 vi.mock("../middleware/auth.js", () => ({
+  requireRole: () => (_req: any, _res: any, next: any) => next(),
   requireAuth: () => (req: any, res: any, next: any) => {
     if (req.get("Authorization") !== "Bearer customer-session") return res.sendStatus(401);
     req.auth = { sub: "farmer" };

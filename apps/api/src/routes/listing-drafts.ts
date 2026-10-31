@@ -7,12 +7,12 @@ import {
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
 import { serialize } from "../services/delivery.js";
 export const listingDraftRouter = Router();
-listingDraftRouter.use(requireAuth("customer"));
+listingDraftRouter.use(requireAuth("customer"), requireRole("SELLER"));
 export const draftSchema = z.object({
   salePackaging: salePackagingSchema.optional(),
   packaging: packagingSchema.optional(),

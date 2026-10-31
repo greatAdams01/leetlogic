@@ -5,6 +5,8 @@ import { hashToken, randomToken } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { signAccessToken } from "../lib/tokens.js";
 
+import { accountRole } from "./account-role.js";
+
 export async function createSession(
   input: {
     subject: SessionSubject;
@@ -80,6 +82,10 @@ export async function rotateSession(refreshToken: string, expectedSubject: Sessi
     throw new AppError(401, "ACCOUNT_UNAVAILABLE", "Account is unavailable");
   if (current.expiresAt <= new Date())
     throw new AppError(401, "SESSION_EXPIRED", "Session has expired");
+  if (current.user) {
+    if (current.user.deletedAt) throw new AppError(401, "ACCOUNT_UNAVAILABLE", "Account is unavailable");
+    accountRole(current.user);
+  }
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM sessions WHERE id = ${current.id}::uuid FOR UPDATE`;
     const locked = await tx.session.findUniqueOrThrow({ where: { id: current.id } });

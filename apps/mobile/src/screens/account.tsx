@@ -112,13 +112,9 @@ export function Profile() {
           <>
             <Heading>Start selling</Heading>
             <Label>
-              Use the same account to sell produce. Your farmer profile must be approved before
-              listing.
+              Your account is registered as a Buyer. Contact support if your account role needs correction.
             </Label>
-            <Button
-              title="Start selling"
-              onPress={() => void a.selectRole("SELLER").catch((e) => setError(a.error(e)))}
-            />
+
           </>
         ) : (
           <>

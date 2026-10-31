@@ -1,4 +1,9 @@
 [
+  ["Create Account", "Create Account", "Ƙirƙiri asusu", "Mepụta akaụntụ", "Ṣẹ̀dá àkọọ́lẹ̀"],
+  ["Log In", "Log In", "Shiga", "Banye", "Wọlé"],
+  ["WELCOME TO LEETLOGIC", "WELCOME TO LEETLOGIC", "BARKA DA ZUWA LEETLOGIC", "NNỌỌ NA LEETLOGIC", "KÁÀBỌ̀ SÍ LEETLOGIC"],
+  ["New here? Choose Buyer or Seller to create your account.", "You new here? Choose Buyer or Seller to open account.", "Sabon shiga? Zaɓi Mai Saya ko Mai Sayarwa don ƙirƙirar asusu.", "Ị bụ onye ọhụrụ? Họrọ Onye Nzụta ma ọ bụ Onye Na-ere iji mepụta akaụntụ.", "Ṣé o jẹ́ tuntun? Yan Olùrà tàbí Olùtà láti ṣẹ̀dá àkọọ́lẹ̀ rẹ."],
+  ["Your account is registered as a Buyer. Contact support if your account role needs correction.", "Your account na Buyer account. Contact support if dem need correct your account type.", "An yi rajistar asusunka a matsayin Mai Saya. Tuntuɓi tallafi idan ana buƙatar gyara nau’in asusunka.", "E debanyere akaụntụ gị dị ka Onye Nzụta. Kpọtụrụ nkwado ma ọ bụrụ na ụdị akaụntụ gị chọrọ mmezi.", "A forúkọ àkọọ́lẹ̀ rẹ sílẹ̀ gẹ́gẹ́ bí Olùrà. Kan sí ìrànlọ́wọ́ bí irú àkọọ́lẹ̀ rẹ bá nílò àtúnṣe."],
   ["Step {step} of 5", "Step {step} of 5", "Mataki {step} cikin 5", "Nzọụkwụ {step} n'ime 5", "Ìgbésẹ̀ {step} nínú 5"],
   [
     "Choose your language",

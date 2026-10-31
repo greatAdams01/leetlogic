@@ -9,7 +9,7 @@ import {
   updateMeSchema,
 } from "@leetlogic/contracts";
 import { prisma } from "@leetlogic/database";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 
 export const meRouter = Router();
@@ -43,7 +43,7 @@ meRouter.patch("/locale", async (req, res) => {
   await prisma.user.update({ where: { id: req.auth!.sub }, data: { preferredLocale: locale } });
   res.json({ locale });
 });
-meRouter.post("/seller-profile", async (req, res) => {
+meRouter.post("/seller-profile", requireRole("SELLER"), async (req, res) => {
   const body = sellerProfileSchema.parse(req.body);
   const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.farmerProfile.findUnique({
@@ -66,11 +66,6 @@ meRouter.post("/seller-profile", async (req, res) => {
           "Your application cannot be edited in its current state",
         );
     }
-    await tx.userCapability.upsert({
-      where: { userId_capability: { userId: req.auth!.sub, capability: "SELLER" } },
-      create: { userId: req.auth!.sub, capability: "SELLER" },
-      update: {},
-    });
     const previousAddress = existing?.primaryAddress;
     const sameAddress =
       previousAddress &&
@@ -130,7 +125,7 @@ meRouter.post("/seller-profile", async (req, res) => {
   res.status(201).json(result);
 });
 
-meRouter.patch("/farm-location", async (req, res) => {
+meRouter.patch("/farm-location", requireRole("SELLER"), async (req, res) => {
   const coordinates = coordinatesSchema.parse(req.body);
   const farmer = await prisma.farmerProfile.findUnique({ where: { userId: req.auth!.sub } });
   if (!farmer?.primaryAddressId)

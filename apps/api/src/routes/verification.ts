@@ -9,12 +9,12 @@ import {
   verificationDocumentSchema,
 } from "@leetlogic/contracts";
 import { prisma } from "@leetlogic/database";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { encryptSecret } from "../lib/crypto.js";
 
 export const verificationRouter = Router();
-verificationRouter.use(requireAuth("customer"));
+verificationRouter.use(requireAuth("customer"), requireRole("SELLER"));
 async function currentCase(userId: string) {
   const farmer = await prisma.farmerProfile.findUnique({ where: { userId } });
   if (!farmer) throw new AppError(404, "SELLER_PROFILE_REQUIRED", "Create a seller profile first");

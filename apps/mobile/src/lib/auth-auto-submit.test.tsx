@@ -131,7 +131,7 @@ it("submits the full pasted or autofilled OTP once, using the latest digits", as
   });
   expect(h.api).toHaveBeenCalledExactlyOnceWith("/auth/otp/verify", {
     method: "POST",
-    body: { phone: "08012345678", deviceId: "device", code: "123456" },
+    body: { phone: "08012345678", deviceId: "device", code: "123456", intent: "LOGIN" },
   });
   expect(h.finish).toHaveBeenCalledTimes(1);
 });

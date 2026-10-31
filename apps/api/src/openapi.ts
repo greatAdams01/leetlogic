@@ -7,8 +7,10 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
 const phone = { ...text(10, 20), description: "Nigerian phone number, in local or +234 format", example: "+2348012345678" };
 const deviceId = { ...text(8, 128), description: "Use the same device ID when requesting and verifying a code", example: "swagger-test-device" };
 const code = { type: "string", pattern: "^\\d{6}$", example: "123456" };
-const otp = object({ phone, deviceId }, ["phone", "deviceId"]);
-const verifyOtp = object({ phone, deviceId, code }, ["phone", "deviceId", "code"]);
+const intent = { type: "string", enum: ["LOGIN", "REGISTER"], default: "LOGIN" };
+const role = { type: "string", enum: ["BUYER", "SELLER"], description: "Required only for REGISTER; ignored for LOGIN" };
+const otp = object({ phone, deviceId, intent, role }, ["phone", "deviceId"]);
+const verifyOtp = object({ phone, deviceId, code, intent, role }, ["phone", "deviceId", "code"]);
 const refresh = object({ refreshToken: { ...text(32), description: "Refresh token returned by login" } }, ["refreshToken"]);
 const preAuthToken = { ...text(32), description: "Token returned by administrator OTP verification" };
 const body = (schema: unknown, example?: unknown) => ({ required: true, content: { "application/json": { schema, ...(example ? { example } : {}) } } });
@@ -25,7 +27,7 @@ export const openapi = {
     ...deliveryOpenApiPaths,
     ...marketplaceOpenApiPaths,
     "/auth/otp/request": { post: { summary: "Request customer OTP", requestBody: body(otp), responses: { "202": { description: "Accepted" }, "422": { description: "Invalid request" } } } },
-    "/auth/otp/verify": { post: { summary: "Verify customer OTP", description: "Creates a buyer account for a new phone number, or signs in an existing customer. Returns access and refresh tokens.", requestBody: body(verifyOtp), responses: { "200": { description: "Authenticated" } } } },
+    "/auth/otp/verify": { post: { summary: "Verify customer OTP", description: "LOGIN authenticates an existing account using its stored role. REGISTER creates a new account with the chosen role after OTP verification; existing phone numbers are rejected. Use the same intent and registration role in request and verify. Returns access and refresh tokens and the registered role.", requestBody: body(verifyOtp), responses: { "200": { description: "Authenticated" } } } },
     "/auth/refresh": { post: { summary: "Rotate customer refresh token", requestBody: body(refresh), responses: { "200": { description: "Rotated" } } } },
     "/auth/logout": { post: { summary: "Log out this customer device", security: [{ bearerAuth: [] }], responses: { "204": { description: "Logged out" } } } },
     "/auth/logout-all": { post: { summary: "Log out every customer device", security: [{ bearerAuth: [] }], responses: { "204": { description: "Logged out" } } } },

@@ -2,7 +2,7 @@ import type { Customer } from "./domain";
 import { editableVerification } from "./verification";
 export const accountRoleKey = (id: string) => `account-role:${id}`;
 export function restoredAccount(user: Customer, savedRole: string | null) {
-  const role = savedRole === "SELLER" || (!savedRole && user.farmerProfile) ? "SELLER" : "BUYER";
+  const role = signInRole(user, savedRole, null);
   const unfinished =
     !user.farmerProfile || editableVerification(user.farmerProfile.verificationStatus);
   return { role, route: role === "SELLER" && unfinished ? "seller" : "home" } as const;
@@ -14,7 +14,8 @@ export function signInRole(
   savedRole: string | null,
   intent: "BUYER" | "SELLER" | null,
 ) {
-  if (intent) return intent;
-  if (savedRole === "BUYER" || savedRole === "SELLER") return savedRole;
-  return user.farmerProfile ? "SELLER" : null;
+  const roles = user.capabilities?.map((entry) => entry.capability) ?? [];
+  if (roles.length !== 1 || !["BUYER", "SELLER"].includes(roles[0]!))
+    throw new Error("Your account role needs review. Please contact support.");
+  return roles[0] as "BUYER" | "SELLER";
 }

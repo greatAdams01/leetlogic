@@ -60,6 +60,7 @@ export type Address = {
   line1: string;
 };
 export type Customer = {
+  capabilities: { capability: "BUYER" | "SELLER" }[];
   id: string;
   phoneE164: string;
   phoneVerifiedAt?: string | null;

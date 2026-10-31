@@ -1,10 +1,10 @@
 import { Router, raw, type RequestHandler } from "express";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
 import { redis } from "../lib/redis.js";
 export const listingSpeechRouter = Router();
-listingSpeechRouter.use(requireAuth("customer"));
+listingSpeechRouter.use(requireAuth("customer"), requireRole("SELLER"));
 const unavailable = () =>
   new AppError(
     503,

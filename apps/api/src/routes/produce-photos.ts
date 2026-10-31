@@ -2,7 +2,7 @@ import { Router, raw } from "express";
 import { prisma } from "@leetlogic/database";
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
-import { requireAuth, requirePermission } from "../middleware/auth.js";
+import { requireAuth, requirePermission, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { storeMedia, readMedia, deleteMedia } from "../services/storage/private-media.js";
 export const producePhotosRouter = Router();
@@ -18,6 +18,7 @@ export function imageType(bytes: Buffer) {
 producePhotosRouter.post(
   "/",
   requireAuth("customer"),
+  requireRole("SELLER"),
   raw({ type: ["image/png", "image/jpeg"], limit: "10mb" }),
   async (req, res) => {
     if (!Buffer.isBuffer(req.body) || req.body.length < 16)

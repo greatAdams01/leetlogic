@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { decryptSecret, encryptSecret, safeEqual } from "../lib/crypto.js";
-import { requireAuth, requirePermission } from "../middleware/auth.js";
+import { requireAuth, requirePermission, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
 import { storeMedia, readMedia, deleteMedia } from "../services/storage/private-media.js";
@@ -71,6 +71,7 @@ adminDocumentsRouter.get(
 documentUploadsRouter.post(
   "/",
   requireAuth("customer"),
+  requireRole("SELLER"),
   raw({
     type: ["image/jpeg", "image/png", "application/pdf", "video/mp4", "video/quicktime"],
     limit: "25mb",

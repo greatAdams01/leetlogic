@@ -61,7 +61,10 @@ function Router() {
     notifications: Notifications,
     help: Help,
   };
-  const Screen = !a.user && protectedScreens.includes(a.route.name) ? Phone : screens[a.route.name];
+  const sellerScreens = ["seller", "sell", "review", "myListings", "finance", "banks"];
+  const buyerScreens = ["cart", "likes", "categories", "shoppingLocation"];
+  const forbidden = a.user && (a.role === "BUYER" ? sellerScreens : buyerScreens).includes(a.route.name);
+  const Screen = forbidden ? screens.home : !a.user && protectedScreens.includes(a.route.name) ? Phone : screens[a.route.name];
   return (
     <>
       <OrderPush />

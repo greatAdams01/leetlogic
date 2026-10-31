@@ -57,7 +57,7 @@ function VerificationLayout({
           <Text accessibilityRole="header" style={otp ? v.otpHeaderTitle : v.headerTitle}>
             Verification
           </Text>
-          {!otp && (
+          {!otp && a.authIntent === "REGISTER" && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={a.ui("Change role")}
@@ -148,7 +148,7 @@ export function Phone() {
       const value = normalizeNigerianPhone(phone);
       await api("/auth/otp/request", {
         method: "POST",
-        body: { phone: value, deviceId: await deviceId() },
+        body: { phone: value, deviceId: await deviceId(), intent: a.authIntent || "LOGIN", ...(a.authIntent === "REGISTER" ? { role: a.role } : {}) },
       });
       a.go("otp", value);
     } catch (e) {
@@ -267,7 +267,7 @@ export function Otp() {
       const initialVersion = sessionVersion();
       const result = await api("/auth/otp/verify", {
         method: "POST",
-        body: { phone: a.route.id, deviceId: await deviceId(), code: completedCode },
+        body: { phone: a.route.id, deviceId: await deviceId(), code: completedCode, intent: a.authIntent || "LOGIN", ...(a.authIntent === "REGISTER" ? { role: a.role } : {}) },
       });
       if (sessionVersion() !== initialVersion) return;
       await saveSession(result);
@@ -293,7 +293,7 @@ export function Otp() {
     try {
       await api("/auth/otp/request", {
         method: "POST",
-        body: { phone: a.route.id, deviceId: await deviceId() },
+        body: { phone: a.route.id, deviceId: await deviceId(), intent: a.authIntent || "LOGIN", ...(a.authIntent === "REGISTER" ? { role: a.role } : {}) },
       });
       deadline.current = Date.now() + 60_000;
       setSeconds(60);

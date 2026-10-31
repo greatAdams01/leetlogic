@@ -105,7 +105,10 @@ customerDeliveryRouter.delete("/push-device", async (req, res) => {
   res.status(204).end();
 });
 customerDeliveryRouter.get("/notifications", async (req, res) => {
-  const { view } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
+  const { view: requestedView } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
+  const view = req.auth!.capabilities!.includes("SELLER") ? "seller" : "buyer";
+  if (requestedView && requestedView !== view)
+    throw new AppError(403, "ROLE_FORBIDDEN", "This dashboard is not available for your account role.");
   const items = await prisma.deliveryNotification.findMany({
     where: {
       userId: req.auth!.sub,
@@ -156,7 +159,10 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
   });
 });
 customerDeliveryRouter.get("/", async (req, res) => {
-  const { view } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
+  const { view: requestedView } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
+  const view = req.auth!.capabilities!.includes("SELLER") ? "seller" : "buyer";
+  if (requestedView && requestedView !== view)
+    throw new AppError(403, "ROLE_FORBIDDEN", "This dashboard is not available for your account role.");
   const items = await prisma.tradeOrder.findMany({
     where:
       view === "seller"

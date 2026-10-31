@@ -3,6 +3,7 @@ import { prisma } from "@leetlogic/database";
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../lib/errors.js";
 import { verifyAccessToken } from "../lib/tokens.js";
+import { accountRole } from "../services/account-role.js";
 export const requireAuth =
   (subject: "customer" | "admin") => async (req: Request, _res: Response, next: NextFunction) => {
     const [kind, token] = req.headers.authorization?.split(" ") ?? [];
@@ -13,7 +14,7 @@ export const requireAuth =
       const session = await prisma.session.findUnique({
         where: { id: req.auth.sessionId },
         include: {
-          user: true,
+          user: { include: { capabilities: true } },
           admin: {
             include: {
               roles: {
@@ -32,6 +33,10 @@ export const requireAuth =
           : session.userId !== req.auth.sub || session.user?.status !== "ACTIVE")
       )
         throw new AppError(401, "SESSION_EXPIRED", "Please sign in again");
+      if (subject === "customer") {
+        if (session.user!.deletedAt) throw new AppError(401, "ACCOUNT_UNAVAILABLE", "Account is unavailable");
+        req.auth.capabilities = [accountRole(session.user!)];
+      }
       const device = subject === "customer" ? reportedDevice(req) : {};
       if (
         !session.lastUsedAt ||
@@ -71,3 +76,10 @@ export const requireRecentStepUp = (req: Request, _res: Response, next: NextFunc
     );
   next();
 };
+
+export const requireRole = (role: "BUYER" | "SELLER") =>
+  (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.auth?.capabilities?.includes(role))
+      return next(new AppError(403, "ROLE_FORBIDDEN", `This action requires a ${role.toLowerCase()} account.`));
+    next();
+  };

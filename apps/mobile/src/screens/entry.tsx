@@ -352,22 +352,26 @@ export function Intro() {
 }
 export function Role() {
   const a = useApp();
+  const [creating, setCreating] = useState(false);
   return (
     <Page
-      title="CHOOSE YOUR ROLE"
+      title="WELCOME TO LEETLOGIC"
       green
       footer={
         <>
-          <Button
-            title={a.role === "SELLER" ? "Continue as Seller/Farmer" : "Continue as Buyer"}
+          <Button title="Log In" onPress={a.startLogin} />
+          {!creating && <Button title="Create Account" onPress={() => setCreating(true)} />}
+          {creating && <Button
+            title={a.role === "SELLER" ? "Create Seller Account" : "Create Buyer Account"}
             onPress={() => void a.selectRole(a.role)}
-          />
+          />}
           <Button title="Change language" secondary onPress={() => a.openLanguage()} />
         </>
       }
     >
-      <Heading>Who are you?</Heading>
-      <Label muted>Pick your role. You can sell harvest or purchase produce.</Label>
+      {creating && <>
+      <Heading>Create Account</Heading>
+      <Label muted>New here? Choose Buyer or Seller to create your account.</Label>
       {(["SELLER", "BUYER"] as const).map((r) => (
         <Pressable
           key={r}
@@ -408,6 +412,7 @@ export function Role() {
           </View>
         </Pressable>
       ))}
+      </>}
     </Page>
   );
 }

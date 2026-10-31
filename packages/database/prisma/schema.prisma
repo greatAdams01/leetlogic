@@ -145,7 +145,7 @@ model User {
 }
 
 model UserCapability {
-  userId     String     @map("user_id") @db.Uuid
+  userId     String     @unique @map("user_id") @db.Uuid
   capability Capability
   grantedAt  DateTime   @default(now()) @map("granted_at") @db.Timestamptz(6)
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
