@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../config.js", () => ({
   getConfig: () => ({
     DELIVERY_ENABLED: true,
+    DELIVERY_MAX_WEIGHT_KG: 1000,
     SHIPBUBBLE_API_KEY: "test-key",
     SHIPBUBBLE_MODE: "test",
     SHIPBUBBLE_TEST_KEY_CONFIRMED: true,
@@ -21,8 +22,11 @@ describe("Shipbubble protocol", () => {
     country: "NG" as const,
   };
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-31T09:00:00Z"));
     fetcher.mockReset();
   });
+  afterEach(() => vi.useRealTimers());
   it("sends supported confirmed map pins and a complete address to Shipbubble", async () => {
     fetcher.mockResolvedValue(Response.json({ status: "success", data: { address_code: 1 } }));
     await provider.validateAddress({ ...contact, latitude: 6.52, longitude: 3.37 });
@@ -134,7 +138,6 @@ describe("Shipbubble protocol", () => {
   });
   it("never submits separate parcels or special handling as one standard parcel", async () => {
     for (const parcel of [
-      { packageCount: 2, handling: "STANDARD" as const, length: 10 },
       { packageCount: 1, handling: "COLD_CHAIN" as const, length: 10 },
       { packageCount: 1, handling: "STANDARD" as const, length: 250 },
     ])
@@ -146,8 +149,61 @@ describe("Shipbubble protocol", () => {
           name: "Produce",
           valueMinor: 50000n,
         }),
-      ).rejects.toMatchObject({ code: "MANUAL_DELIVERY_REQUIRED" });
+      ).rejects.toMatchObject({ code: "DELIVERY_UNSUPPORTED" });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("quotes two 50.5 kg rice bags separately without inventing a combined box", async () => {
+    let calls = 0;
+    fetcher.mockImplementation(async (url) => {
+      if (url.endsWith("/shipping/address/validate"))
+        return Response.json({ status: "success", data: { address_code: ++calls } });
+      return Response.json({
+        status: "success",
+        data: {
+          request_token: `part-${++calls}`,
+          couriers: [
+            {
+              courier_id: "freight",
+              courier_name: "Freight",
+              service_code: "freight",
+              service_type: "pickup",
+              currency: "NGN",
+              total: 2000,
+              delivery_eta: "1 day",
+            },
+          ],
+        },
+      });
+    });
+    const quotes = await provider.quotes({
+      pickup: contact,
+      destination: contact,
+      name: "Rice",
+      valueMinor: 1000000n,
+      parcel: {
+        packageCount: 2,
+        weightKg: 101,
+        length: 80,
+        width: 50,
+        height: 25,
+        pickupDate: "2026-11-01",
+        handling: "STANDARD",
+        notes: "Keep dry",
+      },
+    });
+    expect(quotes[0]!.amountMinor).toBe(400000n);
+    const requests = fetcher.mock.calls
+      .filter(([url]) => url.endsWith("/shipping/fetch_rates"))
+      .map(([, options]) => JSON.parse(options.body));
+    expect(requests).toHaveLength(2);
+    for (const input of requests)
+      expect(input).toMatchObject({
+        package_items: [{ unit_weight: 50.5, unit_amount: 5000, quantity: 1 }],
+        package_dimension: { length: 80, width: 50, height: 25 },
+        delivery_instructions: "Keep dry",
+        service_type: "pickup",
+      });
+    expect(quotes[0]!.requestToken).toMatch(/^split:/);
   });
   it("creates labels using the stored request token and service code", async () => {
     fetcher.mockResolvedValue(

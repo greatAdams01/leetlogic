@@ -852,6 +852,7 @@ model Delivery {
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
   order TradeOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  parcels DeliveryParcel[]
   quotes DeliveryQuote[]
   events DeliveryEvent[]
   @@index([status, nextSyncAt])
@@ -873,6 +874,7 @@ model DeliveryQuote {
   expiresAt DateTime @db.Timestamptz(6)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  parcels DeliveryParcel[]
   @@index([deliveryId])
   @@map("delivery_quotes")
 }
@@ -1146,4 +1148,29 @@ model ListingApprovalNotification {
   @@index([userId, createdAt])
   @@index([sentAt, nextRunAt])
   @@map("listing_approval_notifications")
+}
+
+/// Separate, durably claimed provider bookings for a split shipment. Uncertain calls are never retried.
+model DeliveryParcel {
+  id String @id @default(uuid()) @db.Uuid
+  deliveryId String @db.Uuid
+  quoteId String @db.Uuid
+  parcelIndex Int
+  requestToken String @db.Text
+  serviceCode String @db.VarChar(120)
+  courierId String @db.VarChar(120)
+  amountMinor BigInt
+  walletMinor BigInt
+  actualMinor BigInt?
+  providerShipmentId String? @unique @db.VarChar(160)
+  trackingUrl String? @db.Text
+  status String @default("PENDING") @db.VarChar(40)
+  failureCode String? @db.VarChar(80)
+  cancelAttemptedAt DateTime? @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  quote DeliveryQuote @relation(fields: [quoteId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([deliveryId, parcelIndex])
+  @@map("delivery_parcels")
 }

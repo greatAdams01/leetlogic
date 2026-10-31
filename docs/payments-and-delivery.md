@@ -11,7 +11,7 @@ Use the root `.env`; restart API and worker after changes. The example contains 
 3. Enable `PAYMENTS_ENABLED` for the pilot. Enable transfers, payouts and refunds separately only for the sandbox flows being tested. Farmer setup is available under Menu → Payments and earnings, and `/account/payments` on web. Farmers must finish hosted account onboarding, obtain transfer/payout capabilities, and verify an owned bank before buyer checkout is offered.
 4. Confirm exact NGN payout fees with Bachs for this account. Set `BACHS_NGN_PAYOUT_FEE_MINOR` to the verified fee in kobo; leaving it blank disables withdrawal requests. Same-currency Bachs payout quotes do not quote fees. A changed actual fee blocks local completion and requires reconciliation; never guess this price.
 5. Cards are enabled first. Bank transfers require `BACHS_BANK_REFUNDS_VERIFIED=true` after demonstrating the original-payer bank-refund transfer and payout flow. A bank refund requires the buyer's approved connected account and owned usable bank; missing payer details require an audited staff evidence review.
-6. Configure Shipbubble test key/access and eligible category/routes using the delivery settings already documented. Confirm wallet balance before booking. Sandbox payments cannot fund live courier bookings. Unsupported produce, bulk and cold-chain stay in manual review.
+6. Configure Shipbubble test key/access and eligible category/routes using the delivery settings already documented. Confirm wallet balance before booking. Sandbox payments cannot fund live courier bookings. Supported STANDARD shipments receive selectable courier-service quotes without staff fee approval. Unsupported produce, oversized loads and cold-chain return an actionable error; historical staff-managed arrangements remain available.
 
 The API key alone is insufficient: organization ID, webhook secret, farmer onboarding/capabilities, approved banks, provider pricing and eligible routes must also be ready. Provider-side setup and real sandbox transactions are still required; mocked tests do not certify provider account readiness.
 
@@ -21,6 +21,7 @@ From repository root:
 
 ```sh
 pnpm --filter @leetlogic/database exec prisma migrate deploy
+pnpm db:generate
 pnpm --filter @leetlogic/api dev
 pnpm --filter @leetlogic/web dev
 pnpm --filter @leetlogic/mobile start
@@ -67,6 +68,7 @@ pnpm --filter @leetlogic/api test:delivery
 pnpm --filter @leetlogic/api test:identity
 pnpm --filter @leetlogic/api test:admin
 pnpm --filter @leetlogic/mobile test
+pnpm --filter @leetlogic/web test
 pnpm --filter @leetlogic/web build
 ```
 
@@ -86,13 +88,13 @@ Endpoints: `GET /v1/orders/:id/disputes`, `POST /v1/orders/:id/disputes`, `POST 
 
 ## Listing packing and buyer delivery review
 
-New listing submissions require the number of selling units in one package, its packed weight in kilograms, dimensions in centimetres, handling and optional instructions. Weight includes the packaging. Existing drafts remain editable; add these details before submitting them.
+New listing submissions require the number of selling units in one parcel, its gross packed weight in kilograms, dimensions in centimetres, handling and optional instructions. Step 4 keeps the existing selling-package selector. For known KG selling sizes, the farmer enters additional packaging weight and the form calculates gross weight; liquid and piece-based products still require measured gross weight. Existing drafts remain editable; add these details before submitting them. My Listings offers Edit shipping details for owned listings, including legacy listings without measurements.
 
-An order snapshots the listing's packing data. Its estimate rounds package count up and includes the full weight of a partly filled final package. For several packages, buyers must enter the actual packed dimensions; dimensions are never multiplied to invent a combined box. Buyers can edit package count, weight, dimensions and instructions before requesting a quote, but cannot remove required handling. Saved buyer measurements take precedence when reopening delivery review.
+An order snapshots packing, selling units, category and route scope. Parcel count rounds up and includes the full gross weight of a partly filled final parcel. Dimensions describe each farmer-packed parcel, never an invented combined box. The server derives count, weight, volume and handling from the saved order; buyer measurements cannot override them. Buyers choose the destination and pickup date, while pickup resolves to the farmer's saved address.
 
-Only eligible single standard parcels receive automatic courier quotes. Multiple parcels, oversized packages and special handling go to staff review. Changing a delivery request invalidates its old quotes and clears any selected shipping charge. Payment locks prevent later edits. Shipping remains separate from produce value and escrow release.
+Eligible STANDARD shipments with up to 20 identical parcels receive automatic quotes. Each parcel has its own provider quote token and booking claim; only services quoting every parcel are offered, with fees summed exactly. Incompatible handling, unsupported routes, missing packing, oversized loads and empty provider results block checkout instead of automatically entering manual review. Changing a delivery request invalidates old quotes and the payable total. Active payment attempts prevent delivery edits. Expired, invalid or stale selections cannot create or resume checkout, and confirmed payments are checked again against the saved shipment before funding. Shipping remains separate from produce value and escrow release.
 
-Apply migration `20261028140000_listing_packaging` before deploying. Legacy listings without measurements require buyer confirmation; new orders record when source measurements were unavailable so later listing edits do not silently change their estimate.
+Apply migrations `20261028140000_listing_packaging` and `20261031180000_split_delivery_parcels` before deploying, and regenerate Prisma Client. Existing populated order snapshots do not change when listings are edited. Orders reserved without packing may need to be cancelled and placed again after the farmer completes measurements. Mixed products and farmers remain separate per-listing orders, shipping selections and payments; consolidated multi-seller pickup is not implemented. See [shipping checkout and provider boundaries](shipping-checkout.md).
 
 ## Provider references
 
@@ -117,7 +119,7 @@ When payment setup or a usable bank is missing, the home action leads to the req
 
 ## Courier recommendations and checkout actions
 
-Courier quotes are ranked on the server, independently of provider array order and database timestamps. Only unexpired quotes with a courier ID can be recommended. Scoring uses 60% price, 30% the upper bound of the provider ETA, and 10% provider service quality. Quality combines the supplied courier rating (weighted by vote count, shrunk toward neutral with 20 prior observations) and tracking level. Missing quality is not shown as a fabricated rating. More expensive/slower recommendations explain their actual provider-quality advantage. `DeliveryQuote.quality` stores the nullable provider snapshot; apply migration `20261029100000_delivery_quote_quality` before deploying the API.
+Courier-service quotes are ranked on the server, independently of provider array order and database timestamps. Only compatible, unexpired quotes with a courier ID can be recommended; unavailable historical cards stay visible but disabled. Scoring uses 60% price, 30% the upper bound of the provider ETA, and 10% provider service quality. Quality combines the supplied courier rating (weighted by vote count, shrunk toward neutral with 20 prior observations) and tracking level. Missing quality is not shown as a fabricated rating. More expensive/slower recommendations explain their actual provider-quality advantage. These cards do not identify individual riders or certify vehicle capacity. `DeliveryQuote.quality` stores the nullable provider snapshot; apply migration `20261029100000_delivery_quote_quality` before deploying the API.
 
 The mobile and web payment actions use persisted attempt state as well as order/escrow state. Pending/unknown attempts show **Check Payment**; an open current hosted session can be resumed with **Continue payment**, without another checkout write. Confirmed, funded, cancelled, or reviewed orders cannot offer another produce payment. Definitively rejected initialization returns an HTTP error instead of a misleading successful response. A declined card in an open checkout keeps that checkout available for retry; verification only credits escrow after confirmed receipt, and repeated verification cannot duplicate the credit.
 

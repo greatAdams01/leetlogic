@@ -1,3 +1,4 @@
+import { ListingShipping } from "../components/listing-shipping";
 import { SalePackagingForm } from "../components/sale-packaging";
 import { saleUnitLabel, packagingOptions } from "../../../../packages/contracts/src/sale-packaging";
 import { PackingFieldsForm } from "../components/packing-fields";
@@ -600,6 +601,7 @@ export function Sell() {
             <Notice text="Your listing will wait for our team to complete package measurements. Buyers cannot purchase it until then." />
           ) : (
             <PackingFieldsForm
+              salePackaging={form.salePackaging}
               value={form.packaging || emptyPacking}
               onChange={(value) => field("packaging", value)}
             />
@@ -955,6 +957,8 @@ export function Review() {
                   ],
                   ["Required handling", a.status(form.packaging.handling)],
                   ["Handling instructions", form.packaging.notes || a.ui("None")],
+                  ...(form.packaging.specialHandling?.length ? [["Required handling", form.packaging.specialHandling.map((flag) => a.ui({ FRAGILE: "Fragile produce", VENTILATED: "Needs ventilation", UPRIGHT: "Keep upright", SHADE: "Protect from sunlight", NON_STACKABLE: "Do not stack" }[flag])).join(", ")]] : []),
+                  ...(form.packaging.pickupInstructions ? [["Pickup instructions (optional)", form.packaging.pickupInstructions]] : []),
                 ]
               : []),
             ["Shipping scope", a.ui(form.shippingScope === "LOCAL" ? "Local" : "Sells in Nigeria")],
@@ -1159,6 +1163,7 @@ export function MyListings() {
             {money(i.unitPriceMinor)} / {saleUnitLabel(i.salePackaging, a.ui) || a.unit(i.unitCode)}
           </Label>
           <ListingControls item={i} onUpdated={r.reload} />
+          <ListingShipping item={i} onUpdated={r.reload} />
         </Card>
       ))}
     </Page>

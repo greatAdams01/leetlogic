@@ -82,7 +82,7 @@ const schema = z.object({
   ),
   DELIVERY_ALLOWED_CATEGORIES: z.string().default(""),
   DELIVERY_ALLOWED_STATES: z.string().default(""),
-  DELIVERY_MAX_WEIGHT_KG: z.coerce.number().positive().max(100).default(20),
+  DELIVERY_MAX_WEIGHT_KG: z.coerce.number().positive().max(1_000_000).default(1000),
   TRANSLATION_ENABLED: z
     .enum(["true", "false"])
     .default("false")

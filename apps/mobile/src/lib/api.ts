@@ -117,7 +117,15 @@ export async function api<T = any>(
           : {}),
       signal:
         options.signal ??
-        AbortSignal.timeout(options.imageResponse ? 70000 : options.binary ? 60000 : 25000),
+        AbortSignal.timeout(
+          /\/delivery\/(quotes|refresh-quote)$/.test(path)
+            ? 120000
+            : options.imageResponse
+              ? 70000
+              : options.binary
+                ? 60000
+                : 25000,
+        ),
     });
   let response: Response;
   try {

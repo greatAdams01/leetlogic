@@ -1,13 +1,15 @@
 import { AppError } from "../lib/errors.js";
 import * as mediaStorage from "../services/storage/private-media.js";
 import { randomUUID, createHmac } from "node:crypto";
-import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from "vitest";
+import { beforeAll, beforeEach, afterAll, afterEach, describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { prisma } from "@leetlogic/database";
+import { prisma, type Prisma } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { bachs } from "../providers/payments/bachs.js";
 import { createApp } from "../app.js";
 import { createSession } from "../services/sessions.js";
+import { signAccessToken, verifyAccessToken } from "../lib/tokens.js";
+import { combineParcelRates, splitParts } from "../providers/shipping/shipbubble.js";
 import {
   startCheckout,
   reconcilePayment,
@@ -20,6 +22,9 @@ import {
 } from "../services/payments.js";
 import { runMoneyOperation, runPaymentJobs } from "../services/payment-worker.js";
 import { redis } from "../lib/redis.js";
+import { applyTracking, runDeliveryJobs, shippingProvider } from "../services/delivery.js";
+import { deliveryInputHash, deriveDeliveryInput, savedPickup, shippingOrderInclude } from "../services/delivery-quote.js";
+import { shippingSnapshot } from "../services/packaging.js";
 const suite = process.env.PAYMENTS_INTEGRATION === "1" ? describe : describe.skip;
 suite("provider-backed payment safeguards", () => {
   const app = createApp();
@@ -28,6 +33,7 @@ suite("provider-backed payment safeguards", () => {
     farmer: string,
     listing: string,
     token: string,
+    staff: string,
     outsider: string,
     destination: string;
   const req = () =>
@@ -47,14 +53,21 @@ suite("provider-backed payment safeguards", () => {
       PAYMENTS_PAYOUTS_ENABLED: true,
       PAYMENTS_REFUNDS_ENABLED: true,
       BACHS_NGN_PAYOUT_FEE_MINOR: "100",
-      DELIVERY_ENABLED: false,
+      DELIVERY_ENABLED: true,
+      SHIPBUBBLE_API_KEY: "fixture",
+      SHIPBUBBLE_MODE: "test",
+      SHIPBUBBLE_TEST_KEY_CONFIRMED: true,
+      SHIPBUBBLE_CATEGORY_ID: 24032950,
+      DELIVERY_ALLOWED_STATES: "Lagos",
+      DELIVERY_MAX_WEIGHT_KG: 1000,
     });
     const users = await Promise.all(
       [0, 1, 2].map((i) =>
         prisma.user.create({
           data: {
             phoneE164: `+234${i + 7}${Date.now().toString().slice(-9)}`,
-            profile: { create: { displayName: "Payment test" } },
+            capabilities: { create: { capability: i === 1 ? "SELLER" : "BUYER" } },
+            profile: { create: { displayName: "Payment test", fullName: "Payment test", email: "fixture@example.test" } },
           },
         }),
       ),
@@ -71,6 +84,23 @@ suite("provider-backed payment safeguards", () => {
         deviceId: randomUUID(),
       })
     ).accessToken;
+    const role = await prisma.adminRole.create({
+      data: { code: `PAYMENTS_${randomUUID()}`, name: "Payment integration" },
+    });
+    for (const code of ["orders.read", "orders.manage", "payments.manage"]) {
+      const permission = await prisma.permission.upsert({
+        where: { code }, create: { code, description: code }, update: {},
+      });
+      await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: permission.id } });
+    }
+    const admin = await prisma.adminAccount.create({
+      data: {
+        email: `payments-${randomUUID()}@example.test`, fullName: "Payment operator", status: "ACTIVE",
+        roles: { create: { roleId: role.id } },
+      },
+    });
+    const adminToken = (await createSession({ subject: "ADMIN", principalId: admin.id, deviceId: randomUUID() })).accessToken;
+    staff = signAccessToken({ ...verifyAccessToken(adminToken, "admin"), stepUpAt: Math.floor(Date.now() / 1000) });
     farmer = (
       await prisma.farmerProfile.create({
         data: {
@@ -85,6 +115,7 @@ suite("provider-backed payment safeguards", () => {
       data: { userId: seller, state: "Lagos", city: "Lagos", lga: "Ikeja", line1: "12 Test road" },
     });
     const category = await prisma.category.create({ data: { slug: `payments-${randomUUID()}` } });
+    getConfig().DELIVERY_ALLOWED_CATEGORIES = category.id;
     await prisma.unit.upsert({
       where: { code: "KG" },
       create: { code: "KG", name: "Kilogram", allowsDecimal: true },
@@ -103,6 +134,7 @@ suite("provider-backed payment safeguards", () => {
           availableQuantity: "1000",
           reservedQuantity: "100",
           shippingScope: "NATIONWIDE",
+          packaging: { unitsPerPackage: 1, weightKg: 1.1, length: 20, width: 15, height: 10, handling: "STANDARD", notes: "Keep dry" },
           status: "ACTIVE",
         },
       })
@@ -132,36 +164,62 @@ suite("provider-backed payment safeguards", () => {
       })
     ).id;
   });
-  afterEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    // Workers scan the schema. No test may accidentally call either real provider.
+    vi.spyOn(bachs, "call").mockRejectedValue(new Error("Unexpected payment provider call"));
+    vi.spyOn(shippingProvider, "quotes").mockRejectedValue(new Error("Unexpected rate request"));
+    vi.spyOn(shippingProvider, "wallet").mockResolvedValue(1000000n);
+    vi.spyOn(shippingProvider, "book").mockRejectedValue(new Error("Unexpected carrier booking"));
+    vi.spyOn(shippingProvider, "track").mockImplementation(async (id) => ({ id, status: "pending", courier: "Fixture courier" }));
+    vi.spyOn(shippingProvider, "cancel").mockResolvedValue();
+  });
+  afterEach(async () => {
+    await prisma.delivery.updateMany({
+      where: { order: { buyerId: buyer, farmerProfileId: farmer }, status: "BOOKING_QUEUED" },
+      data: { status: "BOOKING_BLOCKED" },
+    });
+    vi.restoreAllMocks();
+  });
   afterAll(async () => {
     await prisma.$disconnect();
     await redis().quit();
   });
-  async function order() {
+  async function order(quantity = 1, productId = listing) {
+    const product = await prisma.listing.findUniqueOrThrow({ where: { id: productId } });
     const o = await prisma.tradeOrder.create({
       data: {
         reference: `PAY-${randomUUID()}`,
         buyerId: buyer,
-        farmerProfileId: farmer,
-        listingId: listing,
-        quantity: "1",
-        totalMinor: 10000n,
+        farmerProfileId: product.farmerProfileId,
+        listingId: productId,
+        quantity: String(quantity),
+        totalMinor: product.unitPriceMinor * BigInt(quantity),
         feeBasisPoints: 600,
+        packagingSnapshot: shippingSnapshot(product) as Prisma.InputJsonValue,
       },
+      include: shippingOrderInclude,
     });
+    const contact = { name: "Fixture contact", phone: "+2348012345678", email: "fixture@example.test", address: "20 Buyer Street, Lagos, Ikeja", state: "Lagos", country: "NG" as const };
+    const input = deriveDeliveryInput(o, {
+      pickup: { ...contact, ...savedPickup(o) },
+      destination: contact,
+      pickupDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    });
+    const service = (index: number) => ({
+      requestToken: `token-${o.id}-${index}`, serviceCode: "pickup", courierId: "courier", courier: "Fixture courier",
+      amountMinor: 1000n, walletMinor: 1000n,
+    });
+    const rate = input.parcel.packageCount === 1 ? service(0) : combineParcelRates(
+      Array.from({ length: input.parcel.packageCount }, (_, index) => [service(index)]),
+    )[0]!;
     const d = await prisma.delivery.create({
-      data: { orderId: o.id, status: "PAYMENT_PENDING", shippingMinor: 1000n },
+      data: { orderId: o.id, status: "PAYMENT_PENDING", shippingMinor: rate.amountMinor, courier: rate.courier, pickup: input.pickup, destination: input.destination, package: input.parcel },
     });
     const q = await prisma.deliveryQuote.create({
       data: {
         deliveryId: d.id,
-        requestToken: "token",
-        serviceCode: "pickup",
-        inputHash: "fixture",
-        courierId: "courier",
-        courier: "Fixture courier",
-        amountMinor: 1000n,
-        walletMinor: 1000n,
+        ...rate,
+        inputHash: deliveryInputHash(o, input),
         expiresAt: new Date(Date.now() + 600000),
       },
     });
@@ -192,8 +250,8 @@ suite("provider-backed payment safeguards", () => {
       payment_id: `ch_${a.id}`,
       checkout_id: a.checkoutId,
       currency: "NGN",
-      amount: "110.00",
-      amount_paid: "111.00",
+      amount: `${a.amountMinor / 100n}.${String(a.amountMinor % 100n).padStart(2, "0")}`,
+      amount_paid: `${(a.amountMinor + 100n) / 100n}.${String((a.amountMinor + 100n) % 100n).padStart(2, "0")}`,
       amount_remaining: "0.00",
       fees: { amount: "1.00", currency: "NGN" },
       merchant_bears_cost: false,
@@ -202,6 +260,39 @@ suite("provider-backed payment safeguards", () => {
       ...overrides,
     });
   }
+  async function funded(quantity = 1) {
+    const fixture = await order(quantity);
+    const a = await checkout(fixture.o.id);
+    mockReceipt(a);
+    await reconcilePayment(a.id);
+    return { ...fixture, a };
+  }
+  async function recordParcels(fixture: Awaited<ReturnType<typeof order>>, count: number) {
+    const parts = splitParts(fixture.q.requestToken)!;
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: {
+      status: "BOOKING_UNCERTAIN", providerShipmentId: `split:${fixture.d.id}`, bookingStartedAt: new Date(),
+    } });
+    for (const [parcelIndex, part] of parts.entries())
+      await prisma.deliveryParcel.create({ data: {
+        deliveryId: fixture.d.id, quoteId: fixture.q.id, parcelIndex, ...part,
+        amountMinor: BigInt(part.amountMinor), walletMinor: BigInt(part.walletMinor),
+        status: parcelIndex < count ? "BOOKED" : "BOOKING_UNCERTAIN",
+        providerShipmentId: parcelIndex < count ? `SB-${fixture.d.id}-${parcelIndex}` : null,
+        actualMinor: parcelIndex < count ? BigInt(part.walletMinor) : null,
+      } });
+    return prisma.deliveryParcel.findMany({ where: { deliveryId: fixture.d.id }, orderBy: { parcelIndex: "asc" } });
+  }
+  const customerAuth = () => ({ Authorization: `Bearer ${token}` });
+  const staffAuth = () => ({ Authorization: `Bearer ${staff}` });
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
+  const rate = (q: Awaited<ReturnType<typeof order>>["q"], amountMinor = q.amountMinor) => ({
+    requestToken: q.requestToken, courierId: q.courierId!, serviceCode: q.serviceCode,
+    courier: q.courier, amountMinor, walletMinor: amountMinor,
+  });
   it("collects produce-only payment for pickup and lets only the buyer confirm receipt", async () => {
     const { o, d } = await order();
     expect(
@@ -278,7 +369,7 @@ suite("provider-backed payment safeguards", () => {
         amountMinor: 695000n,
         walletMinor: 695000n,
         eta: "Within 25 hrs",
-        inputHash: "fixture",
+        inputHash: q.inputHash,
         expiresAt: new Date(Date.now() + 600000),
       },
     });
@@ -457,7 +548,7 @@ suite("provider-backed payment safeguards", () => {
       .get("/v1/orders/escrow-summary")
       .set("Authorization", `Bearer ${outsider}`);
     expect(outsiderSummary.body).toMatchObject({ heldMinor: "0", activeDispatch: 0 });
-    await prisma.delivery.update({ where: { id: d.id }, data: { status: d.status } });
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "DELIVERED" } });
 
     expect(
       (
@@ -623,6 +714,7 @@ suite("provider-backed payment safeguards", () => {
       a = await checkout(o.id);
     mockReceipt(a);
     await reconcilePayment(a.id);
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "BOOKING_BLOCKED" } });
     const refundReq = req();
     refundReq.auth.sub = buyer;
     refundReq.body.shippingRefundMinor = "1000";
@@ -691,10 +783,11 @@ suite("provider-backed payment safeguards", () => {
         usable: true,
       },
     });
-    const { o } = await order(),
-      a = await checkout(o.id);
+    const { o, d } = await order(),
+       a = await checkout(o.id);
     mockReceipt(a, { method: "NGN_BANK_TRANSFER" });
     await reconcilePayment(a.id);
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "BOOKING_BLOCKED" } });
     const refundReq = req();
     refundReq.auth.sub = buyer;
     refundReq.body.shippingRefundMinor = "1000";
@@ -1091,5 +1184,605 @@ suite("provider-backed payment safeguards", () => {
     expect(
       await prisma.financialAccount.count({ where: { userId: seller, mode: "sandbox" } }),
     ).toBe(1);
+  });
+  it.each(["destination", "quantity", "packing", "selected fee", "snapshot", "split plan"])(
+    "blocks checkout reuse, hosted links and payment allocation after stale %s", async (changed) => {
+      const fixture = await order(changed === "split plan" ? 2 : 1);
+      const a = await checkout(fixture.o.id);
+      if (changed === "destination")
+        await prisma.delivery.update({ where: { id: fixture.d.id }, data: { destination: { ...(fixture.d.destination as object), address: "Changed destination road Lagos" } } });
+      if (changed === "quantity")
+        await prisma.tradeOrder.update({ where: { id: fixture.o.id }, data: { quantity: "2" } });
+      if (changed === "packing")
+        await prisma.delivery.update({ where: { id: fixture.d.id }, data: { package: { ...(fixture.d.package as object), weightKg: 0.1 } } });
+      if (changed === "selected fee")
+        await prisma.delivery.update({ where: { id: fixture.d.id }, data: { shippingMinor: 900n } });
+      if (changed === "snapshot") {
+        const snapshot = fixture.o.packagingSnapshot as any;
+        await prisma.tradeOrder.update({ where: { id: fixture.o.id }, data: { packagingSnapshot: { ...snapshot, packaging: { ...snapshot.packaging, weightKg: 2 } } } });
+      }
+      if (changed === "split plan")
+        await prisma.deliveryQuote.update({ where: { id: fixture.q.id }, data: { requestToken: "split:not-json" } });
+      await expect(startCheckout(fixture.o.id, buyer)).rejects.toMatchObject({ code: "STALE_DELIVERY_QUOTE" });
+      const read = await request(app).get(`/v1/orders/${fixture.o.id}/payments`).set(customerAuth());
+      expect(read.body).toMatchObject({ checkoutReady: false, payableMinor: null, checkoutErrorCode: "STALE_DELIVERY_QUOTE" });
+      expect(read.body.items[0].checkoutUrl).toBeNull();
+      expect((await request(app).get(`/v1/financial/payments/${a.id}`).set(customerAuth())).body.checkoutUrl).toBeNull();
+      mockReceipt(a);
+      await reconcilePayment(a.id);
+      expect(await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: a.id } })).toMatchObject({ status: "EXCEPTION", exceptionCode: "STALE_DELIVERY_QUOTE" });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: fixture.o.id } })).toMatchObject({ heldMinor: 0n, financialHold: true });
+      expect(await prisma.escrowEntry.count({ where: { orderId: fixture.o.id, kind: "FUND" } })).toBe(0);
+    },
+  );
+  it("invalidates the previous choice before a changed-address quotation fails", async () => {
+    const { o, d, q } = await order();
+    vi.mocked(shippingProvider.quotes).mockRejectedValue(new AppError(502, "QUOTES_UNAVAILABLE", "Provider unavailable"));
+    const response = await request(app).post(`/v1/orders/${o.id}/delivery/quotes`).set(customerAuth()).send({
+      pickup: d.pickup, destination: { ...(d.destination as object), address: "New buyer destination Lagos" }, parcel: d.package,
+    });
+    expect(response.status).toBe(502);
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).toMatchObject({
+      status: "QUOTE_REQUIRED", selectedQuoteId: null, shippingMinor: 0n, failureCode: "QUOTES_UNAVAILABLE",
+      destination: { address: "New buyer destination Lagos" },
+    });
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/select`).set(customerAuth()).send({ quoteId: q.id })).status).toBe(409);
+    await expect(startCheckout(o.id, buyer)).rejects.toMatchObject({ code: "QUOTE_EXPIRED" });
+  });
+  it("keeps the latest quotation when provider responses arrive out of order", async () => {
+    const { o, d, q } = await order();
+    const entered = deferred<void>(), delayed = deferred<ReturnType<typeof rate>[]>();
+    vi.mocked(shippingProvider.quotes)
+      .mockImplementationOnce(async () => { entered.resolve(); return delayed.promise; })
+      .mockResolvedValueOnce([{ ...rate(q, 1800n), requestToken: "latest-token" }]);
+    const send = (address: string) => request(app).post(`/v1/orders/${o.id}/delivery/quotes`).set(customerAuth()).send({
+      pickup: d.pickup, destination: { ...(d.destination as object), address }, parcel: d.package,
+    });
+    const first = send("First buyer destination Lagos").then((response) => response);
+    await entered.promise;
+    const second = await send("Latest buyer destination Lagos");
+    delayed.resolve([{ ...rate(q), requestToken: "obsolete-token" }]);
+    expect(second.status).toBe(200);
+    expect((await first).status).toBe(409);
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).toMatchObject({ destination: { address: "Latest buyer destination Lagos" }, selectedQuoteId: null, shippingMinor: 0n });
+    expect(await prisma.deliveryQuote.count({ where: { deliveryId: d.id, expiresAt: { gt: new Date() } } })).toBe(1);
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/select`).set(customerAuth()).send({ quoteId: second.body.items[0].id })).status).toBe(200);
+    expect((await startCheckout(o.id, buyer)).amountMinor).toBe(11800n);
+  });
+  it("rebuilds legacy buyer-entered measurements during refresh rather than reusing them", async () => {
+    const { o, d, q } = await order();
+    await prisma.deliveryQuote.update({ where: { id: q.id }, data: { inputHash: "legacy-request-hash" } });
+    await prisma.delivery.update({ where: { id: d.id }, data: { package: { ...(d.package as object), weightKg: 0.1, length: 1, packageCount: 5 } } });
+    vi.mocked(shippingProvider.quotes).mockResolvedValue([rate(q, 1600n)]);
+    const response = await request(app).post(`/v1/orders/${o.id}/delivery/refresh-quote`).set(customerAuth()).send({});
+    expect(response.status).toBe(200);
+    expect(shippingProvider.quotes).toHaveBeenLastCalledWith(expect.objectContaining({ parcel: expect.objectContaining({ weightKg: 1.1, packageCount: 1, length: 20, width: 15, height: 10 }) }));
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).toMatchObject({ status: "PAYMENT_PENDING", shippingMinor: 1600n, package: { weightKg: 1.1, packageCount: 1 } });
+    expect((await startCheckout(o.id, buyer)).amountMinor).toBe(11600n);
+  });
+  it.each(["oversized", "cold chain", "special handling", "missing packing"])("does not quote or initialize payment for %s", async (kind) => {
+    const { o, d } = await order();
+    const snapshot = o.packagingSnapshot as any;
+    const packaging = kind === "missing packing" ? null : {
+      ...snapshot.packaging,
+      ...(kind === "oversized" ? { length: 250 } : {}),
+      ...(kind === "cold chain" ? { handling: "COLD_CHAIN" } : {}),
+      ...(kind === "special handling" ? { specialHandling: ["FRAGILE"] } : {}),
+    };
+    await prisma.tradeOrder.update({ where: { id: o.id }, data: { packagingSnapshot: { ...snapshot, packaging } } });
+    const response = await request(app).post(`/v1/orders/${o.id}/delivery/quotes`).set(customerAuth()).send({ pickup: d.pickup, destination: d.destination, parcel: d.package });
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe(kind === "missing packing" ? "PACKING_REQUIRED" : "DELIVERY_UNSUPPORTED");
+    expect(shippingProvider.quotes).not.toHaveBeenCalled();
+    expect((await request(app).get(`/v1/orders/${o.id}/payments`).set(customerAuth())).body.checkoutReady).toBe(false);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).not.toBe("MANUAL_REVIEW");
+    expect(await prisma.paymentAttempt.count({ where: { orderId: o.id } })).toBe(0);
+  });
+  it("blocks stale shipment inputs before a queued hosted-checkout write", async () => {
+    const { o, d } = await order();
+    const a = await startCheckout(o.id, buyer);
+    const op = await prisma.moneyOperation.findFirstOrThrow({ where: { paymentId: a.id, kind: "CHECKOUT" } });
+    const write = vi.spyOn(bachs, "checkout");
+    await prisma.delivery.update({ where: { id: d.id }, data: { package: { ...(d.package as object), weightKg: 0.1 } } });
+    await runMoneyOperation(op.id);
+    expect(write).not.toHaveBeenCalled();
+    expect(await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: a.id } })).toMatchObject({ status: "BLOCKED", exceptionCode: "STALE_DELIVERY_QUOTE", checkoutUrl: null });
+  });
+  it("suppresses a hosted link when delivery changes during initialization", async () => {
+    const { o, d } = await order();
+    const a = await startCheckout(o.id, buyer);
+    const op = await prisma.moneyOperation.findFirstOrThrow({ where: { paymentId: a.id, kind: "CHECKOUT" } });
+    vi.spyOn(bachs, "checkout").mockImplementation(async () => {
+      await prisma.delivery.update({ where: { id: d.id }, data: { shippingMinor: 900n } });
+      return { checkout_id: `cs_${a.id}`, checkout_url: `https://checkout.bachs.io/${a.id}`, expires_at: a.expiresAt.toISOString() };
+    });
+    await runMoneyOperation(op.id);
+    expect(await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: a.id } })).toMatchObject({ status: "BLOCKED", exceptionCode: "STALE_DELIVERY_QUOTE" });
+    expect((await request(app).get(`/v1/orders/${o.id}/payments`).set(customerAuth())).body.items[0].checkoutUrl).toBeNull();
+  });
+  it("does not reopen checkout if a webhook confirms payment before initialization finishes", async () => {
+    const { o } = await order();
+    const a = await startCheckout(o.id, buyer);
+    const op = await prisma.moneyOperation.findFirstOrThrow({ where: { paymentId: a.id, kind: "CHECKOUT" } });
+    vi.spyOn(bachs, "checkout").mockImplementation(async () => {
+      const checkoutId = `cs_${a.id}`;
+      await prisma.paymentAttempt.update({ where: { id: a.id }, data: { checkoutId } });
+      mockReceipt({ ...a, checkoutId });
+      await reconcilePayment(a.id);
+      return { checkout_id: checkoutId, checkout_url: `https://checkout.bachs.io/${a.id}`, expires_at: a.expiresAt.toISOString() };
+    });
+    await runMoneyOperation(op.id);
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: a.id } })).status).toBe("SUCCEEDED");
+    expect(await prisma.escrowEntry.count({ where: { orderId: o.id, kind: "FUND" } })).toBe(1);
+  });
+  it("rejects incomplete or inconsistent split prices before payment", async () => {
+    for (const change of ["duplicate token", "wrong courier", "wrong total", "missing parcel"]) {
+      const { o, d, q } = await order(3);
+      const parts = splitParts(q.requestToken)!;
+      if (change === "duplicate token") parts[1]!.requestToken = parts[0]!.requestToken;
+      if (change === "wrong courier") parts[1]!.courierId = "other-courier";
+      if (change === "wrong total") parts[1]!.amountMinor = "999";
+      if (change === "missing parcel") parts.pop();
+      await prisma.deliveryQuote.update({ where: { id: q.id }, data: { requestToken: `split:${JSON.stringify(parts)}` } });
+      await expect(startCheckout(o.id, buyer)).rejects.toMatchObject({ code: "STALE_DELIVERY_QUOTE" });
+      const detail = await request(app).get(`/v1/orders/${o.id}/delivery`).set(customerAuth());
+      expect(detail.body.order.checkoutReady).toBe(false);
+      expect(detail.body.delivery.quotes[0].available).toBe(false);
+      expect(await prisma.paymentAttempt.count({ where: { orderId: o.id } })).toBe(0);
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).paidMinor).toBe(0n);
+    }
+  });
+  it("finalizes completely recorded expired split bookings exactly once without purchasing labels", async () => {
+    const fixture = await funded(2);
+    await recordParcels(fixture, 2);
+    await prisma.deliveryQuote.update({ where: { id: fixture.q.id }, data: { expiresAt: new Date(0) } });
+    await runDeliveryJobs();
+    await runDeliveryJobs();
+    expect(shippingProvider.book).not.toHaveBeenCalled();
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).toMatchObject({ status: "BOOKED", failureCode: null });
+    expect(await prisma.shipment.count({ where: { orderId: fixture.o.id } })).toBe(1);
+    expect(await prisma.moneyJournal.count({ where: { orderId: fixture.o.id, reference: { startsWith: "shipping-cost:" } } })).toBe(1);
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: fixture.o.id } })).financialHold).toBe(false);
+  });
+  it.each(["courier", "cost"])("holds split bookings with a parcel %s mismatch without repurchasing labels", async (changed) => {
+    const fixture = await funded(2);
+    let index = 0;
+    vi.mocked(shippingProvider.book).mockImplementation(async () => {
+      const parcelIndex = index++;
+      return {
+        id: `SB-review-${fixture.d.id}-${parcelIndex}`,
+        status: "pending",
+        courier: changed === "courier" && parcelIndex === 1 ? "Unexpected courier" : fixture.q.courier,
+        shippingMinor: changed === "cost" ? parcelIndex === 0 ? 900n : 1100n : 1000n,
+      };
+    });
+    await runDeliveryJobs();
+    await runDeliveryJobs();
+    expect(shippingProvider.book).toHaveBeenCalledTimes(2);
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).toMatchObject({ status: "BOOKED", failureCode: "SHIPPING_COST_REVIEW_REQUIRED" });
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: fixture.o.id } })).financialHold).toBe(true);
+    const parcels = await prisma.deliveryParcel.findMany({ where: { deliveryId: fixture.d.id }, orderBy: { parcelIndex: "asc" } });
+    expect(parcels.every((parcel) => parcel.providerShipmentId && parcel.status === "BOOKED")).toBe(true);
+    expect(parcels.reduce((sum, parcel) => sum + parcel.actualMinor!, 0n)).toBe(fixture.q.walletMinor);
+    if (changed === "courier") expect(parcels[1]!.failureCode).toBe("SHIPMENT_MISMATCH");
+    expect(await prisma.moneyJournal.count({ where: { orderId: fixture.o.id, reference: { startsWith: "shipping-cost:" } } })).toBe(1);
+    await expect(requestRelease(fixture.o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
+  });
+  it("links the final expired split parcel idempotently and rejects shipment reuse across orders", async () => {
+    const fixture = await funded(2), parcels = await recordParcels(fixture, 1);
+    await prisma.deliveryQuote.update({ where: { id: fixture.q.id }, data: { expiresAt: new Date(0) } });
+    const providerShipmentId = `SB-link-${randomUUID()}`;
+    vi.mocked(shippingProvider.track).mockResolvedValue({
+      id: providerShipmentId, status: "pending", courier: fixture.q.courier, shippingMinor: 1000n,
+      pickupAddress: (fixture.d.pickup as any).address, destinationAddress: (fixture.d.destination as any).address,
+    });
+    const link = (orderId: string, parcelId: string) => request(app).post(`/v1/admin/delivery-orders/${orderId}/delivery/parcels/${parcelId}/link`).set(staffAuth()).send({ providerShipmentId, reason: "Verified original provider label and parcel route" });
+    expect((await link(fixture.o.id, parcels[1]!.id)).status).toBe(200);
+    expect((await link(fixture.o.id, parcels[1]!.id)).status).toBe(200);
+    expect(shippingProvider.track).toHaveBeenCalledTimes(1);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).status).toBe("BOOKED");
+    expect(await prisma.moneyJournal.count({ where: { orderId: fixture.o.id, reference: { startsWith: "shipping-cost:" } } })).toBe(1);
+    const other = await funded(2), otherParcels = await recordParcels(other, 0);
+    const reused = await link(other.o.id, otherParcels[0]!.id);
+    expect(reused.status).toBe(409);
+    expect(reused.body.error.code).toBe("SHIPMENT_MISMATCH");
+    expect((await prisma.deliveryParcel.findUniqueOrThrow({ where: { id: otherParcels[0]!.id } })).providerShipmentId).toBeNull();
+  });
+  it("accounts for an expired single-label staff recovery without replaying or charging twice", async () => {
+    const fixture = await funded();
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "BOOKING_UNCERTAIN", bookingStartedAt: new Date() } });
+    await prisma.deliveryQuote.update({ where: { id: fixture.q.id }, data: { expiresAt: new Date(0) } });
+    const providerShipmentId = `SB-single-${randomUUID()}`;
+    vi.mocked(shippingProvider.track).mockResolvedValue({
+      id: providerShipmentId, status: "pending", courier: fixture.q.courier, shippingMinor: 1000n,
+      pickupAddress: (fixture.d.pickup as any).address, destinationAddress: (fixture.d.destination as any).address,
+    });
+    const link = () => request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/link`).set(staffAuth()).send({ providerShipmentId, reason: "Verified original booking rather than repeating purchase" });
+    expect((await link()).status).toBe(200);
+    expect((await link()).status).toBe(200);
+    expect(shippingProvider.track).toHaveBeenCalledTimes(1);
+    expect(await prisma.moneyJournal.count({ where: { orderId: fixture.o.id, reference: { startsWith: "shipping-cost:" } } })).toBe(1);
+    expect(shippingProvider.book).not.toHaveBeenCalled();
+  });
+  it("rechecks financial holds between parcel purchases", async () => {
+    const fixture = await funded(2);
+    vi.mocked(shippingProvider.book).mockImplementation(async () => {
+      await prisma.tradeOrder.update({ where: { id: fixture.o.id }, data: { financialHold: true } });
+      return { id: `SB-held-${randomUUID()}`, status: "pending", courier: fixture.q.courier, shippingMinor: 1000n };
+    });
+    await runDeliveryJobs();
+    await runDeliveryJobs();
+    expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+    const parcels = await prisma.deliveryParcel.findMany({ where: { deliveryId: fixture.d.id }, orderBy: { parcelIndex: "asc" } });
+    expect(parcels.map((parcel) => parcel.status)).toEqual(["BOOKED", "PENDING"]);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).status).toBe("BOOKING_UNCERTAIN");
+  });
+  it("does not accept parent delivery or cancellation status for an incomplete split", async () => {
+    const fixture = await funded(2), parcels = await recordParcels(fixture, 2);
+    await prisma.deliveryParcel.update({ where: { id: parcels[0]!.id }, data: { status: "DELIVERED" } });
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "DELIVERED" } });
+    expect((await request(app).post(`/v1/orders/${fixture.o.id}/delivery/confirm`).set(customerAuth()).send({})).status).toBe(409);
+    await prisma.tradeOrder.update({ where: { id: fixture.o.id }, data: { status: "DELIVERED", deliveryConfirmedAt: new Date() } });
+    await expect(requestRelease(fixture.o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "CANCELLED" } });
+    const refund = req(); refund.body.shippingRefundMinor = "0";
+    await expect(requestRefund(fixture.o.id, refund)).rejects.toMatchObject({ code: "DELIVERY_ACTIVE" });
+  });
+  it("cancels known labels of an uncertain split once without pretending every parcel was cancelled", async () => {
+    const fixture = await funded(2), parcels = await recordParcels(fixture, 1);
+    vi.mocked(shippingProvider.track).mockImplementation(async (id) => ({ id, status: "cancelled", courier: fixture.q.courier }));
+    expect((await request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/cancel`).set(staffAuth()).send({ reason: "Cancel known labels while locating the uncertain parcel" })).status).toBe(202);
+    await runDeliveryJobs();
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { nextSyncAt: new Date() } });
+    await runDeliveryJobs();
+    expect(shippingProvider.cancel).toHaveBeenCalledTimes(1);
+    expect(shippingProvider.book).not.toHaveBeenCalled();
+    expect((await prisma.deliveryParcel.findUniqueOrThrow({ where: { id: parcels[0]!.id } })).status).toBe("CANCELLED");
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).status).toBe("BOOKING_UNCERTAIN");
+    const refund = req(); refund.body.shippingRefundMinor = "0";
+    await expect(requestRefund(fixture.o.id, refund)).rejects.toMatchObject({ code: "DELIVERY_ACTIVE" });
+  });
+  it("continues split cancellation after a failed parcel read and reconciles without another cancellation write", async () => {
+    const fixture = await funded(2), parcels = await recordParcels(fixture, 2);
+    vi.mocked(shippingProvider.track).mockImplementation(async (id) => {
+      if (id === parcels[0]!.providerShipmentId) throw new Error("Tracking response lost");
+      return { id, status: "cancelled", courier: fixture.q.courier };
+    });
+    expect((await request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/cancel`).set(staffAuth()).send({ reason: "Cancel every recorded label despite a delayed tracking response" })).status).toBe(202);
+    await runDeliveryJobs();
+    expect(vi.mocked(shippingProvider.cancel).mock.calls.map(([id]) => id)).toEqual(parcels.map((parcel) => parcel.providerShipmentId));
+    expect((await prisma.deliveryParcel.findUniqueOrThrow({ where: { id: parcels[1]!.id } })).status).toBe("CANCELLED");
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).status).not.toBe("CANCELLED");
+    vi.mocked(shippingProvider.track).mockImplementation(async (id) => ({ id, status: "cancelled", courier: fixture.q.courier }));
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { nextSyncAt: new Date() } });
+    await runDeliveryJobs();
+    expect(shippingProvider.cancel).toHaveBeenCalledTimes(2);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).status).toBe("CANCELLED");
+  });
+  it("keeps shipping cost review visible when ordinary tracking succeeds", async () => {
+    const fixture = await funded();
+    const providerShipmentId = `SB-cost-${randomUUID()}`;
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "BOOKED", providerShipmentId, bookingStartedAt: new Date(), failureCode: "SHIPPING_COST_REVIEW_REQUIRED" } });
+    await prisma.tradeOrder.update({ where: { id: fixture.o.id }, data: { financialHold: true } });
+    await applyTracking(fixture.d.id, { id: providerShipmentId, status: "in_transit", courier: fixture.q.courier });
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: fixture.d.id } })).failureCode).toBe("SHIPPING_COST_REVIEW_REQUIRED");
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: fixture.o.id } })).financialHold).toBe(true);
+  });
+  it("blocks refresh completion, checkout and booking after a refund starts", async () => {
+    const fixture = await funded();
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "BOOKING_BLOCKED" } });
+    const entered = deferred<void>(), delayed = deferred<ReturnType<typeof rate>[]>();
+    vi.mocked(shippingProvider.quotes).mockImplementation(async () => { entered.resolve(); return delayed.promise; });
+    const refresh = request(app).post(`/v1/orders/${fixture.o.id}/delivery/refresh-quote`).set(customerAuth()).send({}).then((response) => response);
+    await entered.promise;
+    const refund = req(); refund.body.shippingRefundMinor = "1000";
+    expect(await requestRefund(fixture.o.id, refund)).toHaveLength(1);
+    delayed.resolve([rate(fixture.q, 1500n)]);
+    const response = await refresh;
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe("PAYMENT_LOCKED");
+    expect((await request(app).post(`/v1/orders/${fixture.o.id}/delivery/book`).set(customerAuth()).send({})).status).toBe(409);
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "TOPUP_REQUIRED", shippingMinor: 1500n } });
+    await expect(startCheckout(fixture.o.id, buyer, "DELIVERY_TOPUP")).rejects.toMatchObject({ code: "PAYMENT_LOCKED" });
+    expect((await request(app).get(`/v1/orders/${fixture.o.id}/payments`).set(customerAuth())).body.checkoutReady).toBe(false);
+  });
+  it("rechecks delivery immediately before a refund write", async () => {
+    const fixture = await funded();
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { status: "BOOKING_BLOCKED" } });
+    const refund = req(); refund.body.shippingRefundMinor = "1000";
+    const op = (await requestRefund(fixture.o.id, refund))[0]!;
+    await prisma.delivery.update({ where: { id: fixture.d.id }, data: { bookingStartedAt: new Date(), status: "BOOKING_BLOCKED" } });
+    vi.mocked(bachs.payment).mockResolvedValue({ payment_id: `ch_${fixture.a.id}`, checkout_id: fixture.a.checkoutId, currency: "NGN", is_refundable: true });
+    vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "10000.00" }]);
+    await runMoneyOperation(op.id);
+    expect(bachs.call).not.toHaveBeenCalled();
+    expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: op.id } })).toMatchObject({ status: "BLOCKED", failureCode: "DELIVERY_ACTIVE" });
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: fixture.o.id } })).refundedMinor).toBe(0n);
+  });
+  it("keeps mixed products and sellers on separate packing, pickup, quotation and payment contexts", async () => {
+    const source = await prisma.listing.findUniqueOrThrow({ where: { id: listing } });
+    const otherUser = await prisma.user.create({ data: {
+      phoneE164: `+2346${Date.now().toString().slice(-9)}`, capabilities: { create: { capability: "SELLER" } },
+      profile: { create: { fullName: "Oil farmer", email: "oil@example.test" } },
+    } });
+    const otherFarmer = await prisma.farmerProfile.create({ data: { userId: otherUser.id, farmName: "Oil farm", farmType: "CROP", verificationStatus: "APPROVED" } });
+    const otherAddress = await prisma.address.create({ data: { userId: otherUser.id, state: "Lagos", city: "Lagos", lga: "Epe", line1: "50 Oil Farm Road" } });
+    const oilCategory = await prisma.category.create({ data: { slug: `oils-${randomUUID()}` } });
+    await prisma.unit.upsert({ where: { code: "CONTAINER" }, create: { code: "CONTAINER", name: "Container", allowsDecimal: false }, update: {} });
+    const oil = await prisma.listing.create({ data: {
+      farmerProfileId: otherFarmer.id, categoryId: oilCategory.id, locationAddressId: otherAddress.id,
+      unitCode: "CONTAINER", title: "Palm oil", unitPriceMinor: 25000n, availableQuantity: "10", status: "ACTIVE", shippingScope: "NATIONWIDE",
+      salePackaging: { type: "CONTAINER", size: 20, measure: "LITRE" },
+      packaging: { unitsPerPackage: 1, weightKg: 22, length: 40, width: 30, height: 50, handling: "STANDARD", notes: "Sealed container" },
+    } });
+    await prisma.financialAccount.create({ data: { userId: otherUser.id, mode: "sandbox", providerAccountId: `acct_${otherUser.id}`, status: "READY", capabilities: ["transfers", "payouts"] } });
+    await prisma.bankDestination.create({ data: { userId: otherUser.id, mode: "sandbox", providerId: `bank_${otherUser.id}`, bankCode: "001", bankName: "Test bank", accountName: "Oil farmer", accountLastFour: "7890", fingerprint: randomUUID(), usable: true } });
+    const prior = getConfig().DELIVERY_ALLOWED_CATEGORIES;
+    getConfig().DELIVERY_ALLOWED_CATEGORIES = `${source.categoryId},${oilCategory.id}`;
+    try {
+      const items = [{ listingId: listing, quantity: "2", unitPriceMinor: source.unitPriceMinor.toString() }, { listingId: oil.id, quantity: "1", unitPriceMinor: "25000" }];
+      for (const { listingId, ...item } of items)
+        expect((await request(app).put(`/v1/shopping/cart/${listingId}`).set(customerAuth()).send(item)).status).toBe(200);
+      const cart = await request(app).post("/v1/shopping/cart/checkout").set(customerAuth()).set("Idempotency-Key", randomUUID()).send({ items });
+      expect(cart.status).toBe(201);
+      expect(cart.body.orders).toHaveLength(2);
+      const orders = await prisma.tradeOrder.findMany({ where: { id: { in: cart.body.orders.map((item: any) => item.id) } }, orderBy: { totalMinor: "asc" } });
+      expect(new Set(orders.map((item) => item.farmerProfileId)).size).toBe(2);
+      vi.mocked(shippingProvider.quotes).mockImplementation(async (input) => {
+        const count = input.parcel.packageCount ?? 1;
+        const services = Array.from({ length: count }, (_, index) => [{
+          requestToken: `mixed-${input.name}-${index}`, serviceCode: "pickup", courierId: "courier", courier: "Fixture courier", amountMinor: 1000n, walletMinor: 1000n,
+        }]);
+        return count === 1 ? services[0]! : combineParcelRates(services);
+      });
+      const attempts = [];
+      for (const item of orders) {
+        const detail = await request(app).get(`/v1/orders/${item.id}/delivery`).set(customerAuth());
+        const isOil = item.listingId === oil.id;
+        expect(detail.body.order.packageSuggestion).toMatchObject({ weightKg: isOil ? 22 : 2.2, packageCount: isOil ? 1 : 2 });
+        expect(detail.body.order.suggestedPickup.address).toContain(isOil ? "50 Oil Farm Road" : "12 Test road");
+        const quotes = await request(app).post(`/v1/orders/${item.id}/delivery/quotes`).set(customerAuth()).send({
+          pickup: detail.body.order.suggestedPickup,
+          destination: { name: "Buyer", phone: "+2348012345678", email: "buyer@example.test", address: "20 Buyer Street Lagos", state: "Lagos", country: "NG" },
+          parcel: { pickupDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10) },
+        });
+        expect(quotes.status).toBe(200);
+        expect((await request(app).post(`/v1/orders/${item.id}/delivery/select`).set(customerAuth()).send({ quoteId: quotes.body.items[0].id })).status).toBe(200);
+        attempts.push(await startCheckout(item.id, buyer));
+      }
+      expect(attempts.map((item) => item.amountMinor)).toEqual([22000n, 26000n]);
+      expect(new Set(attempts.map((item) => item.quoteId)).size).toBe(2);
+    } finally {
+      getConfig().DELIVERY_ALLOWED_CATEGORIES = prior;
+    }
+  });
+  it("creates a 50 kg bag listing, checks out two bags, pays the full split fee and confirms all parcels", async () => {
+    const { shippingProvider, runDeliveryJobs } = await import("../services/delivery.js");
+    const { combineParcelRates } = await import("../providers/shipping/shipbubble.js");
+    const category = await prisma.category.upsert({
+      where: { slug: "grains" },
+      create: { slug: "grains" },
+      update: { isActive: true },
+    });
+    await prisma.unit.upsert({
+      where: { code: "BAG" },
+      create: { code: "BAG", name: "Bag", allowsDecimal: false },
+      update: {},
+    });
+    const address = await prisma.address.findFirstOrThrow({ where: { userId: seller } });
+    const sellerToken = (
+      await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })
+    ).accessToken;
+    const sellerAuth = { Authorization: `Bearer ${sellerToken}` },
+      buyerAuth = { Authorization: `Bearer ${token}` };
+    const photo = await prisma.producePhoto.create({
+      data: {
+        userId: seller,
+        mimeType: "image/jpeg",
+        checksum: "b".repeat(64),
+        storageKey: `test/${randomUUID()}`,
+      },
+    });
+    const packaging = {
+      unitsPerPackage: 1,
+      weightKg: 50.5,
+      length: 80,
+      width: 50,
+      height: 25,
+      handling: "STANDARD",
+      notes: "Keep dry",
+    };
+    const draft = await request(app)
+      .post("/v1/listing-drafts")
+      .set(sellerAuth)
+      .send({
+        title: "Rice",
+        description: "Dry rice in 50 kg bags",
+        sourceLocale: "en",
+        categoryId: category.id,
+        unitCode: "BAG",
+        quantity: "10",
+        unitPriceMinor: "500000",
+        addressId: address.id,
+        salePackaging: { type: "BAG", size: 50, measure: "KG" },
+        packaging,
+        photoIds: [photo.id],
+      });
+    expect(draft.status).toBe(201);
+    const submitted = await request(app)
+      .post(`/v1/listing-drafts/${draft.body.id}/submit`)
+      .set(sellerAuth)
+      .send({ confirmed: true });
+    expect(submitted.status).toBe(201);
+    const listingId = submitted.body.listing.id;
+    // Moderation decision is a fixture; all seller and buyer actions use the real routes.
+    await prisma.listing.update({ where: { id: listingId }, data: { status: "ACTIVE" } });
+    expect(
+      (
+        await request(app)
+          .put(`/v1/shopping/cart/${listingId}`)
+          .set(buyerAuth)
+          .send({ quantity: "2", unitPriceMinor: "500000" })
+      ).status,
+    ).toBe(200);
+    const cart = await request(app)
+      .post("/v1/shopping/cart/checkout")
+      .set(buyerAuth)
+      .set("Idempotency-Key", randomUUID())
+      .send({ items: [{ listingId, quantity: "2", unitPriceMinor: "500000" }] });
+    expect(cart.status).toBe(201);
+    const orderId = cart.body.orders[0].id;
+    expect(
+      (
+        await request(app)
+          .patch(`/v1/marketplace/my-listings/${listingId}/packaging`)
+          .set(sellerAuth)
+          .send({ packaging: { ...packaging, weightKg: 51 } })
+      ).status,
+    ).toBe(200);
+    const detail = await request(app).get(`/v1/orders/${orderId}/delivery`).set(buyerAuth);
+    expect(detail.body.order.packageSuggestion).toMatchObject({
+      packageCount: 2,
+      weightKg: 101,
+      volumeM3: 0.2,
+    });
+    Object.assign(getConfig(), {
+      DELIVERY_ENABLED: true,
+      SHIPBUBBLE_API_KEY: "fixture",
+      SHIPBUBBLE_TEST_KEY_CONFIRMED: true,
+      SHIPBUBBLE_MODE: "test",
+      SHIPBUBBLE_CATEGORY_ID: 24032950,
+      DELIVERY_ALLOWED_CATEGORIES: category.id,
+      DELIVERY_ALLOWED_STATES: "Lagos",
+      DELIVERY_MAX_WEIGHT_KG: 1000,
+    });
+    const service = (requestToken: string, amountMinor: bigint) => ({
+      requestToken,
+      amountMinor,
+      walletMinor: amountMinor,
+      courierId: "van-service",
+      serviceCode: "van-service",
+      courier: "Test courier",
+      eta: "1 day",
+    });
+    const firstToken = `part-a-${randomUUID()}`, secondToken = `part-b-${randomUUID()}`;
+    const quoteCall = vi
+      .spyOn(shippingProvider, "quotes")
+      .mockResolvedValue(
+        combineParcelRates([[service(firstToken, 1200n)], [service(secondToken, 1800n)]]),
+      );
+    const contact = {
+      name: "Customer",
+      phone: "+2348012345678",
+      email: "fixture@example.test",
+      address: "12 Test road Lagos",
+      state: "Lagos",
+      country: "NG",
+    };
+    const quotes = await request(app)
+      .post(`/v1/orders/${orderId}/delivery/quotes`)
+      .set(buyerAuth)
+      .send({
+        pickup: { ...detail.body.order.suggestedPickup, email: contact.email },
+        destination: contact,
+        parcel: {
+          weightKg: 1,
+          packageCount: 1,
+          length: 1,
+          width: 1,
+          height: 1,
+          handling: "STANDARD",
+          pickupDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+        },
+      });
+    expect(quotes.status).toBe(200);
+    expect(quoteCall).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        parcel: expect.objectContaining({
+          weightKg: 101,
+          packageCount: 2,
+          length: 80,
+          width: 50,
+          height: 25,
+        }),
+      }),
+    );
+    expect(quotes.body.items[0].amountMinor).toBe("3000");
+    expect(JSON.stringify(quotes.body)).not.toContain("part-a");
+    expect(
+      (
+        await request(app)
+          .post(`/v1/orders/${orderId}/delivery/select`)
+          .set(buyerAuth)
+          .send({ quoteId: quotes.body.items[0].id })
+      ).status,
+    ).toBe(200);
+    await prisma.bankDestination.update({ where: { id: destination }, data: { usable: true } });
+    const write = vi
+      .spyOn(bachs, "checkout")
+      .mockImplementation(async ({ id }) => ({
+        checkout_id: `cs_${id}`,
+        checkout_url: `https://sandbox-checkout.bachs.io/c/${id}`,
+        expires_at: new Date(Date.now() + 600000).toISOString(),
+      }));
+    const checkoutResult = await request(app)
+      .post(`/v1/orders/${orderId}/checkout`)
+      .set(buyerAuth)
+      .send({});
+    expect(checkoutResult.status).toBe(200);
+    expect(checkoutResult.body.amountMinor).toBe("1003000");
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 1003000n }));
+    const payment = await prisma.paymentAttempt.findUniqueOrThrow({
+      where: { id: checkoutResult.body.id },
+    });
+    mockReceipt(payment, { amount: "10030.00", amount_paid: "10031.00" });
+    await reconcilePayment(payment.id);
+    await reconcilePayment(payment.id);
+    expect(await prisma.escrowEntry.count({ where: { orderId, kind: "FUND" } })).toBe(1);
+    vi.spyOn(shippingProvider, "wallet").mockResolvedValue(100000n);
+    const book = vi
+      .spyOn(shippingProvider, "book")
+      .mockImplementation(async (part) => ({
+        id: `SB-${part.requestToken}`,
+        status: "pending",
+        courier: "Test courier",
+        shippingMinor: part.requestToken === firstToken ? 1200n : 1800n,
+      }));
+    await runDeliveryJobs();
+    expect(book).toHaveBeenCalledTimes(2);
+    const delivery = await prisma.delivery.findUniqueOrThrow({
+      where: { orderId },
+      include: { parcels: true },
+    });
+    expect(delivery.status).toBe("BOOKED");
+    expect(delivery.parcels).toHaveLength(2);
+    expect(delivery.paidMinor).toBe(3000n);
+    expect(
+      (await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } })).financialHold,
+    ).toBe(false);
+    await prisma.delivery.update({
+      where: { id: delivery.id },
+      data: { status: "BOOKING_UNCERTAIN" },
+    });
+    await runDeliveryJobs();
+    expect(book).toHaveBeenCalledTimes(2);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe(
+      "BOOKED",
+    );
+    const { trackSplitDelivery } = await import("../services/split-delivery.js");
+    const { applyTracking } = await import("../services/delivery.js");
+    vi.spyOn(shippingProvider, "track").mockImplementation(async (id) => ({
+      id,
+      status: "delivered",
+      courier: "Test courier",
+    }));
+    await applyTracking(delivery.id, await trackSplitDelivery(shippingProvider, delivery.id));
+    expect(
+      (await request(app).post(`/v1/orders/${orderId}/delivery/confirm`).set(buyerAuth).send({}))
+        .status,
+    ).toBe(200);
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe(
+      "DELIVERED",
+    );
   });
 });

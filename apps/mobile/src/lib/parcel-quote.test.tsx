@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   api: vi.fn(),
   back: vi.fn(),
   returnTo: vi.fn(),
+  go: vi.fn(),
   query: undefined as string | undefined,
   reload: vi.fn(),
   user: null as any,
@@ -42,8 +43,11 @@ vi.mock("../state", () => ({
     user: h.user,
     back: h.back,
     returnTo: h.returnTo,
+    go: h.go,
     status: (s: string) => s,
     unit: (s: string) => s,
+    t: (s: string) => s,
+    date: (s: string) => s,
     error: (e: Error) => e.message,
     ui: (s: string, params: Record<string, unknown> = {}) =>
       s.replace(/\{(\w+)\}/g, (_, key) => String(params[key])),
@@ -58,16 +62,21 @@ const field = (label: string) =>
 const submit = () =>
   tree.root
     .findAllByType("Button" as any)
-    .find((node) => node.props.title === "Get delivery quotes")!
+    .find((node) => node.props.title === "Continue to delivery options")!
     .props.onPress();
 beforeEach(() => {
   vi.clearAllMocks();
   h.query = undefined;
   h.api.mockResolvedValue({ items: [] });
+  h.reload.mockResolvedValue(undefined);
   h.user = { addresses: [], profile: {}, phoneE164: "+2348012345678" };
   h.data = {
     order: {
       id: "order",
+      checkoutReady: false,
+      checkoutActive: false,
+      payableMinor: null,
+      totalWithDeliveryMinor: null,
       suggestedPickup: {
         name: "Farmer",
         email: "farm@example.test",
@@ -91,81 +100,24 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => tree?.unmount());
+  vi.useRealTimers();
 });
-it("prefills the farmer estimate, requires actual packed dimensions and retains buyer edits", async () => {
-  await act(async () => {
-    tree = create(<Quotes />);
-  });
-  expect(field("Final parcel count").props.value).toBe("2");
-  expect(field("Total packed weight (kg)").props.value).toBe("50");
-  expect(field("Length (cm)").props.value).toBe("");
-  await act(async () => submit());
-  expect(h.api).not.toHaveBeenCalled();
-  for (const [label, value] of [
-    ["Length (cm)", "50"],
-    ["Width (cm)", "40"],
-    ["Height (cm)", "30"],
-    ["Total packed weight (kg)", "43"],
-    ["Handling instructions", "Keep upright and cool"],
-  ])
-    await act(async () => field(label!).props.onChangeText(value));
-  h.data = { ...h.data };
-  await act(async () => tree.update(<Quotes />));
-  expect(field("Total packed weight (kg)").props.value).toBe("43");
-  await act(async () => submit());
-  expect(h.api).toHaveBeenCalledWith(
-    "/orders/order/delivery/quotes",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        parcel: expect.objectContaining({
-          packageCount: 2,
-          weightKg: 43,
-          length: 50,
-          width: 40,
-          height: 30,
-          handling: "PERISHABLE",
-          notes: "Keep upright and cool",
-        }),
-      }),
-    }),
-  );
-  expect(h.data.order.packageSuggestion.farmer.notes).toBe("Keep upright");
-});
-it("restores a saved buyer parcel and prevents removal of mandatory handling", async () => {
-  h.data.delivery = {
-    package: {
-      packageCount: 1,
-      weightKg: 32,
-      length: 70,
-      width: 60,
-      height: 50,
-      handling: "PERISHABLE",
-      notes: "Final packing",
-      pickupDate: "2026-12-01",
-    },
-  };
-  await act(async () => {
-    tree = create(<Quotes />);
-  });
+it("shows seller measurements without allowing buyers to reduce shipment weight", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 50, width: 40, height: 30 };
+  await act(async () => { tree = create(<Quotes />); });
   expect(field("Total packed weight (kg)")).toBeUndefined();
-  await act(async () =>
-    tree.root
-      .findAllByType("Button" as any)
-      .find((node) => node.props.title === "Edit package details")!
-      .props.onPress(),
-  );
-  expect(field("Total packed weight (kg)").props.value).toBe("32");
-  expect(field("Handling instructions").props.value).toBe("Final packing");
-  const standard = tree.root
-    .findAllByType("Pressable" as any)
-    .find((node) => node.props.children.props.children === "STANDARD")!;
-  expect(standard.props.disabled).toBe(true);
-  const cold = tree.root
-    .findAllByType("Pressable" as any)
-    .find((node) => node.props.children.props.children === "COLD_CHAIN")!;
-  expect(cold.props.disabled).toBe(false);
+  expect(field("Length (cm)")).toBeUndefined();
+  h.api.mockResolvedValueOnce({ items: [{ id: "rate" }] });
+  await act(async () => submit());
+  expect(h.api).toHaveBeenLastCalledWith("/orders/order/delivery/quotes", expect.objectContaining({ body: expect.objectContaining({ parcel: expect.objectContaining({ packageCount: 2, weightKg: 50, length: 50, width: 40, height: 30 }) }) }));
+  expect(h.returnTo).toHaveBeenCalledWith("delivery", "order", "delivery-carriers");
 });
-
+it("requires missing seller measurements to be completed before quoting", async () => {
+  h.data.order.packageSuggestion = null;
+  await act(async () => { tree = create(<Quotes />); });
+  expect(tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue to delivery options")!.props.disabled).toBe(true);
+  expect(h.api).not.toHaveBeenCalled();
+});
 it("offers pickup and delivery only, and opens produce-only pickup payment", async () => {
   h.data = {
     ...h.data,
@@ -192,7 +144,7 @@ it("offers pickup and delivery only, and opens produce-only pickup payment", asy
     body: {},
   });
   expect(h.reload).toHaveBeenCalledOnce();
-  h.data = { ...h.data, delivery: { status: "PICKUP_PENDING", quotes: [], selectedQuoteId: null } };
+   h.data = { ...h.data, order: { ...h.data.order, checkoutReady: true, payableMinor: "10000", totalWithDeliveryMinor: "10000" }, delivery: { status: "PICKUP_PENDING", shippingMinor: "0", quotes: [], selectedQuoteId: null } };
   await act(async () => tree.update(<Delivery />));
   expect(headings()).toContain("Pickup");
   expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(1);
@@ -204,7 +156,7 @@ it("offers pickup and delivery only, and opens produce-only pickup payment", asy
   ).not.toContain("quote expired");
 });
 
-it("reviews distinct farmer and buyer addresses with farmer packing prefilled and sends buyer edits for pricing", async () => {
+it("reviews distinct farmer and buyer addresses with farmer packing prefilled and uses seller packing for pricing", async () => {
   h.user.addresses = [
     {
       id: "buyer-home",
@@ -242,15 +194,6 @@ it("reviews distinct farmer and buyer addresses with farmer packing prefilled an
   expect(labels()).toContain("Keep upright");
   expect(field("Total packed weight (kg)")).toBeUndefined();
   expect(field("Delivery address")).toBeUndefined();
-  await act(async () =>
-    tree.root
-      .findAllByType("Button" as any)
-      .find((node) => node.props.title === "Edit package details")!
-      .props.onPress(),
-  );
-  expect(field("Length (cm)").props.value).toBe("50");
-  expect(field("Handling instructions").props.value).toBe("Keep upright");
-  await act(async () => field("Total packed weight (kg)").props.onChangeText("24"));
   await act(async () => submit());
   expect(h.api).toHaveBeenLastCalledWith(
     "/orders/order/delivery/quotes",
@@ -264,7 +207,7 @@ it("reviews distinct farmer and buyer addresses with farmer packing prefilled an
           longitude: 7.4,
         }),
         parcel: expect.objectContaining({
-          weightKg: 24,
+          weightKg: 25,
           length: 50,
           width: 40,
           height: 30,
@@ -275,27 +218,14 @@ it("reviews distinct farmer and buyer addresses with farmer packing prefilled an
   );
 });
 
-for (const [result, next] of [
-  [{ items: [{ id: "rate" }] }, "delivery-carriers"],
-  [{ manualReview: true }, "delivery-review"],
-  [{ items: [] }, "delivery-review"],
-] as const) {
-  it(`continues pricing to ${next} instead of returning to step one`, async () => {
-    h.data.order.packageSuggestion = {
-      ...h.data.order.packageSuggestion,
-      length: 50,
-      width: 40,
-      height: 30,
-    };
-    h.api.mockResolvedValueOnce(result);
-    await act(async () => {
-      tree = create(<Quotes />);
-    });
-    await act(async () => submit());
-    expect(h.returnTo).toHaveBeenCalledWith("delivery", "order", next);
-    expect(h.back).not.toHaveBeenCalled();
-  });
-}
+it("keeps an empty provider result actionable without sending the buyer to staff confirmation", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 50, width: 40, height: 30 };
+  h.api.mockResolvedValueOnce({ items: [] });
+  await act(async () => { tree = create(<Quotes />); });
+  await act(async () => submit());
+  expect(h.returnTo).not.toHaveBeenCalled();
+  expect(tree.root.findAllByType("Notice" as any).some((node) => node.props.error)).toBe(true);
+});
 it("resumes a manual review result without repeating the pickup or delivery choice", async () => {
   h.query = "delivery-review";
   h.data.order = {
@@ -352,4 +282,108 @@ it("clears a saved map pin when the buyer edits the delivery address", async () 
   expect(body.destination.address).toBe("New delivery address Abuja");
   expect(body.destination.latitude).toBeUndefined();
   expect(body.destination.longitude).toBeUndefined();
+});
+
+const carriers = () => {
+  h.data = {
+    ...h.data,
+    order: { ...h.data.order, isBuyer: true, status: "AWAITING_PAYMENT", totalMinor: "10000", title: "Beans" },
+    delivery: {
+      status: "QUOTED", selectedQuoteId: null, shippingMinor: "0", destination: { state: "Lagos" },
+      quotes: ["first", "second"].map((id) => ({ id, courier: id, amountMinor: "1000", available: true, expiresAt: new Date(Date.now() + 60000).toISOString() })),
+    },
+  };
+};
+const radios = () => tree.root.findAllByType("Pressable" as any).filter((node) => node.props.accessibilityRole === "radio");
+
+it("disables expired and unavailable courier cards before any selection request", async () => {
+  carriers();
+  h.data.delivery.quotes[0].expiresAt = new Date(Date.now() - 1).toISOString();
+  h.data.delivery.quotes[1].available = false;
+  await act(async () => { tree = create(<Delivery />); });
+  expect(radios().every((node) => node.props.disabled)).toBe(true);
+  await act(async () => radios().forEach((node) => node.props.onPress()));
+  expect(h.api).not.toHaveBeenCalled();
+  expect(tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue")!.props.disabled).toBe(true);
+});
+
+it("expires a selected carrier while mounted and rejects its saved selection handler", async () => {
+  vi.useFakeTimers();
+  carriers();
+  h.data.order.checkoutReady = true;
+  h.data.delivery.selectedQuoteId = "first";
+  h.data.delivery.quotes[0].expiresAt = new Date(Date.now() + 1000).toISOString();
+  await act(async () => { tree = create(<Delivery />); });
+  const press = radios()[0]!.props.onPress;
+  expect(tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue")!.props.disabled).toBe(false);
+  await act(async () => {
+    vi.advanceTimersByTime(1001);
+  });
+  expect(tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue")!.props.disabled).toBe(true);
+  await act(async () => press());
+  expect(h.api).not.toHaveBeenCalled();
+});
+
+it("submits only one carrier selection and waits for authoritative server readiness", async () => {
+  carriers();
+  let resolveSelection!: (value: any) => void;
+  h.api.mockImplementationOnce(() => new Promise((resolve) => { resolveSelection = resolve; }));
+  await act(async () => { tree = create(<Delivery />); });
+  const [first, second] = radios().map((node) => node.props.onPress);
+  await act(async () => { first(); second(); });
+  expect(h.api).toHaveBeenCalledOnce();
+  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/select", { method: "POST", body: { quoteId: "first" } });
+  await act(async () => resolveSelection({ shippingMinor: "1" }));
+  expect(h.reload).toHaveBeenCalledOnce();
+  expect(tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue")!.props.disabled).toBe(true);
+  expect(radios().some((node) => node.props.accessibilityState.selected)).toBe(false);
+});
+
+it("reloads a saved carrier choice after its response is lost", async () => {
+  carriers();
+  h.api.mockImplementationOnce(async () => {
+    h.data = { ...h.data, order: { ...h.data.order, checkoutReady: true, payableMinor: "11000" }, delivery: { ...h.data.delivery, selectedQuoteId: "first", shippingMinor: "1000" } };
+    throw new Error("Response lost");
+  });
+  h.reload.mockImplementation(async () => { tree.update(<Delivery />); });
+  await act(async () => { tree = create(<Delivery />); });
+  await act(async () => radios()[0]!.props.onPress());
+  expect(h.reload).toHaveBeenCalledOnce();
+  expect(radios()[0]!.props.accessibilityState.selected).toBe(true);
+  expect(tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue")!.props.disabled).toBe(false);
+  expect(h.api).toHaveBeenCalledOnce();
+});
+
+it("updates server-owned packing on reload without discarding local destination and date edits", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+  h.data.delivery = { destination: { name: "Buyer", phone: "+2348012345678", email: "buyer@example.test", address: "Old buyer address Lagos", state: "Lagos", country: "NG" } };
+  await act(async () => { tree = create(<Quotes />); });
+  await act(async () => tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Edit delivery details")!.props.onPress());
+  await act(async () => field("Delivery address").props.onChangeText("New buyer address Lagos"));
+  const date = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  await act(async () => field("Pickup date · YYYY-MM-DD").props.onChangeText(date));
+  h.data = { ...h.data, order: { ...h.data.order, packageSuggestion: { ...h.data.order.packageSuggestion, packageCount: 3, weightKg: 151.5, length: 60 } } };
+  await act(async () => tree.update(<Quotes />));
+  h.api.mockResolvedValueOnce({ items: [{ id: "new-rate" }] });
+  await act(async () => submit());
+  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/quotes", expect.objectContaining({ body: expect.objectContaining({
+    destination: expect.objectContaining({ address: "New buyer address Lagos" }),
+    parcel: expect.objectContaining({ packageCount: 3, weightKg: 151.5, length: 60, pickupDate: date }),
+  }) }));
+});
+
+it("guards quote submissions against two presses before the component rerenders", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+  let resolveQuotes!: (value: any) => void;
+  h.api.mockImplementationOnce(() => new Promise((resolve) => { resolveQuotes = resolve; }));
+  await act(async () => { tree = create(<Quotes />); });
+  const press = tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Continue to delivery options")!.props.onPress;
+  await act(async () => {
+    const first = press();
+    const second = press();
+    expect(h.api).toHaveBeenCalledOnce();
+    resolveQuotes({ items: [{ id: "rate" }] });
+    await Promise.all([first, second]);
+  });
+  expect(h.returnTo).toHaveBeenCalledOnce();
 });

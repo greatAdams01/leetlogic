@@ -3,7 +3,7 @@ import { decryptSecret } from "../lib/crypto.js";
 import { createHash } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "@leetlogic/database";
+import { prisma, type PaymentAttempt } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { getConfig } from "../config.js";
@@ -24,7 +24,8 @@ import {
   accountLock,
 } from "../services/payments.js";
 import { runMoneyOperation, reconcileBalances } from "../services/payment-worker.js";
-import { serialize } from "../services/delivery.js";
+import { hasDeliverySettlement, serialize } from "../services/delivery.js";
+import { assertPaymentShipment, checkoutSummary, shippingOrderInclude, type CheckoutOrder } from "../services/delivery-quote.js";
 import { audit as recordAudit } from "../services/audit.js";
 const audit: typeof recordAudit = (req, input, tx) =>
   recordAudit(
@@ -72,6 +73,14 @@ const safePayment = (item: any) => ({
   createdAt: item.createdAt,
   expiresAt: item.expiresAt,
 });
+function safeOrderPayment(order: CheckoutOrder, item: PaymentAttempt, buyer: boolean) {
+  let available = false;
+  try {
+    assertPaymentShipment(order, item);
+    available = item.status === "OPEN";
+  } catch { /* Keep attempts visible for reconciliation, but never expose a stale payment link. */ }
+  return { ...safePayment(item), checkoutUrl: available && buyer ? item.checkoutUrl : null };
+}
 async function throttle(userId: string, action: string) {
   const key = `money-rate:${action}:${userId}:${Math.floor(Date.now() / 60000)}`;
   const count = await redis().incr(key);
@@ -82,11 +91,11 @@ async function throttle(userId: string, action: string) {
 async function ownedOrder(orderId: string, userId: string) {
   const order = await prisma.tradeOrder.findUnique({
     where: { id: orderId },
-    include: { farmerProfile: true },
+    include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
   });
   if (!order || (order.buyerId !== userId && order.farmerProfile.userId !== userId))
     throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
-  return order;
+  return { ...order, settlementStarted: await hasDeliverySettlement(order.id) };
 }
 paymentsRouter.get("/:id/payments", async (req, res) => {
   const order = await ownedOrder(uuid.parse(req.params.id), req.auth!.sub);
@@ -97,10 +106,10 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
   res.json(
     serialize({
       enabled: getConfig().PAYMENTS_ENABLED,
-      items: items.map((item) => ({
-        ...safePayment(item),
-        checkoutUrl: order.buyerId === req.auth!.sub ? item.checkoutUrl : null,
-      })),
+      ...checkoutSummary(order),
+      checkoutActive: items.some((item) => ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(item.status) ||
+        (item.status === "BLOCKED" && !!item.checkoutId)),
+      items: items.map((item) => safeOrderPayment(order, item, order.buyerId === req.auth!.sub)),
       orderStatus: order.status,
       financialHold: order.financialHold,
       heldMinor: order.heldMinor,
@@ -128,7 +137,9 @@ paymentsRouter.post("/:id/checkout", async (req, res) => {
       updated.exceptionCode || "PAYMENT_PROVIDER_REJECTED",
       "We couldn’t start your payment. Please try again or contact support.",
     );
-  res.status(updated.checkoutUrl ? 200 : 202).json(serialize(safePayment(updated)));
+  const order = await ownedOrder(updated.orderId, req.auth!.sub);
+  const result = safeOrderPayment(order, updated, true);
+  res.status(result.checkoutUrl ? 200 : 202).json(serialize(result));
 });
 paymentsRouter.post("/:id/payments/:paymentId/refresh", async (req, res) => {
   await throttle(req.auth!.sub, "refresh");
@@ -148,7 +159,11 @@ paymentsRouter.post("/:id/payments/:paymentId/refresh", async (req, res) => {
   await reconcilePayment(payment.id);
   res.json(
     serialize(
-      safePayment(await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } })),
+      safeOrderPayment(
+        await ownedOrder(order.id, req.auth!.sub),
+        await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } }),
+        true,
+      ),
     ),
   );
 });
@@ -157,7 +172,7 @@ financialRouter.get("/payments/:id", async (req, res) => {
     where: { id: uuid.parse(req.params.id), buyerId: req.auth!.sub, mode: mode() },
   });
   if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
-  res.json(serialize(safePayment(payment)));
+  res.json(serialize(safeOrderPayment(await ownedOrder(payment.orderId, req.auth!.sub), payment, true)));
 });
 financialRouter.get("/", async (req, res) => {
   const userId = req.auth!.sub;

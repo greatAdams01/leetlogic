@@ -103,6 +103,12 @@ export type DeliveryData = {
     listingId: string;
     totalMinor: string;
     isBuyer: boolean;
+    checkoutReady: boolean;
+    checkoutActive: boolean;
+    payableMinor: string | null;
+    totalWithDeliveryMinor: string | null;
+    quoteExpiresAt: string | null;
+    checkoutErrorCode: string | null;
     suggestedPickup: Contact;
     quantity?: string;
     unitCode?: string;
@@ -110,6 +116,9 @@ export type DeliveryData = {
     packageSuggestion?: {
       farmer: Packaging;
       packageCount: number;
+      volumeM3: number;
+      specialHandling: Packaging["specialHandling"];
+      pickupInstructions: string;
       weightKg: number;
       length: number | null;
       width: number | null;
@@ -125,8 +134,12 @@ export type DeliveryData = {
     shippingMinor: string;
     paidMinor: string;
     selectedQuoteId: string | null;
+    parcels?: { id: string; parcelIndex: number; status: string; trackingUrl: string | null }[];
     trackingUrl: string | null;
     courier: string | null;
+    providerShipmentId?: string | null;
+    bookingStartedAt?: string | null;
+    failureCode?: string | null;
     package?: {
       weightKg: number;
       packageCount?: number;
@@ -136,6 +149,8 @@ export type DeliveryData = {
       pickupDate: string;
       handling: string;
       notes?: string;
+      volumeM3?: number;
+      specialHandling?: Packaging["specialHandling"];
     } | null;
     destination: Contact;
     quotes: {
@@ -147,6 +162,7 @@ export type DeliveryData = {
       recommended?: boolean;
       recommendationReason?: string | null;
       expiresAt: string;
+      available: boolean;
     }[];
     events: { id: string; status: string; source: string; createdAt: string }[];
   };

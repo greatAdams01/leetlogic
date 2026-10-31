@@ -8,6 +8,8 @@ export const packagingSchema = z
     width: z.number().finite().positive().max(1000),
     height: z.number().finite().positive().max(1000),
     handling: handlingSchema,
+    specialHandling: z.array(z.enum(["FRAGILE", "VENTILATED", "UPRIGHT", "SHADE", "NON_STACKABLE"])).max(5).optional(),
+    pickupInstructions: z.string().trim().max(500).optional(),
     notes: z.string().trim().max(500).default(""),
   })
   .strict();

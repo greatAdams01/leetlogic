@@ -45,6 +45,8 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
   const [stage, setStage] = useState<"address" | "scope" | "carrier" | "summary" | "review">(
     a.route.query === "delivery-review" || data.delivery?.status === "MANUAL_REVIEW"
       ? "review"
+      : data.order.checkoutActive
+        ? "summary"
       : a.route.query === "delivery-carriers"
         ? "carrier"
         : data.delivery?.status === "PICKUP_PENDING"
@@ -55,6 +57,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const running = useRef(false);
   const d = data.delivery;
   const address =
     a.user?.addresses.find((candidate) => candidate.isDefaultDelivery) || a.user?.addresses[0];
@@ -65,17 +68,21 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const currentQuote = !!selected && new Date(selected.expiresAt).getTime() > now;
-  const total = BigInt(data.order.totalMinor) + BigInt(selected?.amountMinor || 0);
+  const currentQuote = !!selected?.available && data.order.checkoutReady && new Date(selected.expiresAt).getTime() > now;
+  const total = data.order.payableMinor;
+  const paymentRevision = `${d?.selectedQuoteId}:${d?.status}:${d?.shippingMinor}:${data.order.checkoutReady}`;
   useEffect(() => {
     if (
       stage === "review" &&
       d?.status !== "MANUAL_REVIEW" &&
-      d?.quotes.some((quote) => new Date(quote.expiresAt).getTime() > Date.now())
+      d?.quotes.some((quote) => quote.available && new Date(quote.expiresAt).getTime() > Date.now())
     )
       setStage("carrier");
   }, [stage, d]);
   const selectQuote = async (quoteId: string) => {
+    const quote = d?.quotes.find((candidate) => candidate.id === quoteId);
+    if (running.current || data.order.checkoutActive || !quote?.available || !(new Date(quote.expiresAt).getTime() > Date.now())) return;
+    running.current = true;
     setBusy(true);
     setError("");
     try {
@@ -83,7 +90,9 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       await reload();
     } catch (e) {
       setError(a.error(e));
+      await reload().catch(() => {});
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
@@ -202,8 +211,10 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         <Label>Choose how you want to receive your produce.</Label>
         <Pressable
           accessibilityRole="button"
-          disabled={busy}
+          disabled={busy || data.order.checkoutActive}
           onPress={async () => {
+            if (running.current || data.order.checkoutActive) return;
+            running.current = true;
             setBusy(true);
             setError("");
             try {
@@ -216,6 +227,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
             } catch (e) {
               setError(a.error(e));
             } finally {
+              running.current = false;
               setBusy(false);
             }
           }}
@@ -228,7 +240,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
             <View style={checkout.radio} />
           </Card>
         </Pressable>
-        <Pressable accessibilityRole="button" disabled={busy} onPress={() => setStage("address")}>
+        <Pressable accessibilityRole="button" disabled={busy || data.order.checkoutActive} onPress={() => setStage("address")}>
           <Card style={checkout.option}>
             <View style={{ flex: 1 }}>
               <Label style={checkout.optionTitle}>Delivery</Label>
@@ -255,7 +267,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         footer={
           <Button
             title="Continue"
-            disabled={!currentQuote || busy}
+            disabled={(!currentQuote && !data.order.checkoutActive) || busy}
             onPress={() => setStage("summary")}
           />
         }
@@ -272,14 +284,17 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         </Card>
         <View style={s.between}>
           <Label style={checkout.optionTitle}>Available Carriers</Label>
-          <Label style={{ color: colors.green }}>{d?.quotes.length || 0} best match</Label>
+          <Label style={{ color: colors.green }}>{d?.quotes.filter((quote) => quote.available && new Date(quote.expiresAt).getTime() > now).length || 0} best match</Label>
         </View>
         {d?.quotes.map((quote) => {
           const active = quote.id === d.selectedQuoteId;
+          const valid = quote.available && new Date(quote.expiresAt).getTime() > now;
           return (
             <Pressable
               key={quote.id}
-              disabled={busy || new Date(quote.expiresAt).getTime() <= now}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active, disabled: busy || data.order.checkoutActive || !valid }}
+              disabled={busy || data.order.checkoutActive || active || !valid}
               onPress={() => void selectQuote(quote.id)}
             >
               <Card style={{ ...checkout.carrier, ...(active ? checkout.optionSelected : {}) }}>
@@ -322,6 +337,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
                 <Label muted>
                   {new Date(quote.expiresAt).getTime() <= now
                     ? "Quote expired"
+                    : !quote.available ? a.ui("Not available")
                     : a.ui("Valid until {date}", { date: a.date(quote.expiresAt) })}
                 </Label>
               </Card>
@@ -338,6 +354,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         <Button
           title="Get fresh delivery quotes"
           secondary
+          disabled={busy || data.order.checkoutActive}
           onPress={() => a.go("quotes", data.order.id)}
         />
         {error && <Notice text={error} error />}
@@ -353,17 +370,19 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
       }
       contentStyle={checkout.body}
       footer={
-        collection || currentQuote ? (
+        collection || currentQuote || data.order.checkoutActive ? (
           <OrderPayment
             orderId={data.order.id}
             isBuyer
             onChanged={reload}
             compact
             buttonTitle="Make Payment"
+            revision={paymentRevision}
+            disabled={busy}
           />
         ) : (
           <View style={{ gap: 10 }}>
-            <Notice text="Your delivery quote expired. Review a fresh quote before paying." />
+            <Notice text={a.error({ code: data.order.checkoutErrorCode || "QUOTE_EXPIRED" })} />
             <Button
               title="Get fresh delivery quotes"
               onPress={() => a.go("quotes", data.order.id)}
@@ -383,6 +402,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
           <Label>
             {d?.destination?.name} · {d?.destination?.phone}
           </Label>
+          <Button title="Edit delivery details" secondary disabled={busy || data.order.checkoutActive} onPress={() => a.go("quotes", data.order.id)} />
         </Card>
       )}
       {collection && (
@@ -421,12 +441,12 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         </View>
         <View style={s.between}>
           <Label muted>{collection ? "Pickup" : "Delivery"}</Label>
-          <Label>{money(selected?.amountMinor || "0")}</Label>
+          <Label>{collection ? money("0") : currentQuote ? money(d!.shippingMinor) : a.ui("Not quoted")}</Label>
         </View>
         <View style={checkout.rule} />
         <View style={s.between}>
           <Label>Total</Label>
-          <Label style={checkout.strong}>{money(total.toString())}</Label>
+          <Label style={checkout.strong}>{total && (collection || currentQuote) ? money(total) : a.ui("Not available")}</Label>
         </View>
         <Label style={{ fontSize: 14 }}>Payment provider fees are shown before confirmation.</Label>
       </Card>
@@ -456,7 +476,10 @@ export function Delivery() {
     [pickupAddressId, setPickupAddressId] = useState("");
   const data = r.data,
     d = data?.delivery;
+  const running = useRef(false);
   const run = async (path: string) => {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError("");
     try {
@@ -464,7 +487,9 @@ export function Delivery() {
       await r.reload();
     } catch (e) {
       setError(a.error(e));
+      await r.reload().catch(() => {});
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
@@ -496,11 +521,11 @@ export function Delivery() {
                   : "Not quoted"}
               </Label>
             </View>
-            {d?.selectedQuoteId && (
+            {data.order.totalWithDeliveryMinor && (
               <View style={s.between}>
                 <Label style={{ fontFamily: "NotoBold" }}>Produce + delivery</Label>
                 <Label style={{ fontFamily: "NotoBold" }}>
-                  {money((BigInt(data.order.totalMinor) + BigInt(d.shippingMinor)).toString())}
+                  {money(data.order.totalWithDeliveryMinor)}
                 </Label>
               </View>
             )}
@@ -584,7 +609,9 @@ export function Delivery() {
                         title="Save pickup address"
                         loading={busy}
                         disabled={busy || !pickupAddressId}
-                        onPress={async () => {
+                         onPress={async () => {
+                           if (running.current) return;
+                           running.current = true;
                           setBusy(true);
                           setError("");
                           try {
@@ -596,7 +623,8 @@ export function Delivery() {
                             setChangePickup(false);
                           } catch (e) {
                             setError(a.error(e));
-                          } finally {
+                           } finally {
+                             running.current = false;
                             setBusy(false);
                           }
                         }}
@@ -641,6 +669,8 @@ export function Delivery() {
             isBuyer={data.order.isBuyer}
             topup={d?.status === "TOPUP_REQUIRED"}
             onChanged={r.reload}
+            revision={`${d?.selectedQuoteId}:${d?.status}:${d?.shippingMinor}:${data.order.checkoutReady}`}
+            disabled={busy}
           />
           {d && (
             <Card>
@@ -655,6 +685,21 @@ export function Delivery() {
                   {d.destination.address}, {d.destination.state}
                 </Label>
               )}
+              {d.parcels?.map((parcel) => (
+                <View key={parcel.id} style={{ gap: 8 }}>
+                  <Label>
+                    {a.ui("Parcel {number}", { number: parcel.parcelIndex + 1 })}:{" "}
+                    {a.status(parcel.status)}
+                  </Label>
+                  {parcel.trackingUrl && safeHttps(parcel.trackingUrl) && (
+                    <Button
+                      title="Track with courier"
+                      secondary
+                      onPress={() => void Linking.openURL(parcel.trackingUrl!)}
+                    />
+                  )}
+                </View>
+              ))}
               {d.trackingUrl && safeHttps(d.trackingUrl) && (
                 <Button
                   title="Track with courier"
@@ -692,10 +737,12 @@ export function Delivery() {
                 <Button
                   title={d.selectedQuoteId === q.id ? "Selected" : a.t("delivery.select")}
                   disabled={
-                    busy || new Date(q.expiresAt) <= new Date() || d.selectedQuoteId === q.id
+                    busy || data.order.checkoutActive || !q.available || new Date(q.expiresAt) <= new Date() || d.selectedQuoteId === q.id
                   }
                   secondary
-                  onPress={async () => {
+                   onPress={async () => {
+                     if (running.current || data.order.checkoutActive || !q.available || !(new Date(q.expiresAt).getTime() > Date.now())) return;
+                     running.current = true;
                     setBusy(true);
                     try {
                       await api(`/orders/${data.order.id}/delivery/select`, {
@@ -705,7 +752,8 @@ export function Delivery() {
                       await r.reload();
                     } catch (e) {
                       setError(a.error(e));
-                    } finally {
+                     } finally {
+                       running.current = false;
                       setBusy(false);
                     }
                   }}
@@ -716,14 +764,13 @@ export function Delivery() {
           {data.order.isBuyer &&
             d?.selectedQuoteId &&
             ["AWAITING_PAYMENT", "FUNDED"].includes(data.order.status) &&
-            d.quotes.some(
-              (q) => q.id === d.selectedQuoteId && new Date(q.expiresAt) <= new Date(),
-            ) && (
+             !d.providerShipmentId && !d.bookingStartedAt &&
+             d.quotes.some((q) => q.id === d.selectedQuoteId && (!q.available || new Date(q.expiresAt) <= new Date())) && (
               <>
                 <Notice text={a.t("delivery.expired")} />
                 <Button
                   title="Revalidate selected quote"
-                  disabled={busy}
+                   disabled={busy || data.order.checkoutActive}
                   secondary
                   onPress={() => void run("refresh-quote")}
                 />
@@ -733,7 +780,7 @@ export function Delivery() {
           <Notice text={a.t("delivery.payment")} />
           {data.order.isBuyer &&
             data.order.status === "FUNDED" &&
-            d?.status === "PAYMENT_PENDING" && (
+             ["PAID", "BOOKING_BLOCKED"].includes(d?.status || "") && !d?.bookingStartedAt && (
               <Button
                 title={a.t("delivery.book")}
                 disabled={busy}
@@ -801,7 +848,9 @@ export function Delivery() {
                     { text: "Keep order", style: "cancel" },
                     {
                       text: "Cancel order",
-                      onPress: async () => {
+                       onPress: async () => {
+                         if (running.current) return;
+                         running.current = true;
                         setBusy(true);
                         try {
                           await api(`/marketplace/orders/${data.order.id}/cancel`, {
@@ -810,7 +859,8 @@ export function Delivery() {
                           await r.reload();
                         } catch (e) {
                           setError(a.error(e));
-                        } finally {
+                         } finally {
+                           running.current = false;
                           setBusy(false);
                         }
                       },
@@ -945,7 +995,6 @@ export function Quotes() {
     }),
     [pickupEmail, setPickupEmail] = useState(""),
     [editDestination, setEditDestination] = useState(false),
-    [editPackage, setEditPackage] = useState(false),
     [parcel, setParcel] = useState({
       packageCount: "1",
       notes: "",
@@ -961,24 +1010,24 @@ export function Quotes() {
   const initialized = useRef<string | null>(null);
   const submitting = useRef(false);
   useEffect(() => {
-    if (!r.data || initialized.current === r.data.order.id) return;
-    initialized.current = r.data.order.id;
+    if (!r.data) return;
+    const firstLoad = initialized.current !== r.data.order.id;
     const saved = r.data.delivery?.package;
-    const suggested = r.data.order.packageSuggestion;
-    const source = saved || suggested;
-    setEditPackage(!source || !source.length || !source.width || !source.height);
-    if (source)
-      setParcel((current) => ({
-        ...current,
-        weightKg: String(source.weightKg),
-        packageCount: String(source.packageCount || 1),
-        length: source.length == null ? "" : String(source.length),
-        width: source.width == null ? "" : String(source.width),
-        height: source.height == null ? "" : String(source.height),
-        handling: source.handling,
-        notes: source.notes || "",
-        ...(saved ? { pickupDate: saved.pickupDate } : {}),
-      }));
+    const source = r.data.order.packageSuggestion;
+    // Packing is server-owned and may change on a reload. Destination/date edits are local.
+    setParcel((current) => ({
+      ...current,
+      weightKg: source ? String(source.weightKg) : "",
+      packageCount: String(source?.packageCount || 1),
+      length: source?.length == null ? "" : String(source.length),
+      width: source?.width == null ? "" : String(source.width),
+      height: source?.height == null ? "" : String(source.height),
+      handling: source?.handling || "STANDARD",
+      notes: source?.notes || "",
+      ...(firstLoad ? { pickupDate: saved?.pickupDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10) } : {}),
+    }));
+    if (!firstLoad) return;
+    initialized.current = r.data.order.id;
     if (r.data.delivery?.destination && r.data.delivery.status !== "PICKUP_PENDING")
       setDestination(r.data.delivery.destination);
     else {
@@ -996,16 +1045,16 @@ export function Quotes() {
   }, [r.data]);
   return (
     <Page
-      title="Delivery pricing"
+      title="Delivery"
       back={a.back}
       loading={r.loading}
       footer={
         <Button
-          title={busy ? "Checking couriers…" : "Get delivery quotes"}
-          disabled={busy || !r.data}
+          title={busy ? "Checking couriers…" : "Continue to delivery options"}
+            disabled={busy || r.data?.order.checkoutActive || !r.data?.order.packageSuggestion}
           loading={busy}
           onPress={async () => {
-            if (submitting.current) return;
+            if (submitting.current || r.data?.order.checkoutActive || !r.data?.order.packageSuggestion) return;
             submitting.current = true;
             setBusy(true);
             setError("");
@@ -1048,15 +1097,14 @@ export function Quotes() {
                   },
                 },
               });
-              a.returnTo(
-                "delivery",
-                a.route.id,
-                result.manualReview || !result.items?.length
-                  ? "delivery-review"
-                  : "delivery-carriers",
-              );
+              if (!result.items?.length)
+                throw new Error(
+                  "No delivery service is available for this shipment and date. Try another date or choose pickup.",
+                );
+              a.returnTo("delivery", a.route.id, "delivery-carriers");
             } catch (e) {
               setError(a.error(e));
+              await r.reload().catch(() => {});
             } finally {
               submitting.current = false;
               setBusy(false);
@@ -1067,7 +1115,7 @@ export function Quotes() {
     >
       {(error || r.error) && <Notice text={error || r.error} error />}
       <Heading>Review your delivery</Heading>
-      <Notice text="Only eligible produce parcels can be booked. Bulk, cold-chain and unsupported routes go to staff review." />
+      <Notice text="Delivery options use the farmer’s saved measurements. Review the full delivery fee before payment." />
       {r.data && (
         <Card>
           <Label style={{ fontFamily: "NotoBold" }}>Pickup Location</Label>
@@ -1167,13 +1215,13 @@ export function Quotes() {
         </>
       )}
       {!r.data?.order.packageSuggestion && (
-        <Notice text="The farmer has not provided packing measurements. Confirm them with the farmer before requesting delivery." />
+        <Notice text="The farmer must complete shipping measurements before delivery is available. You can choose pickup instead." />
       )}
       <Card>
         <Label style={{ fontFamily: "NotoBold" }}>Package details</Label>
         {r.data?.order.packageSuggestion && (
           <Label muted>
-            Pre-filled from the farmer’s listing. Edit only if the packed shipment differs.
+            Calculated from the farmer’s saved shipping details and your order quantity.
           </Label>
         )}
 
@@ -1201,83 +1249,16 @@ export function Quotes() {
           </View>
         )}
         {Number(parcel.packageCount) > 1 && (
-          <Notice text="Dimensions are per parcel. Multiple parcels require staff review before booking." />
+          <Notice text="Each parcel has its own delivery booking. The displayed fee includes all parcels." />
         )}
 
         <Label muted>{parcel.pickupDate}</Label>
-        <Button
-          title={editPackage ? "Done" : "Edit package details"}
-          secondary
-          disabled={busy}
-          onPress={() => setEditPackage((value) => !value)}
-        />
       </Card>
-      {editPackage && (
-        <>
-          <Text style={s.sectionTitle}>Package details</Text>
-          <Card>
-            {(["packageCount", "weightKg", "length", "width", "height", "pickupDate"] as const).map(
-              (k) => (
-                <Field
-                  key={k}
-                  label={
-                    {
-                      packageCount: "Final parcel count",
-                      weightKg: "Total packed weight (kg)",
-                      length: "Length (cm)",
-                      width: "Width (cm)",
-                      height: "Height (cm)",
-                      pickupDate: "Pickup date · YYYY-MM-DD",
-                    }[k]
-                  }
-                  keyboardType={k === "pickupDate" ? "default" : "decimal-pad"}
-                  value={parcel[k]}
-                  onChangeText={(v) => setParcel((p) => ({ ...p, [k]: v }))}
-                />
-              ),
-            )}
-          </Card>
-          <Field
-            label="Handling instructions"
-            value={parcel.notes}
-            multiline
-            maxLength={500}
-            onChangeText={(notes) => setParcel((p) => ({ ...p, notes }))}
-          />
-        </>
-      )}
-      <Label muted>
-        Edits apply to this order and require a new quote. They do not change the farmer’s listing.
-      </Label>
-      {editPackage && (
-        <>
-          <Label style={{ fontFamily: "NotoBold" }}>Handling requirements</Label>
-          {["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"].map((v) => {
-            const required = r.data?.order.packageSuggestion?.handling;
-            const allowed =
-              !required ||
-              required === "STANDARD" ||
-              v === required ||
-              (required === "PERISHABLE" && v === "COLD_CHAIN");
-            return (
-              <Pressable
-                key={v}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: parcel.handling === v, disabled: busy || !allowed }}
-                disabled={busy || !allowed}
-                onPress={() => setParcel((p) => ({ ...p, handling: v }))}
-                style={[
-                  s.choice,
-                  parcel.handling === v && s.selected,
-                  !allowed && { opacity: 0.4 },
-                ]}
-              >
-                <Label>{a.status(v)}</Label>
-              </Pressable>
-            );
-          })}
-        </>
-      )}
+      <Field
+        label="Pickup date · YYYY-MM-DD"
+        value={parcel.pickupDate}
+        onChangeText={(pickupDate) => setParcel((current) => ({ ...current, pickupDate }))}
+      />
     </Page>
   );
 }

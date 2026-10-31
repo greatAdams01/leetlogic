@@ -19,7 +19,9 @@ import {
   createOperation,
 } from "./payments.js";
 import { audit } from "./audit.js";
-import { shippingProvider } from "./delivery.js";
+import { assertNoDeliverySettlement, shippingProvider } from "./delivery.js";
+import { assertPaymentShipment, shippingOrderInclude } from "./delivery-quote.js";
+import { deliveryRefundReady } from "./delivery-policy.js";
 function providerId(value: any) {
   const id = value.id || value.transfer_id || value.payout_id || value.refund_id;
   if (typeof id !== "string" || !id) throw new Error("MISSING_PROVIDER_ID");
@@ -51,6 +53,20 @@ async function checkFunds(amount: bigint, account?: string) {
       "PROVIDER_BALANCE_LOW",
       "Available payment funds are not ready yet. Please try again later.",
     );
+}
+async function checkRefundOrder(op: MoneyOperation) {
+  if ((op.payload as any).exception) return;
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${op.orderId!}::uuid FOR UPDATE`;
+    const order = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: op.orderId! }, include: { delivery: { include: { parcels: true } } },
+    });
+    if (order.financialHold || !["FUNDED", "DELIVERED"].includes(order.status) ||
+      (await tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } })))
+      throw new AppError(409, "REFUND_BLOCKED", "Resolve the order review before requesting a refund.");
+    if (!deliveryRefundReady(order.delivery))
+      throw new AppError(409, "DELIVERY_ACTIVE", "Cancel or reconcile delivery before refunding this order.");
+  });
 }
 async function complete(op: MoneyOperation, result: any) {
   const payload = op.payload as any;
@@ -325,14 +341,17 @@ export async function runMoneyOperation(id: string) {
       const payment = await prisma.paymentAttempt.findUniqueOrThrow({
         where: { id: op.paymentId! },
       });
-      const order = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: payment.orderId } });
-      if (
-        !op.providerRef &&
-        (order.financialHold ||
-          (payment.kind === "ORDER" && order.status !== "AWAITING_PAYMENT") ||
-          payment.expiresAt <= new Date())
-      )
-        throw new AppError(409, "QUOTE_EXPIRED", "Refresh your delivery quote before paying.");
+      if (!op.providerRef) {
+        await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${payment.orderId}::uuid FOR UPDATE`;
+          await assertNoDeliverySettlement(tx, payment.orderId);
+          const current = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } });
+          const order = await tx.tradeOrder.findUniqueOrThrow({
+            where: { id: payment.orderId }, include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
+          });
+          assertPaymentShipment(order, current);
+        });
+      }
       const checkout = op.providerRef
         ? await bachs.checkoutState(op.providerRef)
         : await bachs.checkout({
@@ -344,19 +363,37 @@ export async function runMoneyOperation(id: string) {
       if (checkout.reference && checkout.reference !== payment.id)
         throw new Error("CHECKOUT_REFERENCE_MISMATCH");
       await prisma.$transaction(async (tx) => {
-        await tx.paymentAttempt.update({
-          where: { id: payment.id },
-          data: {
-            checkoutId: checkout.checkout_id,
-            checkoutUrl: checkout.checkout_url,
-            status: "OPEN",
-          },
-        });
+        await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${payment.orderId}::uuid FOR UPDATE`;
+        const current = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } });
+        // A webhook can confirm payment before initialization finishes. Never reopen it.
+        if (!["SUCCEEDED", "REFUNDED", "EXCEPTION"].includes(current.status)) {
+          const latest = await tx.tradeOrder.findUniqueOrThrow({
+            where: { id: payment.orderId },
+            include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
+          });
+          let exceptionCode: string | null = null;
+          try {
+            await assertNoDeliverySettlement(tx, payment.orderId);
+            assertPaymentShipment(latest, current);
+          } catch (error) {
+            exceptionCode = error instanceof AppError ? error.code : "STALE_DELIVERY_QUOTE";
+          }
+          await tx.paymentAttempt.update({
+            where: { id: payment.id },
+            data: {
+              checkoutId: checkout.checkout_id,
+              checkoutUrl: checkout.checkout_url,
+              status: exceptionCode ? "BLOCKED" : "OPEN",
+              exceptionCode,
+            },
+          });
+        }
         await tx.moneyOperation.update({
           where: { id },
           data: { status: "SUCCEEDED", providerRef: checkout.checkout_id, leaseUntil: null },
         });
       });
+      if (op.providerRef) await reconcilePayment(payment.id).catch(() => {});
       return;
     }
     if (op.kind === "ACCOUNT") {
@@ -581,6 +618,7 @@ export async function runMoneyOperation(id: string) {
             "REFUND_RECONCILIATION_REQUIRED",
             "This payment needs a refund review. Contact support.",
           );
+        await checkRefundOrder(op);
         const result = await bachs.call(
           "/refunds",
           {
@@ -640,6 +678,7 @@ export async function runMoneyOperation(id: string) {
             "This refund needs a support review.",
           );
         await prisma.moneyOperation.update({ where: { id }, data: { feeMinor: fee } });
+        await checkRefundOrder(op);
         const result = await bachs.call(
           "/transfers",
           {
@@ -684,8 +723,8 @@ export async function runMoneyOperation(id: string) {
       },
     });
     if (op.kind === "CHECKOUT")
-      await prisma.paymentAttempt.update({
-        where: { id: op.paymentId! },
+      await prisma.paymentAttempt.updateMany({
+        where: { id: op.paymentId!, status: { notIn: ["SUCCEEDED", "REFUNDED", "EXCEPTION"] } },
         data: {
           status: definite ? "FAILED" : blocked ? "BLOCKED" : "UNKNOWN",
           exceptionCode: code,

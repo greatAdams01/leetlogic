@@ -1,3 +1,4 @@
+import { packagingSchema, minimumPackedWeight, salePackagingSchema } from "@leetlogic/contracts";
 import { createBuyerOrder } from "../services/buyer-order.js";
 import { createHash } from "node:crypto";
 import { Router } from "express";
@@ -211,6 +212,51 @@ marketplaceRouter.get("/my-listings", requireRole("SELLER"), async (req, res) =>
     }),
   ),
 );
+// Changes affect future reservations; existing orders retain their immutable shipping snapshot.
+marketplaceRouter.patch("/my-listings/:id/packaging", requireRole("SELLER"), async (req, res) => {
+  const listingId = uuid.parse(req.params.id);
+  const { packaging } = z.object({ packaging: packagingSchema }).strict().parse(req.body);
+  const listing = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM listings WHERE id = ${listingId}::uuid FOR UPDATE`;
+    const current = await tx.listing.findFirst({
+      where: { id: listingId, deletedAt: null, farmerProfile: { userId: req.auth!.sub } },
+      include: { unit: true },
+    });
+    if (!current) throw new AppError(404, "LISTING_NOT_FOUND", "Your listing could not be found.");
+    const sale = salePackagingSchema.safeParse(current.salePackaging);
+    if (
+      (!current.unit.allowsDecimal && !Number.isInteger(packaging.unitsPerPackage)) ||
+      packaging.weightKg <
+        Math.max(
+          current.unitCode === "KG" ? packaging.unitsPerPackage : 0,
+          minimumPackedWeight(sale.success ? sale.data : undefined, packaging.unitsPerPackage),
+        )
+    )
+      throw new AppError(
+        422,
+        "PACKED_WEIGHT_TOO_LOW",
+        "Packed weight must include the produce weight and its packaging.",
+      );
+    const updated = await tx.listing.update({
+      where: { id: listingId },
+      data: { packaging, packingAssistanceRequested: false },
+      select: publicListing,
+    });
+    await audit(
+      req,
+      {
+        action: "listing.shipping.updated",
+        entityType: "listing",
+        entityId: listingId,
+        before: { packaging: current.packaging },
+        after: { packaging },
+      },
+      tx,
+    );
+    return updated;
+  });
+  res.json(serialize({ item: listing }));
+});
 // Inventory controls apply only to already moderated listings owned by this farmer.
 marketplaceRouter.patch("/my-listings/:id/inventory", requireRole("SELLER"), async (req, res) => {
   const id = uuid.parse(req.params.id);

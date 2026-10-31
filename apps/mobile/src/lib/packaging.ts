@@ -7,6 +7,8 @@ export type PackingFields = {
   height: string;
   handling: Packaging["handling"];
   notes: string;
+  specialHandling?: Packaging["specialHandling"];
+  pickupInstructions?: string;
 };
 export const emptyPacking: PackingFields = {
   unitsPerPackage: "",

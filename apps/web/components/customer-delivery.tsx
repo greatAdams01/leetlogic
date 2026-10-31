@@ -1,12 +1,13 @@
 "use client";
 import { CustomerPayment } from "./customer-payments";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TranslatedText } from "./translated-text";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 import type { MessageKey } from "../lib/locales/messages";
 import { formatMoney as money } from "../../../packages/contracts/src/money";
+import { ui, localizedError } from "../../mobile/src/lib/localization";
 export function CustomerDelivery({
   id,
   staff = false,
@@ -16,13 +17,21 @@ export function CustomerDelivery({
   staff?: boolean;
   staffPermissions?: string[];
 }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  const say = (text: string, params: Record<string, string | number> = {}) => ui(locale, text, params);
+  const error = (value: unknown) => localizedError(locale, value);
   const [data, setData] = useState<any>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const requestVersion = useRef(0);
+  const [dirty, setDirty] = useState(false);
+  const context = useRef({ id, staff, dirty });
+  context.current = { id, staff, dirty };
+  const [now, setNow] = useState(Date.now());
   const [stepUpCode, setStepUpCode] = useState("");
   const manage = !staff || staffPermissions.includes("orders.manage");
-  const call = async (suffix = "", body?: unknown) => {
+  const call = useCallback(async (suffix = "", body?: unknown) => {
     if (!staff) return customerApi(`orders/${id}/delivery${suffix}`, body);
     const response = await fetch(`/api/admin/delivery-orders/${id}/delivery${suffix}`, {
       method: body ? "POST" : "GET",
@@ -30,18 +39,41 @@ export function CustomerDelivery({
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error?.message || "Request failed");
+    if (!response.ok) throw Object.assign(new Error(result.error?.message || "Request failed"), { code: result.error?.code });
     return result;
-  };
-  const load = async () => setData(await call());
-  useEffect(() => {
-    load().catch((e) => setNotice(e.message));
   }, [id, staff]);
+  const load = useCallback(async () => {
+    const version = ++requestVersion.current;
+    try {
+      const latest = await call();
+      if (version !== requestVersion.current) return null;
+      setData(latest);
+      return latest;
+    } catch (error) {
+      if (version !== requestVersion.current) return null;
+      throw error;
+    }
+  }, [call]);
+  const copy = useRef({ error });
+  copy.current = { error };
+  useEffect(() => {
+    setData(null);
+    setDirty(false);
+    setNotice("");
+    void load().catch((e) => setNotice(copy.current.error(e)));
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => { requestVersion.current++; clearInterval(timer); };
+  }, [load]);
   async function action(suffix: string, body: unknown) {
+    const currentContext = () => context.current.id === id && context.current.staff === staff;
+    if (running.current || !currentContext()) return;
+    if (suffix === "/select" && (context.current.dirty || data.order.checkoutActive || !data.delivery?.quotes.some((quote: any) =>
+      quote.id === (body as { quoteId: string }).quoteId && quote.available && new Date(quote.expiresAt).getTime() > Date.now()))) return;
+    running.current = true;
     setBusy(true);
     setNotice("");
     try {
-      if (staff && ["/payment", "/link", "/cancel"].includes(suffix)) {
+      if (staff && (["/payment", "/link", "/cancel"].includes(suffix) || /^\/parcels\/[^/]+\/link$/.test(suffix))) {
         const check = await fetch("/api/admin/auth/totp/step-up", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -50,14 +82,21 @@ export function CustomerDelivery({
         const result = await check.json();
         if (!check.ok)
           throw new Error(result.error?.message || "Authenticator confirmation failed");
+        if (!currentContext()) return;
         setStepUpCode("");
       }
       const result = await call(suffix, body);
+      if (!currentContext()) return;
       if (result.message) setNotice(result.message);
       await load();
+      if (currentContext() && ["/quotes", "/select", "/collection", "/refresh-quote"].includes(suffix)) setDirty(false);
     } catch (e) {
-      setNotice((e as Error).message);
+      if (!currentContext()) return;
+      setNotice(error(e));
+      // Failed requotes invalidate the previous choice on the server too.
+      await load().catch(() => { if (currentContext()) setData(null); });
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -72,18 +111,9 @@ export function CustomerDelivery({
         ]),
       );
     await action("/quotes", {
-      pickup: contact("pickup"),
+      pickup: { ...data.order.suggestedPickup, email: form.get("pickup.email") },
       destination: contact("destination"),
-      parcel: {
-        packageCount: Number(form.get("packageCount")),
-        notes: String(form.get("notes") || ""),
-        weightKg: Number(form.get("weight")),
-        length: Number(form.get("length")),
-        width: Number(form.get("width")),
-        height: Number(form.get("height")),
-        pickupDate: form.get("date"),
-        handling: form.get("handling"),
-      },
+      parcel: { pickupDate: form.get("date") },
     });
   }
   if (!data)
@@ -95,7 +125,15 @@ export function CustomerDelivery({
       </section>
     );
   const d = data.delivery;
-  const packing = d?.package || data.order.packageSuggestion;
+  const packing = data.order.packageSuggestion;
+  const selected = d?.quotes.find((quote: any) => quote.id === d.selectedQuoteId);
+  const collection = ["PICKUP_PENDING", "PICKUP_READY"].includes(d?.status);
+  const currentQuote = !!selected?.available && new Date(selected.expiresAt).getTime() > now;
+  const checkoutCurrent = data.order.checkoutReady && !dirty &&
+    (!data.order.quoteExpiresAt || new Date(data.order.quoteExpiresAt).getTime() > now);
+  const quoted = !dirty && (collection || currentQuote || (data.order.status !== "AWAITING_PAYMENT" && !!d?.selectedQuoteId));
+  const canEdit = manage && (staff || data.order.isBuyer) && data.order.status === "AWAITING_PAYMENT" &&
+    !data.order.checkoutActive && !d?.paidMinor?.match(/[1-9]/) && !d?.bookingStartedAt && !d?.providerShipmentId;
   return (
     <section className="customer-panel">
       <h1>{data.order.title}</h1>
@@ -111,9 +149,10 @@ export function CustomerDelivery({
         <dt>{t("orders.produce")}</dt>
         <dd>{money(data.order.totalMinor)}</dd>
         <dt>{t("orders.delivery")}</dt>
-        <dd>{money(d?.shippingMinor || "0")}</dd>
+        <dd>{quoted ? money(d?.shippingMinor || "0") : say("Not quoted")}</dd>
         <dt>{t("orders.total")}</dt>
-        <dd>{money(String(BigInt(data.order.totalMinor) + BigInt(d?.shippingMinor || "0")))}</dd>
+        <dd>{data.order.totalWithDeliveryMinor && (checkoutCurrent || data.order.status !== "AWAITING_PAYMENT")
+          ? money(data.order.totalWithDeliveryMinor) : say("Not available")}</dd>
       </dl>
       <p>{t("delivery.payment")}</p>
       {!staff && (
@@ -122,17 +161,28 @@ export function CustomerDelivery({
           isBuyer={data.order.isBuyer}
           topup={d?.status === "TOPUP_REQUIRED"}
           onChanged={load}
+          revision={`${d?.selectedQuoteId}:${d?.status}:${d?.shippingMinor}:${data.order.checkoutReady}:${data.order.checkoutErrorCode}`}
+          disabled={busy || dirty}
         />
       )}
       {d && (
         <>
           <h2>{t(`status.${d.status}` as MessageKey) || d.status}</h2>
-          {d.failureCode && <p role="status">{staff ? d.failureCode : t("common.unavailable")}</p>}
-          {d.trackingUrl && (
+          {d.failureCode && <p role="status">{staff ? d.failureCode : error({ code: d.failureCode })}</p>}
+          {d.trackingUrl?.startsWith("https://") && (
             <a href={d.trackingUrl} target="_blank" rel="noreferrer">
               {t("delivery.tracking")}
             </a>
           )}
+          {d.parcels?.map((parcel: any) => (
+            <article key={parcel.id}>
+              <h3>{say("Parcel {number}", { number: parcel.parcelIndex + 1 })}</h3>
+              <p>{t(`status.${parcel.status}` as MessageKey) || parcel.status}</p>
+              {parcel.trackingUrl?.startsWith("https://") && (
+                <a href={parcel.trackingUrl} target="_blank" rel="noreferrer">{t("delivery.tracking")}</a>
+              )}
+            </article>
+          ))}
           <ol>
             {d.events.map((event: any) => (
               <li key={event.id}>
@@ -143,16 +193,22 @@ export function CustomerDelivery({
           </ol>
         </>
       )}
-      <button disabled={busy} onClick={() => load().catch((e) => setNotice(e.message))}>
+      <button disabled={busy} onClick={() => load().catch((e) => setNotice(error(e)))}>
         {t("delivery.refresh")}
       </button>
-      {manage &&
-        (staff || data.order.isBuyer) &&
-        data.order.status === "AWAITING_PAYMENT" &&
-        !d?.paidMinor?.match(/[1-9]/) && (
-          <form onSubmit={quotes}>
+      {data.order.checkoutActive && <p role="status">{error({ code: "CHECKOUT_ACTIVE" })}</p>}
+      {dirty && <p role="status">{error({ code: "STALE_DELIVERY_QUOTE" })}</p>}
+      {canEdit && !staff && (
+        <button disabled={busy} onClick={() => action("/collection", {})}>{say("Pickup")}</button>
+      )}
+      {canEdit && !packing && <p role="status">{error({ code: "PACKING_REQUIRED" })}</p>}
+      {canEdit && packing && (
+          <form key={`${id}:${d?.package?.quoteRequestId || "new"}`} onSubmit={quotes} onChange={() => {
+            context.current.dirty = true;
+            setDirty(true);
+          }}>
             {["pickup", "destination"].map((prefix) => (
-              <fieldset key={prefix}>
+              <fieldset key={prefix} disabled={busy}>
                 <legend>{t(`delivery.${prefix}` as MessageKey)}</legend>
                 {["name", "email", "phone", "address", "state"].map((key) => (
                   <label key={key}>
@@ -160,10 +216,12 @@ export function CustomerDelivery({
                     <input
                       name={`${prefix}.${key}`}
                       required
+                      readOnly={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email)}
                       type={key === "email" ? "email" : key === "phone" ? "tel" : "text"}
-                      defaultValue={
-                        d?.[prefix]?.[key] ||
-                        (prefix === "pickup" ? data.order.suggestedPickup?.[key] : "") ||
+                      value={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email)
+                        ? data.order.suggestedPickup?.[key] || "" : undefined}
+                      defaultValue={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email) ? undefined :
+                        (prefix === "pickup" ? data.order.suggestedPickup?.[key] : collection ? "" : d?.destination?.[key]) ||
                         ""
                       }
                     />
@@ -173,31 +231,32 @@ export function CustomerDelivery({
             ))}
             {data.order.packageSuggestion && (
               <p>
-                {t("delivery.packingEstimate")}: {data.order.packageSuggestion.packageCount} ·{" "}
-                {data.order.packageSuggestion.weightKg} kg. {t("delivery.dimensionsReview")}
+                {say("Calculated from the farmer’s saved shipping details and your order quantity.")}
               </p>
             )}
             <label>
               {t("delivery.parcelCount")}
               <input
+                readOnly
                 name="packageCount"
                 type="number"
                 min="1"
                 step="1"
                 required
-                defaultValue={packing?.packageCount || 1}
+                value={packing?.packageCount || 1}
               />
             </label>
             {["weight", "length", "width", "height"].map((key) => (
               <label key={key}>
                 {t(`delivery.${key}` as MessageKey)}
                 <input
+                  readOnly
                   name={key}
                   type="number"
                   step="0.001"
                   min="0.001"
                   required
-                  defaultValue={packing?.[key === "weight" ? "weightKg" : key] ?? ""}
+                  value={packing?.[key === "weight" ? "weightKg" : key] ?? ""}
                 />
               </label>
             ))}
@@ -207,15 +266,17 @@ export function CustomerDelivery({
                 name="date"
                 type="date"
                 min={new Date().toISOString().slice(0, 10)}
+                max={new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)}
+                disabled={busy}
                 defaultValue={
-                  packing?.pickupDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+                  d?.package?.pickupDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10)
                 }
                 required
               />
             </label>
             <label>
               {t("delivery.handling")}
-              <select name="handling" defaultValue={packing?.handling || "STANDARD"}>
+              <select name="handling" disabled value={packing.handling}>
                 <option value="STANDARD">{t("delivery.handling.STANDARD")}</option>
                 <option value="PERISHABLE">{t("delivery.handling.PERISHABLE")}</option>
                 <option value="COLD_CHAIN">{t("delivery.handling.COLD_CHAIN")}</option>
@@ -224,7 +285,7 @@ export function CustomerDelivery({
             </label>
             <label>
               {t("delivery.instructions")}
-              <textarea name="notes" maxLength={500} defaultValue={packing?.notes || ""} />
+              <textarea name="notes" readOnly value={[packing.notes, packing.pickupInstructions].filter(Boolean).join(" · ")} />
             </label>
             <button disabled={busy}>{t("delivery.quotes")}</button>
           </form>
@@ -238,12 +299,20 @@ export function CustomerDelivery({
               {quote.courier} — {money(quote.amountMinor)}
             </h3>
             <p>{quote.eta}</p>
+            {quote.recommended && <p>{say("⚡ RECOMMENDED")}</p>}
+            {quote.recommendationReason && <p>{say(quote.recommendationReason)}</p>}
+            {quote.quality?.rating != null && quote.quality.votes > 0 && (
+              <p>{say("Provider rating: {rating}/5 ({votes} ratings)", { rating: quote.quality.rating, votes: quote.quality.votes })}</p>
+            )}
             <button
-              disabled={busy || new Date(quote.expiresAt) <= new Date()}
+              aria-pressed={d.selectedQuoteId === quote.id}
+              disabled={busy || dirty || data.order.checkoutActive || !quote.available || !(new Date(quote.expiresAt).getTime() > now) || d.selectedQuoteId === quote.id}
               onClick={() => action("/select", { quoteId: quote.id })}
             >
-              {new Date(quote.expiresAt) <= new Date()
+              {new Date(quote.expiresAt).getTime() <= now
                 ? t("delivery.expired")
+                : !quote.available ? say("Not available")
+                : d.selectedQuoteId === quote.id ? say("Selected")
                 : t("delivery.select")}
             </button>
           </article>
@@ -253,21 +322,21 @@ export function CustomerDelivery({
         d?.selectedQuoteId &&
         !d?.providerShipmentId &&
         !d?.bookingStartedAt && (
-          <button disabled={busy} onClick={() => action("/refresh-quote", {})}>
-            Refresh selected delivery quote
+          <button disabled={busy || dirty || data.order.checkoutActive} onClick={() => action("/refresh-quote", {})}>
+            {say("Revalidate selected quote")}
           </button>
         )}
-      {manage && (staff || data.order.isBuyer) && d?.status === "PAID" && (
+      {manage && (staff || data.order.isBuyer) && ["PAID", "BOOKING_BLOCKED"].includes(d?.status) && !d?.bookingStartedAt && data.order.status === "FUNDED" && (
         <button disabled={busy} onClick={() => action("/book", {})}>
           {t("delivery.book")}
         </button>
       )}
       {!staff &&
         data.order.isBuyer &&
-        d?.status === "DELIVERED" &&
+        ["DELIVERED", "PICKUP_READY"].includes(d?.status) &&
         data.order.status === "FUNDED" && (
           <button disabled={busy} onClick={() => action("/confirm", {})}>
-            {t("delivery.confirm")}
+            {d.status === "PICKUP_READY" ? say("Confirm pickup received") : t("delivery.confirm")}
           </button>
         )}
       {staff && d && (
@@ -355,7 +424,7 @@ export function CustomerDelivery({
           <button disabled={busy} onClick={() => action("/reconcile", {})}>
             Reconcile provider tracking
           </button>
-          {d.status === "BOOKING_UNCERTAIN" && (
+          {d.status === "BOOKING_UNCERTAIN" && !d.parcels?.length && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -377,6 +446,18 @@ export function CustomerDelivery({
               <button disabled={busy}>Link existing shipment</button>
             </form>
           )}
+          {d.status === "BOOKING_UNCERTAIN" && d.parcels?.filter((parcel: any) => ["BOOKING", "BOOKING_UNCERTAIN"].includes(parcel.status)).map((parcel: any) => (
+            <form key={parcel.id} onSubmit={(e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget);
+              void action(`/parcels/${parcel.id}/link`, { providerShipmentId: form.get("providerShipmentId"), reason: form.get("reason") });
+            }}>
+              <h3>{say("Parcel {number}", { number: parcel.parcelIndex + 1 })}</h3>
+              <label>Verified provider shipment ID<input name="providerShipmentId" required /></label>
+              <label>Matching evidence and reason<input name="reason" minLength={10} required /></label>
+              <button disabled={busy || !manage}>Link existing parcel shipment</button>
+            </form>
+          ))}
           {staffPermissions.includes("payments.manage") &&
             ["PAYMENT_PENDING", "PAID"].includes(d.status) && (
               <form

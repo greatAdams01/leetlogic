@@ -7,6 +7,9 @@ import { encryptSecret, hashToken } from "../lib/crypto.js";
 import { queueBooking } from "../routes/delivery.js";
 import type { Request } from "express";
 import { audit } from "./audit.js";
+import { assertCheckoutReady, assertNoActiveCheckout, assertPaymentShipment, shippingOrderInclude } from "./delivery-quote.js";
+import { assertNoDeliverySettlement } from "./delivery.js";
+import { deliveryReceiptReady, deliveryRefundReady } from "./delivery-policy.js";
 export const mode = () => getConfig().BACHS_MODE;
 export const fingerprint = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -159,7 +162,7 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
       buyerId,
       mode: mode(),
       kind,
-      status: "FAILED",
+      status: { in: ["FAILED", "BLOCKED"] },
       checkoutId: { not: null },
       paidMinor: 0n,
     },
@@ -170,10 +173,11 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${orderId}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUnique({
       where: { id: orderId },
-      include: { farmerProfile: true, delivery: { include: { quotes: true } } },
+      include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
     });
     if (!order || order.buyerId !== buyerId)
       throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+    await assertNoDeliverySettlement(tx, orderId);
     if (
       order.financialHold ||
       (kind === "ORDER"
@@ -190,23 +194,20 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
         orderId,
         mode: mode(),
         kind,
-        status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] },
+        OR: [
+          { status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
+          { status: "BLOCKED", checkoutId: { not: null } },
+        ],
       },
       orderBy: { createdAt: "desc" },
     });
-    if (active) return active;
-    const d = order.delivery,
-      quote = d?.quotes.find((q) => q.id === d.selectedQuoteId);
-    const collection = d?.status === "PICKUP_PENDING" && kind === "ORDER";
-    if (
-      !collection &&
-      (!d ||
-        !quote ||
-        quote.expiresAt <= new Date() ||
-        !quote.courierId ||
-        d.status === "MANUAL_REVIEW")
-    )
-      throw new AppError(409, "QUOTE_EXPIRED", "Choose a current delivery quote before paying.");
+    if (active) {
+      assertPaymentShipment(order, active);
+      if (active.status === "BLOCKED")
+        throw new AppError(409, "CHECKOUT_ACTIVE", "Finish the current payment before changing delivery details.");
+      return active;
+    }
+    const { payableMinor, produceMinor, shippingMinor, quote } = assertCheckoutReady(order, kind);
     const recipient = await tx.financialAccount.findUnique({
       where: { userId_mode: { userId: order.farmerProfile.userId, mode: mode() } },
     });
@@ -223,17 +224,9 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
         "SELLER_PAYMENTS_UNAVAILABLE",
         "This seller is finishing payment setup. Please try again later.",
       );
-    const produce = kind === "ORDER" ? order.totalMinor : 0n;
-    const shipping = collection
-      ? 0n
-      : kind === "ORDER"
-        ? quote!.amountMinor
-        : quote!.amountMinor - d!.paidMinor;
-    if (shipping < 0n || produce + shipping <= 0n)
-      throw new AppError(409, "TOPUP_NOT_REQUIRED", "No additional payment is needed.");
     const expiresAt = new Date(
       Math.min(
-        quote && !collection ? quote.expiresAt.getTime() : Infinity,
+        quote?.expiresAt.getTime() ?? Infinity,
         Date.now() + 15 * 60000,
       ),
     );
@@ -243,10 +236,10 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
         buyerId,
         mode: mode(),
         kind,
-        amountMinor: produce + shipping,
-        produceMinor: produce,
-        shippingMinor: shipping,
-        quoteId: collection ? null : quote!.id,
+        amountMinor: payableMinor,
+        produceMinor,
+        shippingMinor,
+        quoteId: quote?.id ?? null,
         expiresAt,
       },
     });
@@ -384,7 +377,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
     const current = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: attempt.orderId },
-      include: { delivery: true, listing: true },
+      include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
     });
     if (["SUCCEEDED", "REFUNDED"].includes(current.status)) return;
     if (
@@ -412,12 +405,19 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
     const topupInvalid =
       current.kind !== "ORDER" &&
       (order.status !== "FUNDED" || order.financialHold || order.delivery?.bookingStartedAt);
+    let shipmentError: string | undefined;
+    try {
+      await assertNoDeliverySettlement(tx, order.id);
+      assertPaymentShipment(order, current);
+    } catch (error) {
+      shipmentError = error instanceof AppError ? error.code : "STALE_DELIVERY_QUOTE";
+    }
     const exception =
       !success && received > 0n
         ? "PAYMENT_AMOUNT_REVIEW"
         : late || topupInvalid
           ? "PAYMENT_ORDER_CHANGED"
-          : undefined;
+          : received > 0n ? shipmentError : undefined;
     await tx.paymentAttempt.update({
       where: { id: current.id },
       data: {
@@ -430,12 +430,16 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
             ? "SUCCEEDED"
             : exception
               ? "EXCEPTION"
-              : declined
+               : ["expired", "cancelled"].includes(checkout.status) && received === 0n
+                 ? "EXPIRED"
+               : shipmentError
+                 ? "BLOCKED"
+               : declined
                 ? ["expired", "cancelled"].includes(checkout.status)
                   ? "EXPIRED"
                   : "OPEN"
                 : "OPEN",
-        exceptionCode: exception || (declined ? "PAYMENT_ATTEMPT_FAILED" : null),
+        exceptionCode: exception || shipmentError || (declined ? "PAYMENT_ATTEMPT_FAILED" : null),
       },
     });
     if (exception) {
@@ -513,13 +517,14 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
 export async function assertRelease(tx: Prisma.TransactionClient, orderId: string) {
   const order = await tx.tradeOrder.findUniqueOrThrow({
     where: { id: orderId },
-    include: { farmerProfile: true },
+    include: { farmerProfile: true, delivery: { include: { parcels: true } } },
   });
   if (
     order.fundsProvider !== "bachs" ||
     !["FUNDED", "DELIVERED"].includes(order.status) ||
     order.heldMinor !== order.totalMinor ||
     !order.deliveryConfirmedAt ||
+    (order.delivery && !deliveryReceiptReady(order.delivery)) ||
     order.financialHold ||
     (await tx.supportTicket.count({
       where: { orderId, kind: "DISPUTE", status: { not: "RESOLVED" } },
@@ -703,7 +708,7 @@ export async function requestRefund(orderId: string, req: Request) {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${orderId}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: orderId },
-      include: { delivery: true },
+      include: { delivery: { include: { parcels: true } } },
     });
     const previous = await tx.moneyOperation.findFirst({
       where: {
@@ -734,23 +739,13 @@ export async function requestRefund(orderId: string, req: Request) {
       })
     )
       throw new AppError(409, "RELEASE_PENDING", "A release is already in progress.");
-    if (
-      order.delivery &&
-      ![
-        "CANCELLED",
-        "RETURNED",
-        "MANUAL_REVIEW",
-        "QUOTE_REQUIRED",
-        "PAYMENT_PENDING",
-        "PAID",
-        "BOOKING_BLOCKED",
-      ].includes(order.delivery.status)
-    )
+    if (!deliveryRefundReady(order.delivery))
       throw new AppError(
         409,
         "DELIVERY_ACTIVE",
         "Cancel or reconcile delivery before refunding this order.",
       );
+    await assertNoActiveCheckout(tx, orderId);
     if (shippingRefundMinor < 0n || shippingRefundMinor > (order.delivery?.paidMinor || 0n))
       throw new AppError(422, "INVALID_REFUND", "Check the refundable delivery amount.");
     const payments = await tx.paymentAttempt.findMany({

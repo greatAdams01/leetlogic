@@ -14,7 +14,7 @@ export const contactSchema = z.object({
 export const parcelSchema = z.object({
   weightKg: z.number().finite().positive().max(1_000_000),
   packageCount: z.number().int().positive().max(1_000_000).default(1),
-  notes: z.string().trim().max(500).default(""),
+  notes: z.string().trim().max(1100).default(""),
   length: z.number().finite().positive().max(1000),
   width: z.number().finite().positive().max(1000),
   height: z.number().finite().positive().max(1000),
@@ -23,6 +23,22 @@ export const parcelSchema = z.object({
 });
 export type Contact = z.infer<typeof contactSchema>;
 export type Parcel = z.input<typeof parcelSchema>;
+export function assertShippingParcel(parcel: Parcel, allowPastDate = false) {
+  const c = getConfig();
+  const pickupTime = Date.parse(`${parcel.pickupDate}T00:00:00Z`);
+  const today = new Date().toISOString().slice(0, 10);
+  if (!Number.isFinite(pickupTime) ||
+    new Date(pickupTime).toISOString().slice(0, 10) !== parcel.pickupDate ||
+    (!allowPastDate && (parcel.pickupDate < today || pickupTime > Date.parse(`${today}T00:00:00Z`) + 7 * 86400000)))
+    throw new AppError(422, "INVALID_PICKUP_DATE", "Choose a pickup date within the next seven days.");
+  const count = parcel.packageCount ?? 1;
+  if (!Number.isInteger(count) || count < 1 || count > 20)
+    throw new AppError(422, "DELIVERY_UNSUPPORTED", "Choose pickup or arrange transport for this number of parcels.");
+  if (parcel.handling !== "STANDARD" ||
+    ![parcel.weightKg, parcel.length, parcel.width, parcel.height].every((value) => Number.isFinite(value) && value > 0) ||
+    Math.max(parcel.length, parcel.width, parcel.height) > 200 || parcel.weightKg / count > c.DELIVERY_MAX_WEIGHT_KG)
+    throw new AppError(422, "DELIVERY_UNSUPPORTED", "No automated delivery is available for these shipping requirements. Choose pickup or contact support.");
+}
 export type ShippingRate = {
   courierId: string;
   walletMinor: bigint;
@@ -42,6 +58,7 @@ export type TrackedShipment = {
   destinationAddress?: string;
   shippingMinor?: bigint;
   observedAt?: string;
+  requiresReview?: boolean;
 };
 export interface ShippingProvider {
   validateAddress(contact: Contact): Promise<number>;
@@ -59,7 +76,7 @@ export interface ShippingProvider {
   cancel(id: string): Promise<void>;
 }
 const trackingSchema = z.object({
-  order_id: z.string(),
+  order_id: z.string().min(1),
   status: z.string(),
   tracking_url: z.string().optional(),
   courier: z.object({ name: z.string() }),
@@ -139,31 +156,7 @@ export class Shipbubble implements ShippingProvider {
       }),
     ).address_code;
   }
-  async quotes(input: {
-    pickup: Contact;
-    destination: Contact;
-    parcel: Parcel;
-    name: string;
-    valueMinor: bigint;
-  }): Promise<ShippingRate[]> {
-    const c = getConfig();
-    if (
-      (input.parcel.packageCount ?? 1) !== 1 ||
-      input.parcel.handling !== "STANDARD" ||
-      Math.max(input.parcel.length, input.parcel.width, input.parcel.height) > 200 ||
-      input.parcel.weightKg > c.DELIVERY_MAX_WEIGHT_KG
-    )
-      throw new AppError(
-        422,
-        "MANUAL_DELIVERY_REQUIRED",
-        "This shipment needs staff review before a courier can be booked.",
-      );
-    if (!c.SHIPBUBBLE_CATEGORY_ID)
-      throw new AppError(
-        503,
-        "CATEGORY_REQUIRED",
-        "Configure the confirmed Shipbubble produce category",
-      );
+  private async quoteAddresses(pickup: Contact, destination: Contact): Promise<[number, number]> {
     const validate = async (contact: Contact, pickup: boolean) => {
       try {
         return await this.validateAddress(contact);
@@ -180,21 +173,70 @@ export class Shipbubble implements ShippingProvider {
         throw specific;
       }
     };
-    const [sender, receiver] = await Promise.all([
-      validate(input.pickup, true),
-      validate(input.destination, false),
-    ]);
+    return Promise.all([validate(pickup, true), validate(destination, false)]);
+  }
+  async quotes(
+    input: {
+      pickup: Contact;
+      destination: Contact;
+      parcel: Parcel;
+      name: string;
+      valueMinor: bigint;
+    },
+    validated?: [number, number],
+  ): Promise<ShippingRate[]> {
+    const c = getConfig();
+    assertShippingParcel(input.parcel);
+    const count = input.parcel.packageCount ?? 1;
+    if (!c.SHIPBUBBLE_CATEGORY_ID)
+      throw new AppError(
+        503,
+        "CATEGORY_REQUIRED",
+        "Configure the confirmed Shipbubble produce category",
+      );
+    if (count > 1) {
+      // Each parcel receives its own rate token. Share address validation and bound API concurrency.
+      const addresses = await this.quoteAddresses(input.pickup, input.destination);
+      const parts: ShippingRate[][] = [];
+      for (let offset = 0; offset < count; offset += 4) {
+        parts.push(
+          ...(await Promise.all(
+            Array.from({ length: Math.min(4, count - offset) }, (_, local) => {
+              const index = offset + local;
+              const value =
+                input.valueMinor / BigInt(count) +
+                (BigInt(index) < input.valueMinor % BigInt(count) ? 1n : 0n);
+              return this.quotes(
+                {
+                  ...input,
+                  valueMinor: value,
+                  parcel: {
+                    ...input.parcel,
+                    packageCount: 1,
+                    weightKg: input.parcel.weightKg / count,
+                  },
+                },
+                addresses,
+              );
+            }),
+          )),
+        );
+      }
+      return combineParcelRates(parts);
+    }
+    const [sender, receiver] =
+      validated ?? (await this.quoteAddresses(input.pickup, input.destination));
     const data = z
       .object({
-        request_token: z.string(),
+        request_token: z.string().min(1),
         couriers: z.array(
           z.object({
-            courier_id: z.union([z.string(), z.number()]).transform(String),
+             courier_id: z.union([z.string().min(1), z.number().int().nonnegative()]).transform(String),
             connected_account: z.boolean().optional(),
             currency: z.literal("NGN").optional(),
             rate_card_amount: z.number().nonnegative().optional(),
-            service_code: z.string(),
-            courier_name: z.string(),
+             service_code: z.string().min(1),
+             courier_name: z.string().min(1),
             total: z.number().nonnegative().max(10000000),
             service_type: z.string(),
             delivery_eta: z.string().optional(),
@@ -210,6 +252,8 @@ export class Shipbubble implements ShippingProvider {
           sender_address_code: sender,
           reciever_address_code: receiver,
           pickup_date: input.parcel.pickupDate,
+          service_type: "pickup",
+          delivery_instructions: input.parcel.notes || undefined,
           category_id: c.SHIPBUBBLE_CATEGORY_ID,
           package_items: [
             {
@@ -277,4 +321,61 @@ export class Shipbubble implements ShippingProvider {
   async cancel(id: string) {
     await this.call(`/shipping/labels/cancel/${encodeURIComponent(id)}`, "POST");
   }
+}
+
+export type SplitPart = {
+  requestToken: string;
+  serviceCode: string;
+  courierId: string;
+  amountMinor: string;
+  walletMinor: string;
+};
+export function splitParts(requestToken: string): SplitPart[] | null {
+  if (!requestToken.startsWith("split:")) return null;
+  return z
+    .array(
+      z.object({
+        requestToken: z.string().min(1),
+        serviceCode: z.string().min(1),
+        courierId: z.string().min(1),
+        amountMinor: z.string().regex(/^\d+$/),
+        walletMinor: z.string().regex(/^\d+$/),
+      }),
+    )
+    .min(2)
+    .max(20)
+    .parse(JSON.parse(requestToken.slice(6)));
+}
+/** Offer only a single service that actually quoted every parcel; charge the exact sum. */
+export function combineParcelRates(parts: ShippingRate[][]): ShippingRate[] {
+  if (!parts.length) return [];
+  return parts[0]!.flatMap((first) => {
+    const matching = parts.map((rates) =>
+      rates.find(
+        (rate) => rate.courierId === first.courierId && rate.serviceCode === first.serviceCode,
+      ),
+    );
+    if (matching.some((rate) => !rate)) return [];
+    const rates = matching as ShippingRate[];
+    if (new Set(rates.map((rate) => rate.requestToken)).size !== rates.length) return [];
+    return [
+      {
+        ...first,
+        amountMinor: rates.reduce((total, rate) => total + rate.amountMinor, 0n),
+        walletMinor: rates.reduce((total, rate) => total + rate.walletMinor, 0n),
+        eta: rates.every((rate) => rate.eta === first.eta) ? first.eta : undefined,
+        requestToken:
+          "split:" +
+          JSON.stringify(
+            rates.map((rate) => ({
+              requestToken: rate.requestToken,
+              serviceCode: rate.serviceCode,
+              courierId: rate.courierId,
+              amountMinor: String(rate.amountMinor),
+              walletMinor: String(rate.walletMinor),
+            })),
+          ),
+      },
+    ];
+  });
 }

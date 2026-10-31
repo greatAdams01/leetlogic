@@ -24,47 +24,71 @@ export function CustomerPayment({
   isBuyer,
   topup = false,
   onChanged,
+  revision = "",
+  disabled = false,
 }: {
   orderId: string;
   isBuyer: boolean;
   topup?: boolean;
   onChanged: () => Promise<unknown>;
+  revision?: string;
+  disabled?: boolean;
 }) {
   const { say, error, status } = useCopy();
   const [data, setData] = useState<any>(null),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const running = useRef(false);
+  const requestVersion = useRef(0);
+  const context = useRef({ orderId, revision, disabled, isBuyer, topup });
+  context.current = { orderId, revision, disabled, isBuyer, topup };
+  const [now, setNow] = useState(Date.now());
   const callbacks = useRef({ error, onChanged });
   callbacks.current = { error, onChanged };
   const load = useCallback(
     async (reconcile = false) => {
-      let latest = await customerApi(`orders/${orderId}/payments`);
-      const pending = latest.items?.find((item: any) =>
-        pendingPaymentStatuses.includes(item.status),
-      );
-      if (reconcile && isBuyer && pending) {
-        await customerApi(`orders/${orderId}/payments/${pending.id}/refresh`, {});
-        latest = await customerApi(`orders/${orderId}/payments`);
+      const version = ++requestVersion.current;
+      try {
+        let latest = await customerApi(`orders/${orderId}/payments`);
+        if (version !== requestVersion.current) return null;
+        const pending = latest.items?.find((item: any) =>
+          pendingPaymentStatuses.includes(item.status) || (latest.checkoutActive && item.status === "BLOCKED"),
+        );
+        if (reconcile && isBuyer && pending) {
+          await customerApi(`orders/${orderId}/payments/${pending.id}/refresh`, {});
+          latest = await customerApi(`orders/${orderId}/payments`);
+        }
+        if (version !== requestVersion.current) return null;
+        setData(latest);
+        return latest;
+      } catch (error) {
+        if (version !== requestVersion.current) return null;
+        throw error;
       }
-      setData(latest);
     },
-    [orderId, isBuyer],
+    [orderId, isBuyer, revision],
   );
   useEffect(() => {
+    let active = true;
     setData(null);
     setNotice("");
-    void load().catch((e) => setNotice(callbacks.current.error(e)));
+    void load().catch((e) => { if (active) setNotice(callbacks.current.error(e)); });
+    const timer = setInterval(() => setNow(Date.now()), 1000);
     const focus = () => {
       if (!running.current)
         void load(true)
-          .then(() => callbacks.current.onChanged())
-          .catch((e) => setNotice(callbacks.current.error(e)));
+          .then((latest) => latest && callbacks.current.onChanged())
+          .catch((e) => { if (active) setNotice(callbacks.current.error(e)); });
     };
     window.addEventListener("focus", focus);
-    return () => window.removeEventListener("focus", focus);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", focus);
+      clearInterval(timer);
+      requestVersion.current++;
+    };
   }, [load]);
-  const actions = paymentActions<any>(data || {}, topup);
+  const actions = paymentActions<any>(data || {}, topup, now);
   const latest = actions.item;
   const open = (url: string) => {
     if (!isHostedPaymentUrl(url, "checkout"))
@@ -72,27 +96,37 @@ export function CustomerPayment({
     location.assign(url);
   };
   const act = async (kind: string) => {
-    if (running.current) return;
+    const currentContext = () => context.current.orderId === orderId && context.current.revision === revision &&
+      context.current.isBuyer === isBuyer && context.current.topup === topup;
+    if (running.current || !currentContext()) return;
     running.current = true;
     setBusy(true);
     setNotice("");
     try {
       if (kind === "refresh") await load(true);
       else if (kind === "resume") {
-        if (actions.canResume) open(actions.pending!.checkoutUrl!);
+        const latest = await load();
+        const current = paymentActions<any>(latest || {}, topup);
+        if (currentContext() && !context.current.disabled && latest?.enabled && current.canResume) open(current.pending!.checkoutUrl!);
       } else {
+        if (context.current.disabled || !isBuyer || !paymentActions<any>(data || {}, topup).canPay) return;
         const result = await customerApi(`orders/${orderId}/checkout`, { kind });
+        if (!currentContext()) return;
         setData((current: any) => ({
           ...current,
           items: [result, ...(current?.items || []).filter((item: any) => item.id !== result.id)],
         }));
-        if (result.checkoutUrl) open(result.checkoutUrl);
-        await load();
+        const latest = await load();
+        const current = paymentActions<any>(latest || {}, topup);
+        if (currentContext() && !context.current.disabled && latest?.enabled && current.canResume && current.pending?.id === result.id)
+          open(current.pending!.checkoutUrl!);
       }
-      await onChanged();
+      if (currentContext()) await callbacks.current.onChanged();
     } catch (e) {
+      if (!currentContext()) return;
       setNotice(error(e));
-      await load().catch(() => setData(null));
+      await load().catch(() => { if (currentContext()) setData(null); });
+      if (currentContext()) await callbacks.current.onChanged().catch(() => {});
     } finally {
       running.current = false;
       setBusy(false);
@@ -114,13 +148,17 @@ export function CustomerPayment({
           {say("Your payment is being reviewed. Please contact support for help.")}
         </p>
       )}
+      {actions.ready && !disabled && <p>{say("Total")}: {money(data.payableMinor)}</p>}
+      {data?.enabled && isBuyer && !actions.ready && !actions.locked && !actions.succeeded && (
+        <p role="status">{error({ code: data.checkoutErrorCode || "QUOTE_EXPIRED" })}</p>
+      )}
       {latest && (
         <p>
           {status(latest.status)} · {money(latest.amountMinor)}
         </p>
       )}
       {data?.enabled && isBuyer && actions.canPay && (
-        <button disabled={busy} onClick={() => void act(actions.kind)}>
+        <button disabled={busy || disabled} onClick={() => void act(actions.kind)}>
           {say(actions.kind === "DELIVERY_TOPUP" ? "Pay delivery difference" : "Make Payment")}
         </button>
       )}
@@ -131,7 +169,7 @@ export function CustomerPayment({
           </button>
           <p>{say("After paying, return to this order and check your payment.")}</p>
           {actions.canResume && (
-            <button disabled={busy} onClick={() => void act("resume")}>
+            <button disabled={busy || disabled} onClick={() => void act("resume")}>
               {say("Continue payment")}
             </button>
           )}

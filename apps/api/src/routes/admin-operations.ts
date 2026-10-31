@@ -6,6 +6,9 @@ import { prisma, Prisma } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
+import { assertCurrentDeliveryQuote, assertNoActiveCheckout, shippingOrderInclude } from "../services/delivery-quote.js";
+import { deliveryReceiptReady, deliveryRefundReady } from "../services/delivery-policy.js";
+import { shippingSnapshot } from "../services/packaging.js";
 
 export const operationsRouter = Router();
 operationsRouter.use(requireAuth("admin"));
@@ -277,7 +280,7 @@ operationsRouter.post(
         where: { id: listingId },
         include: { farmerProfile: true },
       });
-      if (body.status === "ACTIVE" && listing.packingAssistanceRequested)
+      if (body.status === "ACTIVE" && (listing.packingAssistanceRequested || !packagingSchema.safeParse(listing.packaging).success))
         throw new AppError(
           409,
           "PACKING_ASSISTANCE_PENDING",
@@ -705,6 +708,7 @@ operationsRouter.post("/orders", requirePermission("orders.manage"), async (req,
         farmerProfileId: listing.farmerProfileId,
         quantity,
         totalMinor: BigInt(total.toFixed(0)),
+        packagingSnapshot: shippingSnapshot(listing) as Prisma.InputJsonValue,
       },
     });
     await tx.listing.update({
@@ -771,34 +775,28 @@ operationsRouter.post(
           );
         return previous;
       }
-      const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+      const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId }, include: shippingOrderInclude });
       if (order.fundsProvider === "bachs")
         throw new AppError(
           409,
           "PROVIDER_PAYMENT_REQUIRED",
           "Use the provider payment controls for this order.",
         );
-      const delivery = await tx.delivery.findUnique({ where: { orderId } });
+      await assertNoActiveCheckout(tx, orderId);
+      if (order.financialHold)
+        throw new AppError(409, "PAYMENT_LOCKED", "Resolve the financial review before settling escrow.");
+      const delivery = await tx.delivery.findUnique({ where: { orderId }, include: { parcels: true } });
       if (body.kind === "FUND" && delivery && delivery.status !== "MANUAL_REVIEW") {
         const quote = delivery.selectedQuoteId
           ? await tx.deliveryQuote.findUnique({ where: { id: delivery.selectedQuoteId } })
           : null;
         if (!quote || quote.expiresAt <= new Date())
           throw new AppError(409, "QUOTE_EXPIRED", "Refresh delivery quotes before funding");
+        assertCurrentDeliveryQuote(order, delivery, quote);
       }
       if (
         body.kind === "REFUND" &&
-        delivery &&
-        [
-          "BOOKING_QUEUED",
-          "BOOKING",
-          "BOOKING_UNCERTAIN",
-          "BOOKED",
-          "PICKED_UP",
-          "IN_TRANSIT",
-          "FAILED_ATTEMPT",
-          "RETURNING",
-        ].includes(delivery.status)
+        !deliveryRefundReady(delivery)
       )
         throw new AppError(
           409,
@@ -830,7 +828,7 @@ operationsRouter.post(
           })
         )
           throw new AppError(409, "DISPUTE_OPEN", "Resolve the dispute before settling escrow");
-        if (body.kind === "RELEASE" && !order.deliveryConfirmedAt)
+        if (body.kind === "RELEASE" && (!order.deliveryConfirmedAt || (delivery && !deliveryReceiptReady(delivery))))
           throw new AppError(409, "DELIVERY_REQUIRED", "Confirm delivery before releasing escrow");
         await tx.tradeOrder.update({
           where: { id: orderId },
@@ -1096,6 +1094,9 @@ operationsRouter.post(
     const item = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+      await assertNoActiveCheckout(tx, orderId);
+      if (order.financialHold)
+        throw new AppError(409, "PAYMENT_LOCKED", "Resolve the financial review before cancelling this order.");
       if (order.status !== "AWAITING_PAYMENT")
         throw new AppError(
           409,

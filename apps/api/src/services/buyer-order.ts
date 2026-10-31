@@ -2,6 +2,7 @@ import { getConfig } from "../config.js";
 import { Prisma } from "@leetlogic/database";
 import type { Request } from "express";
 import { AppError } from "../lib/errors.js";
+import { shippingSnapshot } from "./packaging.js";
 import { audit } from "./audit.js";
 export async function createBuyerOrder(
   tx: Prisma.TransactionClient,
@@ -56,9 +57,7 @@ export async function createBuyerOrder(
       farmerProfileId: listing.farmerProfileId,
       listingId: listing.id,
       quantity,
-      packagingSnapshot: listing.packaging
-        ? (listing.packaging as Prisma.InputJsonValue)
-        : { unavailable: true },
+      packagingSnapshot: shippingSnapshot(listing) as Prisma.InputJsonValue,
       totalMinor: BigInt(total.toFixed(0)),
       feeBasisPoints: settings.platformFeeBasisPoints,
       ...(getConfig().PAYMENTS_ENABLED

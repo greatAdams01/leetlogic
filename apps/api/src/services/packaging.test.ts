@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { packageSuggestion, handlingAllowed } from "./packaging.js";
+import { packageSuggestion, handlingAllowed, shippingSnapshot } from "./packaging.js";
 const pack = {
   unitsPerPackage: 1,
   weightKg: 25,
@@ -43,4 +43,25 @@ describe("order packing estimates", () => {
     expect(handlingAllowed({ ...pack, handling: "COLD_CHAIN" }, "PERISHABLE")).toBe(false);
     expect(handlingAllowed({ ...pack, handling: "STANDARD" }, "BULK")).toBe(true);
   });
+});
+
+it("freezes the 50 kg selling basis, counts packaging tare and rejects underweight snapshots", () => {
+  const listing = {
+    packaging: { ...pack, handling: "STANDARD", weightKg: 50.5 },
+    salePackaging: { type: "BAG", size: 50, measure: "KG" },
+    categoryId: "grains",
+    unitCode: "BAG",
+    shippingScope: "NATIONWIDE",
+  };
+  expect(packageSuggestion(shippingSnapshot(listing), "2")).toMatchObject({
+    packageCount: 2,
+    weightKg: 101,
+    volumeM3: 0.12,
+  });
+  expect(
+    packageSuggestion(
+      shippingSnapshot({ ...listing, packaging: { ...listing.packaging, weightKg: 49 } }),
+      "2",
+    ),
+  ).toBeNull();
 });

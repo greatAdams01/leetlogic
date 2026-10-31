@@ -202,7 +202,7 @@ describe("seller listing wizard", () => {
     for (const [label, value] of [
       ["Available quantity (kg) *", "2"],
       ["Price per kg · NGN *", "123"],
-      ["Packed weight (kg) *", "2"],
+      ["Additional packaging weight (kg) *", "1"],
       ["Package length (cm) *", "30"],
       ["Package width (cm) *", "20"],
       ["Package height (cm) *", "20"],

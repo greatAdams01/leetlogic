@@ -6,6 +6,7 @@ type Quote = {
   expiresAt: Date;
   courierId?: string | null;
   quality?: unknown;
+  available?: boolean;
 };
 
 export function courierQuality(value: unknown) {
@@ -53,7 +54,7 @@ export function estimatedHours(eta: string | null): number | null {
 
 /** Price 60%, ETA 30%, provider-rated service quality 10%. Only current offered quotes qualify. */
 export function rankDeliveryQuotes<T extends Quote>(quotes: T[], now = new Date()) {
-  const available = quotes.filter((quote) => quote.expiresAt > now && !!quote.courierId);
+  const available = quotes.filter((quote) => quote.expiresAt > now && !!quote.courierId && quote.available !== false);
   const maxPrice = Math.max(1, ...available.map((quote) => Number(quote.amountMinor)));
   const maxHours = Math.max(1, ...available.map((quote) => estimatedHours(quote.eta) || 0));
   const score = (quote: T) =>

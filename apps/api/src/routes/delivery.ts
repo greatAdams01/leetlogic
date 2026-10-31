@@ -1,34 +1,38 @@
 import { rankDeliveryQuotes, courierQuality } from "../services/delivery-ranking.js";
 import { deliveryQuoteConfiguration } from "../services/delivery-configuration.js";
-import { handlingAllowed, packageSuggestion } from "../services/packaging.js";
+import { packageSuggestion, orderShipping } from "../services/packaging.js";
+import { randomUUID } from "node:crypto";
+import {
+  assertCurrentDeliveryQuote,
+  assertNoActiveCheckout,
+  assertDeliveryInput,
+  checkoutSummary,
+  deliveryInputHash,
+  deriveDeliveryInput,
+  savedPickup,
+  shippingOrderInclude,
+  storedDeliveryInput,
+} from "../services/delivery-quote.js";
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { prisma } from "@leetlogic/database";
+import { prisma, type Prisma } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { getConfig } from "../config.js";
-import { canAdvanceDelivery } from "../services/delivery-policy.js";
+import { canAdvanceDelivery, deliveryReceiptReady } from "../services/delivery-policy.js";
 import { audit } from "../services/audit.js";
-import { contactSchema, parcelSchema } from "../providers/shipping/shipbubble.js";
-import { deliveryEvent, hashInput, serialize, shippingProvider } from "../services/delivery.js";
+import { contactSchema } from "../providers/shipping/shipbubble.js";
+import { assertNoDeliverySettlement, deliveryEvent, finalizeDeliveryBooking, hasDeliverySettlement, hashInput, serialize, shippingProvider } from "../services/delivery.js";
+import { recordedSplitBooking, splitPlanMatches } from "../services/split-delivery.js";
+import { splitParts, type TrackedShipment } from "../providers/shipping/shipbubble.js";
 const uuid = z.string().uuid();
 const quoteBody = z.object({
   pickup: contactSchema,
   destination: contactSchema,
-  parcel: parcelSchema,
+  // Retain the old request shape, but never validate or trust buyer-entered measurements.
+  parcel: z.object({ pickupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
 });
-async function unlockedCheckout(tx: any, orderId: string) {
-  if (
-    await tx.paymentAttempt.count({
-      where: { orderId, status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
-    })
-  )
-    throw new AppError(
-      409,
-      "CHECKOUT_ACTIVE",
-      "Finish the current payment before changing delivery details.",
-    );
-}
+const unlockedCheckout = assertNoActiveCheckout;
 function safeQuote(q: any) {
   return {
     id: q.id,
@@ -39,6 +43,7 @@ function safeQuote(q: any) {
     quality: courierQuality(q.quality),
     recommended: !!q.recommended,
     recommendationReason: q.recommendationReason || null,
+    available: q.available !== false,
   };
 }
 export const customerDeliveryRouter = Router();
@@ -51,12 +56,7 @@ async function orderAccess(req: Request) {
   const order = await prisma.tradeOrder.findUnique({
     where: { id: orderId },
     include: {
-      farmerProfile: {
-        include: {
-          user: { include: { profile: true, addresses: { where: { deletedAt: null } } } },
-        },
-      },
-      listing: { include: { locationAddress: true } },
+      ...shippingOrderInclude,
       shipment: true,
       delivery: {
         include: {
@@ -80,7 +80,7 @@ async function orderAccess(req: Request) {
       !(await prisma.escrowEntry.count({ where: { orderId: order.id, kind: "FUND" } })))
   )
     throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
-  return order;
+  return { ...order, settlementStarted: await hasDeliverySettlement(order.id) };
 }
 customerDeliveryRouter.post("/push-device", async (req, res) => {
   const { token } = z
@@ -105,10 +105,16 @@ customerDeliveryRouter.delete("/push-device", async (req, res) => {
   res.status(204).end();
 });
 customerDeliveryRouter.get("/notifications", async (req, res) => {
-  const { view: requestedView } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
+  const { view: requestedView } = z
+    .object({ view: z.enum(["buyer", "seller"]).optional() })
+    .parse(req.query);
   const view = req.auth!.capabilities!.includes("SELLER") ? "seller" : "buyer";
   if (requestedView && requestedView !== view)
-    throw new AppError(403, "ROLE_FORBIDDEN", "This dashboard is not available for your account role.");
+    throw new AppError(
+      403,
+      "ROLE_FORBIDDEN",
+      "This dashboard is not available for your account role.",
+    );
   const items = await prisma.deliveryNotification.findMany({
     where: {
       userId: req.auth!.sub,
@@ -144,25 +150,36 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
           take: 50,
         })
       : [];
-  const approved = view === "seller"
-    ? await prisma.listingApprovalNotification.findMany({
-        where: { userId: req.auth!.sub },
-        select: { id: true, listingId: true, title: true, createdAt: true },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      })
-    : [];
+  const approved =
+    view === "seller"
+      ? await prisma.listingApprovalNotification.findMany({
+          where: { userId: req.auth!.sub },
+          select: { id: true, listingId: true, title: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+          take: 50,
+        })
+      : [];
   res.json({
-    items: [...items, ...paid.map((i) => ({ ...i, messageKey: "order.paid" })), ...approved.map((i) => ({ ...i, messageKey: "listing.approved" }))]
+    items: [
+      ...items,
+      ...paid.map((i) => ({ ...i, messageKey: "order.paid" })),
+      ...approved.map((i) => ({ ...i, messageKey: "listing.approved" })),
+    ]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 50),
   });
 });
 customerDeliveryRouter.get("/", async (req, res) => {
-  const { view: requestedView } = z.object({ view: z.enum(["buyer", "seller"]).optional() }).parse(req.query);
+  const { view: requestedView } = z
+    .object({ view: z.enum(["buyer", "seller"]).optional() })
+    .parse(req.query);
   const view = req.auth!.capabilities!.includes("SELLER") ? "seller" : "buyer";
   if (requestedView && requestedView !== view)
-    throw new AppError(403, "ROLE_FORBIDDEN", "This dashboard is not available for your account role.");
+    throw new AppError(
+      403,
+      "ROLE_FORBIDDEN",
+      "This dashboard is not available for your account role.",
+    );
   const items = await prisma.tradeOrder.findMany({
     where:
       view === "seller"
@@ -319,54 +336,25 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
   });
   res.json({ saved: true });
 });
-function savedPickup(order: any) {
-  const snapshot = order.delivery?.pickup;
-  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-  const listingAddress = order.listing.locationAddress;
-  const addresses = [listingAddress, ...(order.farmerProfile.user.addresses || [])];
-  // Old quotes may contain a buyer address in pickup. Resolve only farmer-owned addresses.
-  const saved =
-    snapshot && typeof snapshot.address === "string" && typeof snapshot.state === "string"
-      ? addresses.find(
-          (address: any) =>
-            address.state.toLowerCase() === snapshot.state.toLowerCase() &&
-            [
-              address.line1,
-              `${address.line1}, ${address.city}`,
-              `${address.line1}, ${address.city}, ${address.lga}`,
-            ].some((text) => normalize(text) === normalize(snapshot.address)),
-        )
-      : null;
-  const address = saved || listingAddress;
-  return {
-    address: [address.line1, address.city, address.lga].filter(Boolean).join(", "),
-    state: address.state,
-    ...(address.latitude != null && address.longitude != null
-      ? { latitude: Number(address.latitude), longitude: Number(address.longitude) }
-      : {}),
-  };
-}
-function checkPickup(order: any, pickup: { address: string; state: string }) {
-  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-  const expected = savedPickup(order);
-  const listing = order.listing.locationAddress;
-  const fullListingAddress = [listing.line1, listing.city, listing.lga].filter(Boolean).join(", ");
-  const matches =
-    normalize(pickup.address) === normalize(expected.address) ||
-    // Older clients sent the listing's street without city or local government.
-    (normalize(expected.address) === normalize(fullListingAddress) &&
-      normalize(pickup.address) === normalize(listing.line1));
-  if (!matches || pickup.state.toLowerCase() !== expected.state.toLowerCase())
-    throw new AppError(
-      422,
-      "PICKUP_ADDRESS_MISMATCH",
-      "Pickup changed. Refresh to use the farmer’s saved pickup address.",
-    );
-}
 for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
   router.get("/:id/delivery", async (req, res) => {
     const order = await orderAccess(req);
     const delivery = order.delivery;
+    const checkout = checkoutSummary(order);
+    const checkoutActive = !!(await prisma.paymentAttempt.count({
+      where: { orderId: order.id, OR: [
+        { status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
+        { status: "BLOCKED", checkoutId: { not: null } },
+      ] },
+    }));
+    const quotes = delivery?.quotes.map((quote) => {
+      let available = false;
+      try {
+        assertCurrentDeliveryQuote(order, delivery, quote, { selected: false });
+        available = true;
+      } catch { /* Historical or incompatible quotes remain visible, but cannot be selected. */ }
+      return { ...quote, available };
+    }) || [];
     res.json(
       serialize({
         order: {
@@ -377,9 +365,11 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           description: order.listing.description,
           listingId: order.listing.id,
           totalMinor: order.totalMinor,
+          ...checkout,
+          checkoutActive,
           quantity: order.quantity,
           unitCode: order.listing.unitCode,
-          salePackaging: order.listing.salePackaging,
+          salePackaging: orderShipping(order.packagingSnapshot, order.listing).salePackaging,
           packageSuggestion: packageSuggestion(
             order.packagingSnapshot ?? order.listing.packaging,
             order.quantity,
@@ -397,7 +387,15 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           },
         },
         delivery: delivery
-          ? { ...delivery, quotes: rankDeliveryQuotes(delivery.quotes).map(safeQuote) }
+          ? {
+              ...delivery,
+              quotes: rankDeliveryQuotes(quotes).map(safeQuote),
+              parcels: await prisma.deliveryParcel.findMany({
+                where: { deliveryId: delivery.id },
+                orderBy: { parcelIndex: "asc" },
+                select: { id: true, parcelIndex: true, status: true, trackingUrl: true },
+              }),
+            }
           : null,
       }),
     );
@@ -418,165 +416,86 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       );
     if (!c.DELIVERY_ENABLED)
       throw new AppError(503, "DELIVERY_UNAVAILABLE", "Delivery quotes are not available yet");
-    const { categories, states } = deliveryQuoteConfiguration(c);
-    if (!handlingAllowed(order.packagingSnapshot ?? order.listing.packaging, body.parcel.handling))
-      throw new AppError(
-        422,
-        "HANDLING_REQUIRED",
-        "Keep the farmer’s required handling. Contact support if the requirement needs to change.",
-      );
-    checkPickup(order, body.pickup);
-    const confirmed = savedPickup(order);
-    body.pickup = {
-      ...body.pickup,
-      ...confirmed,
-      name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
-      phone: order.farmerProfile.user.phoneE164,
-      email: order.farmerProfile.user.profile?.email || body.pickup.email,
-      country: "NG",
-    };
-    delete body.pickup.latitude;
-    delete body.pickup.longitude;
-    if (confirmed.latitude != null && confirmed.longitude != null) {
-      body.pickup.latitude = Number(confirmed.latitude);
-      body.pickup.longitude = Number(confirmed.longitude);
-    }
-    if (
-      order.listing.shippingScope === "LOCAL" &&
-      body.pickup.state.toLowerCase() !== body.destination.state.toLowerCase()
-    )
-      throw new AppError(
-        422,
-        "DELIVERY_SCOPE_UNSUPPORTED",
-        "This farmer offers delivery within their state. Choose a delivery address in the same state.",
-      );
-    const eligible =
-      body.parcel.handling === "STANDARD" &&
-      body.parcel.packageCount === 1 &&
-      Math.max(body.parcel.length, body.parcel.width, body.parcel.height) <= 200 &&
-      body.parcel.weightKg <= c.DELIVERY_MAX_WEIGHT_KG &&
-      categories.includes(order.listing.categoryId) &&
-      states.includes(body.pickup.state.toLowerCase()) &&
-      states.includes(body.destination.state.toLowerCase());
-    if (
-      body.parcel.pickupDate < new Date().toISOString().slice(0, 10) ||
-      Number.isNaN(Date.parse(body.parcel.pickupDate))
-    )
-      throw new AppError(422, "INVALID_PICKUP_DATE", "Choose a valid future pickup date");
-    if (!eligible) {
-      await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
-        await unlockedCheckout(tx, order.id);
-        const current = await tx.tradeOrder.findUniqueOrThrow({
-          where: { id: order.id },
-          include: { delivery: true, shipment: true },
-        });
-        if (
-          current.status !== "AWAITING_PAYMENT" ||
-          current.shipment ||
-          current.delivery?.paidMinor
-        )
-          throw new AppError(409, "DELIVERY_LOCKED", "Order changed; refresh and retry");
-        checkPickup({ ...order, delivery: current.delivery }, body.pickup);
-        const d = await tx.delivery.upsert({
-          where: { orderId: order.id },
-          create: {
-            orderId: order.id,
-            status: "MANUAL_REVIEW",
-            selectedQuoteId: null,
-            shippingMinor: 0,
-            pickup: body.pickup,
-            destination: body.destination,
-            package: body.parcel,
-          },
-          update: {
-            status: "MANUAL_REVIEW",
-            selectedQuoteId: null,
-            shippingMinor: 0,
-            pickup: body.pickup,
-            destination: body.destination,
-            package: body.parcel,
-          },
-        });
-        await tx.deliveryQuote.updateMany({
-          where: { deliveryId: d.id },
-          data: { expiresAt: new Date() },
-        });
-        await deliveryEvent(
-          tx,
-          d.id,
-          "MANUAL_REVIEW",
-          "customer",
-          `${d.id}:manual:${hashInput(body)}`,
-          req.auth!.sub,
-        );
-        await audit(
-          req,
-          { action: "delivery.manual.requested", entityType: "order", entityId: order.id },
-          tx,
-        );
-      });
-      res.status(202).json({
-        manualReview: true,
-        message: "This delivery requires staff review; no courier booking has been made.",
-      });
-      return;
-    }
-    const rates = await shippingProvider.quotes({
-      ...body,
-      name: order.listing.title,
-      valueMinor: order.totalMinor,
-    });
-    const items = await prisma.$transaction(async (tx) => {
+    deliveryQuoteConfiguration(c);
+    // Invalidate the previous choice BEFORE the provider call. A failed address/date change
+    // must not leave the old shipment payable. A revision also prevents late responses winning.
+    const prepared = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
       await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: order.id },
-        include: { delivery: true, shipment: true },
+        include: { ...shippingOrderInclude, delivery: true, shipment: true },
       });
-      if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.paidMinor)
+      if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.paidMinor || current.delivery?.bookingStartedAt)
         throw new AppError(409, "DELIVERY_LOCKED", "Order changed; refresh and retry");
-      checkPickup({ ...order, delivery: current.delivery }, body.pickup);
+      const input = deriveDeliveryInput(current, { ...body, pickupDate: body.parcel.pickupDate });
+      const suggested = packageSuggestion(current.packagingSnapshot ?? current.listing.packaging, current.quantity)!;
+      const quoteRequestId = randomUUID();
+      const fields = {
+        pickup: input.pickup,
+        destination: input.destination,
+        package: { ...input.parcel, volumeM3: suggested.volumeM3, specialHandling: suggested.specialHandling, quoteRequestId },
+        status: "QUOTE_REQUIRED",
+        selectedQuoteId: null,
+        shippingMinor: 0n,
+        courier: null,
+        failureCode: null,
+      };
       const d = await tx.delivery.upsert({
         where: { orderId: order.id },
-        create: {
-          orderId: order.id,
-          pickup: body.pickup,
-          destination: body.destination,
-          package: body.parcel,
-          status: rates.length ? "QUOTE_REQUIRED" : "MANUAL_REVIEW",
-        },
-        update: {
-          pickup: body.pickup,
-          destination: body.destination,
-          package: body.parcel,
-          selectedQuoteId: null,
-          shippingMinor: 0,
-          status: rates.length ? "QUOTE_REQUIRED" : "MANUAL_REVIEW",
-        },
+        create: { orderId: order.id, ...fields },
+        update: fields,
       });
       await tx.deliveryQuote.updateMany({
         where: { deliveryId: d.id },
         data: { expiresAt: new Date() },
       });
+      return { current, d, input, inputHash: deliveryInputHash(current, input), quoteRequestId };
+    });
+    let rates;
+    try {
+      assertDeliveryInput(prepared.current, prepared.input);
+      rates = await shippingProvider.quotes({ ...prepared.input, name: prepared.current.listing.title, valueMinor: prepared.current.totalMinor });
+      if (!rates.length)
+        throw new AppError(409, "NO_DELIVERY_OPTIONS", "No delivery service is available for this shipment and date. Try another date or choose pickup.");
+    } catch (error) {
+      await prisma.delivery.updateMany({
+        where: { id: prepared.d.id, package: { path: ["quoteRequestId"], equals: prepared.quoteRequestId }, status: "QUOTE_REQUIRED", selectedQuoteId: null },
+        data: { failureCode: error instanceof AppError ? error.code : "QUOTES_UNAVAILABLE" },
+      });
+      throw error;
+    }
+    const items = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
+      const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, delivery: true, shipment: true } });
+      const d = current.delivery;
+      if (current.status !== "AWAITING_PAYMENT" || current.shipment || !d || d.paidMinor || d.bookingStartedAt ||
+        (d.package as { quoteRequestId?: string } | null)?.quoteRequestId !== prepared.quoteRequestId)
+        throw new AppError(409, "STALE_DELIVERY_QUOTE", "Delivery details changed. Review a fresh delivery quote before paying.");
+      const stored = storedDeliveryInput(d);
+      const derived = deriveDeliveryInput(current, { ...stored, pickupDate: stored.parcel.pickupDate });
+      if (deliveryInputHash(current, stored) !== prepared.inputHash || deliveryInputHash(current, derived) !== prepared.inputHash)
+        throw new AppError(409, "STALE_DELIVERY_QUOTE", "Delivery details changed. Review a fresh delivery quote before paying.");
       const result = [];
-      for (const rate of rates)
-        result.push(
-          await tx.deliveryQuote.create({
+      for (const rate of rates) {
+        const quote = await tx.deliveryQuote.create({
             data: {
               deliveryId: d.id,
               ...rate,
-              inputHash: hashInput(body),
+              inputHash: prepared.inputHash,
               expiresAt: new Date(Date.now() + 15 * 60000),
             },
-          }),
-        );
+          });
+        assertCurrentDeliveryQuote(current, d, quote, { selected: false });
+        result.push({ ...quote, available: true });
+      }
       await deliveryEvent(
         tx,
         d.id,
-        rates.length ? "QUOTE_REQUIRED" : "MANUAL_REVIEW",
+        "QUOTE_REQUIRED",
         "system",
-        `${d.id}:quoted:${hashInput(body)}:${Date.now()}`,
+        `${d.id}:quoted:${prepared.quoteRequestId}`,
       );
       await audit(req, { action: "delivery.quoted", entityType: "order", entityId: order.id }, tx);
       return result;
@@ -593,17 +512,15 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
       await unlockedCheckout(tx, order.id);
-      const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id } });
-      const d = await tx.delivery.findUniqueOrThrow({ where: { orderId: order.id } });
-      const quote = await tx.deliveryQuote.findUnique({ where: { id: quoteId } });
+      const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, shipment: true } });
+      const d = await tx.delivery.findUnique({ where: { orderId: order.id } });
+      const candidate = await tx.deliveryQuote.findUnique({ where: { id: quoteId } });
       if (
         current.status !== "AWAITING_PAYMENT" ||
-        d.paidMinor ||
-        !quote ||
-        quote.deliveryId !== d.id ||
-        quote.expiresAt <= new Date()
+        current.shipment || !d || d.paidMinor || d.bookingStartedAt
       )
         throw new AppError(409, "QUOTE_EXPIRED", "Request a fresh delivery quote before payment");
+      const quote = assertCurrentDeliveryQuote(current, d, candidate, { selected: false });
       await tx.delivery.update({
         where: { id: d.id },
         data: {
@@ -644,56 +561,77 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       !["AWAITING_PAYMENT", "FUNDED"].includes(order.status)
     )
       throw new AppError(409, "DELIVERY_LOCKED", "Delivery quote cannot be refreshed");
-    const selected = await prisma.deliveryQuote.findUniqueOrThrow({
-      where: { id: d.selectedQuoteId },
+    const prepared = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await unlockedCheckout(tx, order.id);
+      const currentOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, delivery: true, shipment: true } });
+      const current = currentOrder.delivery;
+      await assertNoDeliverySettlement(tx, order.id);
+      if (!current || current.selectedQuoteId !== d.selectedQuoteId || current.bookingStartedAt || current.providerShipmentId ||
+        current.paidMinor !== d.paidMinor || currentOrder.status !== order.status || currentOrder.shipment || currentOrder.financialHold)
+        throw new AppError(409, "STALE_RECORD", "Delivery changed; refresh and retry");
+      const selected = await tx.deliveryQuote.findUnique({ where: { id: current.selectedQuoteId! } });
+      if (!selected || selected.deliveryId !== current.id)
+        throw new AppError(409, "QUOTE_EXPIRED", "Request a fresh delivery quote before payment");
+      const saved = storedDeliveryInput(current);
+      const input = deriveDeliveryInput(currentOrder, { ...saved, pickupDate: saved.parcel.pickupDate });
+      const suggested = packageSuggestion(currentOrder.packagingSnapshot ?? currentOrder.listing.packaging, currentOrder.quantity)!;
+      const quoteRequestId = randomUUID();
+      await tx.deliveryQuote.updateMany({ where: { deliveryId: d.id }, data: { expiresAt: new Date() } });
+      await tx.delivery.update({ where: { id: d.id }, data: {
+        pickup: input.pickup,
+        destination: input.destination,
+        package: { ...input.parcel, volumeM3: suggested.volumeM3, specialHandling: suggested.specialHandling, quoteRequestId },
+        status: order.status === "FUNDED" ? "BOOKING_BLOCKED" : "QUOTE_REQUIRED",
+        failureCode: null,
+      } });
+      return { currentOrder, input, selected, inputHash: deliveryInputHash(currentOrder, input), quoteRequestId };
     });
-    const pickup = contactSchema.parse(d.pickup),
-      destination = contactSchema.parse(d.destination),
-      parcel = parcelSchema.parse(d.package);
-    const rates = await shippingProvider.quotes({
-      pickup,
-      destination,
-      parcel,
-      name: order.listing.title,
-      valueMinor: order.totalMinor,
-    });
-    const rate = rates.find((x) => x.serviceCode === selected.serviceCode);
-    if (
-      !rate ||
-      (d.paidMinor > 0n && d.paidMinor !== rate.amountMinor && order.fundsProvider !== "bachs")
-    )
-      throw new AppError(
-        409,
-        "DELIVERY_PRICE_CHANGED",
-        "Courier availability or paid delivery price changed. Contact staff to reconcile payment before booking.",
-      );
+    let rate;
+    try {
+      assertDeliveryInput(prepared.currentOrder, prepared.input);
+      const rates = await shippingProvider.quotes({ ...prepared.input, name: prepared.currentOrder.listing.title, valueMinor: prepared.currentOrder.totalMinor });
+      rate = rates.find((item) => item.serviceCode === prepared.selected.serviceCode && item.courierId === prepared.selected.courierId);
+      if (!rate)
+        throw new AppError(409, "NO_DELIVERY_OPTIONS", "No delivery service is available for this shipment and date. Try another date or choose pickup.");
+      if (d.paidMinor > 0n && d.paidMinor !== rate.amountMinor && order.fundsProvider !== "bachs")
+        throw new AppError(409, "DELIVERY_PRICE_CHANGED", "Courier availability or paid delivery price changed. Contact staff to reconcile payment before booking.");
+    } catch (error) {
+      await prisma.delivery.updateMany({
+        where: { id: d.id, package: { path: ["quoteRequestId"], equals: prepared.quoteRequestId } },
+        data: { failureCode: error instanceof AppError ? error.code : "QUOTES_UNAVAILABLE" },
+      });
+      throw error;
+    }
+    const refreshedRate = rate;
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
       await unlockedCheckout(tx, order.id);
-      const current = await tx.delivery.findUniqueOrThrow({ where: { id: d.id } });
-      if (
-        current.selectedQuoteId !== d.selectedQuoteId ||
-        current.bookingStartedAt ||
-        current.providerShipmentId ||
-        current.paidMinor !== d.paidMinor
-      )
+      const currentOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, delivery: true, shipment: true } });
+      const current = currentOrder.delivery;
+      await assertNoDeliverySettlement(tx, order.id);
+      if (!current || current.selectedQuoteId !== d.selectedQuoteId || current.bookingStartedAt || current.providerShipmentId ||
+        current.paidMinor !== d.paidMinor || currentOrder.status !== order.status || currentOrder.shipment || currentOrder.financialHold ||
+        (current.package as { quoteRequestId?: string } | null)?.quoteRequestId !== prepared.quoteRequestId)
         throw new AppError(409, "STALE_RECORD", "Delivery changed; refresh and retry");
       const quote = await tx.deliveryQuote.create({
         data: {
           deliveryId: d.id,
-          ...rate,
-          inputHash: selected.inputHash,
+          ...refreshedRate,
+          inputHash: prepared.inputHash,
           expiresAt: new Date(Date.now() + 15 * 60000),
         },
       });
+      assertCurrentDeliveryQuote(currentOrder, current, quote, { selected: false });
       await tx.delivery.update({
         where: { id: d.id },
         data: {
           selectedQuoteId: quote.id,
-          shippingMinor: rate.amountMinor,
+          shippingMinor: refreshedRate.amountMinor,
+          courier: refreshedRate.courier,
           status:
-            d.paidMinor > 0n
-              ? d.paidMinor < rate.amountMinor
+            order.status === "FUNDED"
+              ? d.paidMinor < refreshedRate.amountMinor
                 ? "TOPUP_REQUIRED"
                 : "PAID"
               : "PAYMENT_PENDING",
@@ -727,10 +665,11 @@ export async function queueBooking(orderId: string) {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: orderId },
-      include: { delivery: true },
+      include: { ...shippingOrderInclude, delivery: true },
     });
     const d = order.delivery;
     if (!d) throw new AppError(409, "QUOTE_REQUIRED", "Choose delivery first");
+    await assertNoDeliverySettlement(tx, orderId);
     if (
       [
         "BOOKING_QUEUED",
@@ -758,6 +697,7 @@ export async function queueBooking(orderId: string) {
         "BOOKING_NOT_READY",
         "Fund the order and confirm payment for a current delivery quote",
       );
+    assertCurrentDeliveryQuote(order, d, quote);
     await tx.delivery.update({
       where: { id: d.id },
       data: { status: "BOOKING_QUEUED", failureCode: null },
@@ -787,6 +727,7 @@ staffDeliveryRouter.post(
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
       await unlockedCheckout(tx, order.id);
       const d = await tx.delivery.findUniqueOrThrow({ where: { orderId: order.id } });
+      const currentOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: shippingOrderInclude });
       if (d.paymentRef === body.reference && d.paidMinor === BigInt(body.amountMinor)) return;
       const quote = d.selectedQuoteId
         ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } })
@@ -802,6 +743,7 @@ staffDeliveryRouter.post(
           "DELIVERY_PAYMENT_INVALID",
           "Payment must match the current selected delivery quote",
         );
+      assertCurrentDeliveryQuote(currentOrder, d, quote);
       await tx.delivery.update({
         where: { id: d.id },
         data: { paidMinor: quote.amountMinor, paymentRef: body.reference, status: "PAID" },
@@ -840,6 +782,111 @@ staffDeliveryRouter.post(
   },
 );
 staffDeliveryRouter.post(
+  "/:id/delivery/parcels/:parcelId/link",
+  requirePermission("orders.manage"),
+  requireRecentStepUp,
+  async (req, res) => {
+    const order = await orderAccess(req),
+      d = order.delivery;
+    const body = z
+      .object({
+        providerShipmentId: z.string().min(3).max(160),
+        reason: z.string().trim().min(10).max(500),
+      })
+      .parse(req.body);
+    const parcel =
+      d &&
+      (await prisma.deliveryParcel.findFirst({
+        where: { id: uuid.parse(req.params.parcelId), deliveryId: d.id },
+      }));
+    if (parcel?.providerShipmentId === body.providerShipmentId) {
+      res.json({ linked: true });
+      return;
+    }
+    if (
+      !d ||
+      !parcel ||
+      parcel.providerShipmentId ||
+      !["BOOKING", "BOOKING_UNCERTAIN"].includes(parcel.status) ||
+      d.status !== "BOOKING_UNCERTAIN"
+    )
+      throw new AppError(
+        409,
+        "DELIVERY_NOT_LINKABLE",
+        "Only uncertain parcel bookings can be linked.",
+      );
+    const tracked = await shippingProvider.track(body.providerShipmentId);
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM deliveries WHERE id = ${d.id}::uuid FOR UPDATE`;
+      const currentOrder = await tx.tradeOrder.findUniqueOrThrow({
+        where: { id: order.id }, include: { ...shippingOrderInclude, delivery: { include: { parcels: true } } },
+      });
+      const current = currentOrder.delivery;
+      const currentParcel = current?.parcels.find((item) => item.id === parcel.id);
+      if (currentParcel?.providerShipmentId === tracked.id) return;
+      if (!current || current.status !== "BOOKING_UNCERTAIN" || current.providerShipmentId !== `split:${d.id}` ||
+        !currentParcel || currentParcel.providerShipmentId || !["BOOKING", "BOOKING_UNCERTAIN"].includes(currentParcel.status))
+        throw new AppError(409, "STALE_RECORD", "Parcel changed. Refresh and try again.");
+      const quote = current.selectedQuoteId ? await tx.deliveryQuote.findUnique({ where: { id: current.selectedQuoteId } }) : null;
+      if (!quote || !splitPlanMatches(quote, current.parcels))
+        throw new AppError(409, "STALE_RECORD", "Parcel plan changed. Refresh and try again.");
+      verifyLinkedShipment(tracked, body.providerShipmentId, current, currentParcel.walletMinor);
+      await assertShipmentUnlinked(tx, tracked.id, current.id, currentParcel.id);
+      const changed = await tx.deliveryParcel.updateMany({
+        where: {
+          id: parcel.id,
+          providerShipmentId: null,
+          status: { in: ["BOOKING", "BOOKING_UNCERTAIN"] },
+        },
+        data: {
+          providerShipmentId: tracked.id,
+          trackingUrl: tracked.trackingUrl,
+          actualMinor: tracked.shippingMinor,
+          status: "BOOKED",
+          failureCode: null,
+        },
+      });
+      if (!changed.count)
+        throw new AppError(409, "STALE_RECORD", "Parcel changed. Refresh and try again.");
+      const parcels = await tx.deliveryParcel.findMany({ where: { deliveryId: current.id } });
+      const recorded = recordedSplitBooking(current.id, quote, parcels);
+      if (recorded) {
+        // All labels already exist: expiry cannot prevent local finalization or cause rebooking.
+        await finalizeDeliveryBooking(tx, currentOrder, current, quote, recorded, "admin", req.auth!.sub);
+      } else {
+        const uncertain = parcels.some((item) => !item.providerShipmentId && item.status !== "PENDING");
+        let resumable = false;
+        try {
+          await assertNoDeliverySettlement(tx, order.id);
+          assertCurrentDeliveryQuote(currentOrder, current, quote, { booking: true });
+          resumable = !uncertain && currentOrder.status === "FUNDED" && !currentOrder.financialHold &&
+            !current.cancelRequestedAt && current.paidMinor >= quote.amountMinor;
+        } catch { /* Keep recorded labels, but never buy another label using stale requirements. */ }
+        await tx.delivery.update({
+          where: { id: current.id },
+          data: {
+            status: uncertain ? "BOOKING_UNCERTAIN" : resumable ? "BOOKING_QUEUED" : "BOOKING_BLOCKED",
+            failureCode: uncertain ? "BOOKING_RESULT_UNKNOWN" : resumable ? null : "QUOTE_OR_FUNDING_CHANGED",
+            leaseUntil: null,
+          },
+        });
+      }
+      await audit(
+        req,
+        {
+          action: "delivery.parcel.linked",
+          entityType: "deliveryParcel",
+          entityId: parcel.id,
+          after: body,
+        },
+        tx,
+      );
+    });
+    res.json({ linked: true });
+  },
+);
+staffDeliveryRouter.post(
   "/:id/delivery/link",
   requirePermission("orders.manage"),
   requireRecentStepUp,
@@ -852,38 +899,31 @@ staffDeliveryRouter.post(
         reason: z.string().trim().min(10).max(500),
       })
       .parse(req.body);
+    if (d?.providerShipmentId === providerShipmentId && !providerShipmentId.startsWith("split:")) {
+      res.json({ linked: true });
+      return;
+    }
     if (!d || d.providerShipmentId || d.status !== "BOOKING_UNCERTAIN")
       throw new AppError(409, "DELIVERY_NOT_LINKABLE", "Only uncertain bookings can be linked");
     const tracked = await shippingProvider.track(providerShipmentId);
-    const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-    const pickup = contactSchema.parse(d.pickup);
-    const destination = contactSchema.parse(d.destination);
-    if (
-      !tracked.pickupAddress ||
-      !tracked.destinationAddress ||
-      !normalize(tracked.pickupAddress).includes(normalize(pickup.address)) ||
-      !normalize(tracked.destinationAddress).includes(normalize(destination.address)) ||
-      tracked.shippingMinor !== d.shippingMinor ||
-      tracked.courier !== d.courier
-    )
-      throw new AppError(
-        409,
-        "SHIPMENT_MISMATCH",
-        "Provider shipment addresses, courier, and delivery charge must match this order",
-      );
     await prisma.$transaction(async (tx) => {
-      const result = await tx.delivery.updateMany({
-        where: { id: d.id, status: "BOOKING_UNCERTAIN", providerShipmentId: null },
-        data: {
-          providerShipmentId: tracked.id,
-          status: "BOOKED",
-          trackingUrl: tracked.trackingUrl,
-          courier: tracked.courier,
-          failureCode: null,
-        },
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM deliveries WHERE id = ${d.id}::uuid FOR UPDATE`;
+      const currentOrder = await tx.tradeOrder.findUniqueOrThrow({
+        where: { id: order.id }, include: { delivery: { include: { parcels: true } } },
       });
-      if (!result.count) throw new AppError(409, "STALE_RECORD", "Delivery changed");
-      await deliveryEvent(tx, d.id, "BOOKED", "admin", `${d.id}:linked`, req.auth!.sub);
+      const current = currentOrder.delivery;
+      if (current?.providerShipmentId === tracked.id) return;
+      if (!current || current.status !== "BOOKING_UNCERTAIN" || current.providerShipmentId)
+        throw new AppError(409, "STALE_RECORD", "Delivery changed");
+      const quote = current.selectedQuoteId ? await tx.deliveryQuote.findUnique({ where: { id: current.selectedQuoteId } }) : null;
+      if (!quote || splitParts(quote.requestToken) || current.parcels.length ||
+        (current.package as { packageCount?: number } | null)?.packageCount !== 1 ||
+        current.shippingMinor !== quote.amountMinor || current.courier !== quote.courier)
+        throw new AppError(409, "DELIVERY_NOT_LINKABLE", "Link each parcel of a split booking separately.");
+      verifyLinkedShipment(tracked, providerShipmentId, current, quote.walletMinor ?? quote.amountMinor);
+      await assertShipmentUnlinked(tx, tracked.id, current.id);
+      await finalizeDeliveryBooking(tx, currentOrder, current, quote, tracked, "admin", req.auth!.sub);
       await audit(
         req,
         {
@@ -898,6 +938,26 @@ staffDeliveryRouter.post(
     res.json({ linked: true });
   },
 );
+function verifyLinkedShipment(
+  tracked: TrackedShipment,
+  requestedId: string,
+  delivery: { pickup: unknown; destination: unknown; courier: string | null },
+  walletMinor: bigint,
+) {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const pickup = contactSchema.parse(delivery.pickup), destination = contactSchema.parse(delivery.destination);
+  if (tracked.id !== requestedId || tracked.id.startsWith("split:") || tracked.courier !== delivery.courier ||
+    tracked.shippingMinor !== walletMinor || !tracked.pickupAddress || !tracked.destinationAddress ||
+    !normalize(tracked.pickupAddress).includes(normalize(pickup.address)) ||
+    !normalize(tracked.destinationAddress).includes(normalize(destination.address)))
+    throw new AppError(422, "SHIPMENT_MISMATCH", "The provider shipment does not match this parcel and route.");
+}
+async function assertShipmentUnlinked(tx: Prisma.TransactionClient, providerShipmentId: string, deliveryId: string, parcelId?: string) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`shipment:${providerShipmentId}`},0))::text`;
+  if ((await tx.delivery.count({ where: { providerShipmentId, id: { not: deliveryId } } })) ||
+    (await tx.deliveryParcel.count({ where: { providerShipmentId, ...(parcelId ? { id: { not: parcelId } } : {}) } })))
+    throw new AppError(409, "SHIPMENT_MISMATCH", "This shipment is already linked to another order or parcel.");
+}
 staffDeliveryRouter.post(
   "/:id/delivery/cancel",
   requirePermission("orders.manage"),
@@ -909,9 +969,15 @@ staffDeliveryRouter.post(
     if (!d?.providerShipmentId || ["DELIVERED", "CANCELLED", "RETURNED"].includes(d.status))
       throw new AppError(409, "CANNOT_CANCEL", "This shipment cannot be cancelled");
     await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM deliveries WHERE id = ${d.id}::uuid FOR UPDATE`;
+      await assertNoDeliverySettlement(tx, order.id);
+      const current = await tx.delivery.findUniqueOrThrow({ where: { id: d.id } });
+      if (!current.providerShipmentId || ["DELIVERED", "CANCELLED", "RETURNED"].includes(current.status))
+        throw new AppError(409, "CANNOT_CANCEL", "This shipment cannot be cancelled");
       await tx.delivery.update({
         where: { id: d.id },
-        data: { cancelRequestedAt: new Date(), nextSyncAt: new Date() },
+        data: { cancelRequestedAt: current.cancelRequestedAt || new Date(), nextSyncAt: new Date() },
       });
       await audit(
         req,
@@ -940,11 +1006,12 @@ customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
     await unlockedCheckout(tx, order.id);
+    await assertNoDeliverySettlement(tx, order.id);
     const current = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: order.id },
-      include: { delivery: true },
+      include: { delivery: { include: { parcels: true } } },
     });
-    if (!["DELIVERED", "PICKUP_READY"].includes(current.delivery?.status || ""))
+    if (!deliveryReceiptReady(current.delivery))
       throw new AppError(409, "DELIVERY_NOT_READY", "Order is not ready for confirmation");
     if (current.status !== "FUNDED" && current.status !== "DELIVERED")
       throw new AppError(409, "ORDER_NOT_FUNDED", "Order cannot be confirmed");
@@ -973,7 +1040,10 @@ deliveryWebhookRouter.post("/shipbubble", async (req, res) => {
   if (body.success)
     await prisma.delivery.updateMany({
       where: {
-        providerShipmentId: body.data.order_id,
+        OR: [
+          { providerShipmentId: body.data.order_id },
+          { parcels: { some: { providerShipmentId: body.data.order_id } } },
+        ],
         nextSyncAt: { gt: new Date(Date.now() + 60000) },
       },
       data: { nextSyncAt: new Date(Date.now() + 60000) },
@@ -1001,7 +1071,8 @@ staffDeliveryRouter.post(
         include: { delivery: true },
       });
       const d = current.delivery;
-      if (current.status !== "FUNDED" || !d || d.status !== "MANUAL_REVIEW" || d.providerShipmentId)
+      await assertNoDeliverySettlement(tx, order.id);
+      if (current.status !== "FUNDED" || current.financialHold || !d || d.status !== "MANUAL_REVIEW" || d.providerShipmentId)
         throw new AppError(
           409,
           "MANUAL_DISPATCH_NOT_READY",

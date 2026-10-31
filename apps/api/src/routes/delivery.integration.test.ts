@@ -67,6 +67,7 @@ suite("delivery and language database workflows", () => {
         prisma.user.create({
           data: {
             phoneE164: `+234${i + 7}${Date.now().toString().slice(-9)}`,
+            capabilities: { create: { capability: i === 1 ? "SELLER" : "BUYER" } },
             profile: { create: { displayName: label } },
           },
         }),
@@ -130,6 +131,7 @@ suite("delivery and language database workflows", () => {
           categoryId,
           unitCode: "KG",
           locationAddressId: addressId,
+          packaging: { unitsPerPackage: 1, weightKg: 3, length: 10, width: 10, height: 10, handling: "STANDARD", notes: "" },
           title: "Dry beans",
           description: "20 kg for ₦2,000",
           unitPriceMinor: 10000n,
@@ -290,7 +292,7 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${outsider}` })
           .send(point)
       ).status,
-    ).toBe(422);
+    ).toBe(403);
     expect(
       (
         await request(app)
@@ -314,7 +316,7 @@ suite("delivery and language database workflows", () => {
     expect(publicListing.body.item.locationAddress).not.toHaveProperty("latitude");
     expect(publicListing.body.item.locationAddress).not.toHaveProperty("longitude");
   });
-  it("repairs a buyer address saved as pickup and prices canonical farmer pickup with buyer-edited packing", async () => {
+  it("repairs a buyer address saved as pickup and prices canonical farmer pickup with server-owned packing", async () => {
     const original = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
     const created = await prisma.tradeOrder.create({
       data: {
@@ -370,13 +372,13 @@ suite("delivery and language database workflows", () => {
             phone: detail.body.order.suggestedPickup.phone,
           }),
           destination: expect.objectContaining({ address: input.destination.address }),
-          parcel: expect.objectContaining(edited.parcel),
+          parcel: expect.objectContaining({ ...input.parcel, packageCount: 1, notes: "" }),
         }),
       );
       const saved = await prisma.delivery.findUniqueOrThrow({ where: { orderId: created.id } });
       expect(saved.pickup).toMatchObject({ address: detail.body.order.suggestedPickup.address });
       expect(saved.destination).toMatchObject({ address: input.destination.address });
-      expect(saved.package).toMatchObject(edited.parcel);
+      expect(saved.package).toMatchObject({ ...input.parcel, packageCount: 1, notes: "" });
     } finally {
       quotes.mockRestore();
     }
@@ -423,48 +425,10 @@ suite("delivery and language database workflows", () => {
         ).status,
       ).toBe(404);
       const invalid = await request(app).post(`${path}/quotes`).set(customer()).send(input);
-      expect(invalid.body.error.code).toBe("HANDLING_REQUIRED");
-      const delivery = await prisma.delivery.create({ data: { orderId: id } });
-      const quote = await prisma.deliveryQuote.create({
-        data: {
-          deliveryId: delivery.id,
-          requestToken: "stale",
-          serviceCode: "test",
-          courier: "Test",
-          amountMinor: 1000n,
-          inputHash: "old",
-          expiresAt: new Date(Date.now() + 60000),
-        },
-      });
-      await prisma.delivery.update({
-        where: { id: delivery.id },
-        data: { selectedQuoteId: quote.id, shippingMinor: 1000n },
-      });
-      const edited = {
-        ...input,
-        parcel: {
-          ...input.parcel,
-          packageCount: 2,
-          weightKg: 3.5,
-          handling: "COLD_CHAIN",
-          notes: "Keep chilled and upright",
-        },
-      };
-      expect((await request(app).post(`${path}/quotes`).set(customer()).send(edited)).status).toBe(
-        202,
-      );
-      const saved = await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
-      expect(saved.package).toMatchObject(edited.parcel);
-      expect(saved.selectedQuoteId).toBeNull();
-      expect(saved.shippingMinor).toBe(0n);
-      expect(
-        (
-          await prisma.deliveryQuote.findUniqueOrThrow({ where: { id: quote.id } })
-        ).expiresAt.getTime(),
-      ).toBeLessThanOrEqual(Date.now());
-      expect(
-        (await prisma.tradeOrder.findUniqueOrThrow({ where: { id } })).packagingSnapshot,
-      ).toEqual(packing);
+      expect(invalid.body.error.code).toBe("DELIVERY_UNSUPPORTED");
+      expect(await prisma.delivery.findUnique({ where: { orderId: id } })).toMatchObject({ status: "QUOTE_REQUIRED", selectedQuoteId: null, shippingMinor: 0n, failureCode: "DELIVERY_UNSUPPORTED" });
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id } })).packagingSnapshot).toMatchObject({ version: 2, packaging: packing });
+      const edited = { ...input, parcel: { ...input.parcel, handling: "COLD_CHAIN" } };
       await prisma.tradeOrder.update({ where: { id }, data: { status: "FUNDED" } });
       expect((await request(app).post(`${path}/quotes`).set(customer()).send(edited)).status).toBe(
         409,
@@ -480,7 +444,7 @@ suite("delivery and language database workflows", () => {
       });
     }
   });
-  it("routes special handling to manual review and serves real quotes without provider tokens", async () => {
+  it("ignores buyer shipping overrides and serves real quotes without provider tokens", async () => {
     const quotes = vi.spyOn(shippingProvider, "quotes").mockResolvedValue([
       {
         courierId: "test-courier",
@@ -496,8 +460,8 @@ suite("delivery and language database workflows", () => {
       .post(`/v1/orders/${orderId}/delivery/quotes`)
       .set(customer())
       .send({ ...input, parcel: { ...input.parcel, handling: "COLD_CHAIN" } });
-    expect(manual.status).toBe(202);
-    expect(quotes).not.toHaveBeenCalled();
+    expect(manual.status).toBe(200);
+    expect(quotes).toHaveBeenLastCalledWith(expect.objectContaining({ parcel: expect.objectContaining({ handling: "STANDARD" }) }));
     const result = await request(app)
       .post(`/v1/orders/${orderId}/delivery/quotes`)
       .set(customer())
@@ -974,7 +938,7 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${seller}` })
           .send({ quantity: "1", unitPriceMinor: "10000" })
       ).body.error.code,
-    ).toBe("OWN_LISTING");
+    ).toBe("ROLE_FORBIDDEN");
     const body = {
       items: [first, second].map((item) => ({
         listingId: item.id,
@@ -1157,7 +1121,7 @@ suite("delivery and language database workflows", () => {
           .set(customer())
           .send({ confirmed: true })
       ).status,
-    ).toBe(404);
+    ).toBe(403);
     const submit = await request(app)
       .post(`/v1/listing-drafts/${result.body.id}/submit`)
       .set({ Authorization: `Bearer ${seller}` })
@@ -1574,7 +1538,7 @@ suite("delivery and language database workflows", () => {
           .set("Idempotency-Key", randomUUID())
           .send({ listingId, quantity: "1" })
       ).status,
-    ).toBe(422);
+    ).toBe(403);
   });
   it("cancels only owned unpaid customer orders and releases inventory once", async () => {
     const created = await request(app)
@@ -1620,8 +1584,8 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .get("/v1/marketplace/my-listings")
           .set({ Authorization: `Bearer ${outsider}` })
-      ).body.items,
-    ).toHaveLength(0);
+      ).status,
+    ).toBe(403);
   });
   it("keeps seller sales separate from the same user's purchases", async () => {
     const sellerUserId = verifyAccessToken(seller, "customer").sub;
@@ -1697,7 +1661,7 @@ suite("delivery and language database workflows", () => {
       const otherInbox = await request(app)
         .get("/v1/orders/notifications?view=seller")
         .set({ Authorization: `Bearer ${token}` });
-      expect(otherInbox.body.items.map((item: { id: string }) => item.id)).not.toContain(notice.id);
+      expect(otherInbox.status).toBe(403);
     }
     const pushToken = `ExpoPushToken[${randomUUID()}]`;
     expect(
@@ -1738,15 +1702,14 @@ suite("delivery and language database workflows", () => {
     const purchases = await request(app)
       .get("/v1/orders?view=buyer")
       .set({ Authorization: `Bearer ${seller}` });
-    expect(purchases.status).toBe(200);
-    expect(purchases.body.items.map((item: { id: string }) => item.id)).toContain(purchase.id);
+    expect(purchases.status).toBe(403);
     expect(
       (
         await request(app)
           .get("/v1/orders?view=seller")
           .set({ Authorization: `Bearer ${outsider}` })
-      ).body.items,
-    ).toEqual([]);
+      ).status,
+    ).toBe(403);
   });
   it("lists only owned active phones and revokes the selected phone's sessions", async () => {
     const userId = verifyAccessToken(seller, "customer").sub;
@@ -1875,14 +1838,14 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${outsider}` })
           .send(fields)
       ).status,
-    ).toBe(404);
+    ).toBe(403);
     expect(
       (
         await request(app)
           .delete(path)
           .set({ Authorization: `Bearer ${outsider}` })
       ).status,
-    ).toBe(404);
+    ).toBe(403);
     expect(
       (
         await request(app)
@@ -1955,7 +1918,7 @@ suite("delivery and language database workflows", () => {
         .patch(path)
         .set({ Authorization: `Bearer ${token}` })
         .send(body);
-    expect((await change(outsider, { availableQuantity: "10" })).status).toBe(404);
+    expect((await change(outsider, { availableQuantity: "10" })).status).toBe(403);
     expect((await change(seller, { availableQuantity: "2" })).body.error.code).toBe(
       "STOCK_RESERVED",
     );
