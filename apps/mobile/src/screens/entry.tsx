@@ -353,10 +353,13 @@ export function Intro() {
 export function Role() {
   const a = useApp();
   const [creating, setCreating] = useState(false);
+  const { width, height } = useWindowDimensions();
+  const logoSize = Math.min(176, Math.max(104, height * 0.21), width * 0.42);
   return (
     <Page
       title="WELCOME TO LEETLOGIC"
       green
+      contentStyle={creating ? undefined : { justifyContent: "center", alignItems: "center" }}
       footer={
         <>
           <Button title="Log In" onPress={a.startLogin} />
@@ -369,6 +372,24 @@ export function Role() {
         </>
       }
     >
+      {!creating && (
+        <View style={{ width: "100%", maxWidth: 380, alignItems: "center", gap: 24, paddingVertical: 16 }}>
+          <Image
+            source={require("../../assets/brand-logo.png")}
+            style={{ width: logoSize, height: logoSize }}
+            resizeMode="contain"
+            accessibilityLabel="LeetLogic"
+          />
+          <View style={{ alignItems: "center", gap: 12 }}>
+            <Text accessibilityRole="header" style={[s.heading, { textAlign: "center", color: colors.green }]}>
+              Welcome to LeetLogic
+            </Text>
+            <Label muted style={{ textAlign: "center", lineHeight: 26 }}>
+              Connecting farmers and buyers, making agricultural trade simpler and more accessible.
+            </Label>
+          </View>
+        </View>
+      )}
       {creating && <>
       <Heading>Create Account</Heading>
       <Label muted>New here? Choose Buyer or Seller to create your account.</Label>
