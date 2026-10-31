@@ -677,54 +677,6 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     res.status(202).json({ queued: true });
   });
 }
-export async function queueBooking(orderId: string) {
-  const c = getConfig();
-  if (!c.DELIVERY_ENABLED || (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS))
-    throw new AppError(503, "BOOKING_DISABLED", "Delivery booking is disabled");
-  await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-    const order = await tx.tradeOrder.findUniqueOrThrow({
-      where: { id: orderId },
-      include: { ...shippingOrderInclude, delivery: true },
-    });
-    const d = order.delivery;
-    if (!d) throw new AppError(409, "QUOTE_REQUIRED", "Choose delivery first");
-    await assertNoDeliverySettlement(tx, orderId);
-    if (
-      [
-        "BOOKING_QUEUED",
-        "BOOKING",
-        "BOOKING_UNCERTAIN",
-        "BOOKED",
-        "PICKED_UP",
-        "IN_TRANSIT",
-        "DELIVERED",
-      ].includes(d.status)
-    )
-      return;
-    const quote = d.selectedQuoteId
-      ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } })
-      : null;
-    if (
-      order.status !== "FUNDED" ||
-      order.financialHold ||
-      !quote ||
-      quote.expiresAt <= new Date() ||
-      d.paidMinor < quote.amountMinor
-    )
-      throw new AppError(
-        409,
-        "BOOKING_NOT_READY",
-        "Fund the order and confirm payment for a current delivery quote",
-      );
-    assertCurrentDeliveryQuote(order, d, quote);
-    await tx.delivery.update({
-      where: { id: d.id },
-      data: { status: "BOOKING_QUEUED", failureCode: null },
-    });
-    await deliveryEvent(tx, d.id, "BOOKING_QUEUED", "system", `${d.id}:queued:${quote.id}`);
-  });
-}
 staffDeliveryRouter.post(
   "/:id/delivery/payment",
   requirePermission("payments.manage"),

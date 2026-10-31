@@ -986,10 +986,17 @@ model PaymentAttempt {
   method String? @db.VarChar(40)
   paidMinor BigInt @default(0)
   exceptionCode String? @db.VarChar(80)
+  // Provider-confirmed payment is independent of whether the order can be fulfilled.
+  confirmedAt DateTime? @db.Timestamptz(6)
+  lastCheckedAt DateTime? @db.Timestamptz(6)
+  nextCheckAt DateTime @default(now()) @db.Timestamptz(6)
+  checkFailures Int @default(0)
+  checkErrorCode String? @db.VarChar(80)
   expiresAt DateTime @db.Timestamptz(6)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @db.Timestamptz(6)
   @@index([orderId, mode, status])
+  @@index([mode, status, nextCheckAt])
   @@map("payment_attempts")
 }
 model MoneyOperation {
@@ -1044,6 +1051,8 @@ model MoneyWebhook {
   status String @default("QUEUED") @db.VarChar(30)
   nextRunAt DateTime @default(now()) @db.Timestamptz(6)
   failureCode String? @db.VarChar(80)
+  attempts Int @default(0)
+  processedAt DateTime? @db.Timestamptz(6)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   @@index([mode,status,nextRunAt])
   @@map("money_webhooks")

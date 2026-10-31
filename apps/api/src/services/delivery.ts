@@ -55,6 +55,50 @@ export async function hasDeliverySettlement(orderId: string, tx: Prisma.Transact
   } }));
 }
 
+export async function queueBooking(orderId: string) {
+  const c = getConfig();
+  if (!c.DELIVERY_ENABLED || (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS))
+    throw new AppError(503, "BOOKING_DISABLED", "Delivery booking is disabled");
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+    const order = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: orderId }, include: { ...shippingOrderInclude, delivery: true },
+    });
+    const d = order.delivery;
+    if (!d) throw new AppError(409, "QUOTE_REQUIRED", "Choose delivery first");
+    await assertNoDeliverySettlement(tx, orderId);
+    if (["BOOKING_QUEUED", "BOOKING", "BOOKING_UNCERTAIN", "BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"].includes(d.status)) return;
+    const quote = d.selectedQuoteId ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } }) : null;
+    if (order.status !== "FUNDED" || order.financialHold || d.providerShipmentId || d.bookingStartedAt || d.cancelRequestedAt || !quote || d.paidMinor < quote.amountMinor)
+      throw new AppError(409, "BOOKING_NOT_READY", "Fund the order and confirm payment for a current delivery quote");
+    assertCurrentDeliveryQuote(order, d, quote);
+    await tx.delivery.update({ where: { id: d.id }, data: { status: "BOOKING_QUEUED", failureCode: null } });
+    await deliveryEvent(tx, d.id, "BOOKING_QUEUED", "system", `${d.id}:queued:${quote.id}`);
+  });
+}
+
+/** Recovery of the durable PAID state is independent of payment confirmation. No provider write here. */
+export async function queuePaidDelivery(orderId: string) {
+  const d = await prisma.delivery.findFirst({ where: {
+    orderId, status: { in: ["PAID", "BOOKING_BLOCKED"] }, selectedQuoteId: { not: null },
+    providerShipmentId: null, bookingStartedAt: null,
+  } });
+  if (!d) return;
+  try {
+    await queueBooking(orderId);
+  } catch (error) {
+    const reason = error instanceof AppError ? error.code : "BOOKING_NOT_READY";
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const changed = await tx.delivery.updateMany({ where: {
+        id: d.id, status: { in: ["PAID", "BOOKING_BLOCKED"] }, providerShipmentId: null, bookingStartedAt: null,
+      }, data: { status: "BOOKING_BLOCKED", failureCode: reason, nextSyncAt: new Date(Date.now() + 300000) } });
+      if (changed.count) await deliveryEvent(tx, d.id, "BOOKING_BLOCKED", "system", `${d.id}:blocked:${d.selectedQuoteId}:${reason}`);
+    });
+    logger.warn({ deliveryId: d.id, reason }, "Paid delivery is awaiting booking; payment remains confirmed");
+  }
+}
+
 /** Booked labels must always receive the same shipment and idempotent local accounting. */
 export async function finalizeDeliveryBooking(
   tx: Prisma.TransactionClient,
@@ -100,6 +144,7 @@ export async function finalizeDeliveryBooking(
   }
   if (review) await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
   await deliveryEvent(tx, delivery.id, "BOOKED", source, `${delivery.id}:booked`, actorId);
+  await deliveryEvent(tx, delivery.id, "COURIER_ASSIGNED", source, `${delivery.id}:courier-assigned`, actorId);
 }
 export async function applyTracking(deliveryId: string, tracked: TrackedShipment) {
   await prisma.$transaction(async (tx) => {
@@ -147,6 +192,15 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
 export async function runDeliveryJobs() {
   const c = getConfig();
   if (!c.DELIVERY_ENABLED || !c.SHIPBUBBLE_API_KEY) return;
+  // Funding commits PAID before booking is attempted. Recover a crash or missed post-commit callback.
+  const paid = await prisma.delivery.findMany({ where: {
+    providerShipmentId: null, bookingStartedAt: null, nextSyncAt: { lte: new Date() },
+    OR: [
+      { status: "PAID" },
+      { status: "BOOKING_BLOCKED", failureCode: { in: ["BOOKING_DISABLED", "LIVE_BOOKING_DISABLED", "DELIVERY_UNAVAILABLE", "SHIPPING_WALLET_UNAVAILABLE", "SHIPPING_WALLET_LOW", "DELIVERY_PROVIDER_UNAVAILABLE"] } },
+    ],
+  }, orderBy: { nextSyncAt: "asc" }, take: 10 });
+  for (const d of paid) await queuePaidDelivery(d.orderId);
   // A crash during a paid booking is ambiguous. Never repeat that provider call automatically.
   await prisma.delivery.updateMany({
     where: { status: "BOOKING", leaseUntil: { lt: new Date() }, bookingStartedAt: null },
@@ -257,6 +311,7 @@ export async function runDeliveryJobs() {
             status: "BOOKING_BLOCKED",
             failureCode: "SHIPPING_WALLET_UNAVAILABLE",
             leaseUntil: null,
+            nextSyncAt: new Date(Date.now() + 300000),
           },
         });
         continue;
@@ -264,7 +319,7 @@ export async function runDeliveryJobs() {
       if (wallet < (quote.walletMinor ?? quote.amountMinor)) {
         await prisma.delivery.update({
           where: { id: d.id },
-          data: { status: "BOOKING_BLOCKED", failureCode: "SHIPPING_WALLET_LOW", leaseUntil: null },
+          data: { status: "BOOKING_BLOCKED", failureCode: "SHIPPING_WALLET_LOW", leaseUntil: null, nextSyncAt: new Date(Date.now() + 300000) },
         });
         continue;
       }

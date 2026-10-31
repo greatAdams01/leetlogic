@@ -1,14 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { prisma, type Prisma, type MoneyOperation } from "@leetlogic/database";
+import { prisma, type Prisma, type MoneyOperation, type PaymentAttempt } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
-import { bachs, minor, paymentReady, checkoutReturnUrls } from "../providers/payments/bachs.js";
+import { bachs, minor, paymentReady, checkoutReturnUrls, checkoutChargeId, receiptAmounts } from "../providers/payments/bachs.js";
 import { encryptSecret, hashToken } from "../lib/crypto.js";
-import { queueBooking } from "../routes/delivery.js";
+import { dependencyError } from "../lib/dependency-errors.js";
+import { logger } from "../lib/logger.js";
 import type { Request } from "express";
 import { audit } from "./audit.js";
 import { assertCheckoutReady, assertNoActiveCheckout, assertPaymentShipment, shippingOrderInclude } from "./delivery-quote.js";
-import { assertNoDeliverySettlement } from "./delivery.js";
+import { assertNoDeliverySettlement, deliveryEvent, queuePaidDelivery } from "./delivery.js";
 import { deliveryReceiptReady, deliveryRefundReady } from "./delivery-policy.js";
 export const mode = () => getConfig().BACHS_MODE;
 export const fingerprint = (value: unknown) =>
@@ -263,24 +264,67 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
   });
   return attempt;
 }
-/** Never trusts webhook amount/status. Reads the account-bound provider charge first. */
+/** Only allowlisted reasons are persisted/logged; never provider bodies or private URLs. */
+export function paymentCheckReason(error: unknown) {
+  const dependency = dependencyError(error);
+  if (dependency) return dependency.code;
+  if (error instanceof AppError) return error.code;
+  return error instanceof Error && /^(PAYMENT|CHECKOUT)_[A-Z_]{1,65}$/.test(error.message)
+    ? error.message : "PAYMENT_VERIFICATION_FAILED";
+}
+
+/** Shared by webhooks, buyer refresh and background recovery, including expired sessions. */
 export async function reconcilePayment(paymentId: string, hintedCharge?: string) {
   const attempt = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: paymentId } });
   if (attempt.mode !== mode()) throw new Error("PAYMENT_ENVIRONMENT_MISMATCH");
+  const checkedAt = new Date();
+  const currentCheck = { id: paymentId, OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lte: checkedAt } }] };
+  try {
+    await confirmPayment(attempt, hintedCharge);
+    const current = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: paymentId } });
+    const delay = ["EXPIRED", "FAILED"].includes(current.status) ? 6 * 3600000 : 60000;
+    await prisma.paymentAttempt.updateMany({
+      where: currentCheck,
+      data: { lastCheckedAt: checkedAt, nextCheckAt: new Date(Date.now() + delay), checkFailures: 0, checkErrorCode: null },
+    });
+  } catch (error) {
+    const reason = paymentCheckReason(error);
+    const delay = Math.min(15 * 60000, 60000 * 2 ** Math.min(attempt.checkFailures, 4));
+    await prisma.paymentAttempt.updateMany({
+      where: currentCheck,
+      data: { lastCheckedAt: checkedAt, nextCheckAt: new Date(Date.now() + delay), checkFailures: { increment: 1 }, checkErrorCode: reason },
+    });
+    if (attempt.checkErrorCode !== reason)
+      await audit(systemRequest(), { action: "payment.verification.deferred", entityType: "payment", entityId: paymentId, after: { reason } });
+    logger.warn({ paymentId, reason, retryInSeconds: delay / 1000 }, "Payment verification will retry");
+    if (dependencyError(error)) throw error;
+    const pending = new AppError(503, "PAYMENT_CONFIRMATION_PENDING", "We’re confirming your payment. Please don’t pay again.", undefined, delay / 1000);
+    pending.diagnostics = { provider: "bachs", operation: "verify-payment", reason, hint: "Inspect the saved verification reason and webhook. Never treat a redirect as a payment receipt." };
+    throw pending;
+  }
+}
+
+/** Never trusts webhook amounts/status; all receipt fields come from account-bound provider reads. */
+async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
   if (!attempt.checkoutId) return;
+  if (["SUCCEEDED", "REFUNDED"].includes(attempt.status) && (!hintedCharge || hintedCharge === attempt.chargeId)) return;
   const checkout = await bachs.checkoutState(attempt.checkoutId);
   if (
     checkout.checkout_id !== attempt.checkoutId ||
-    (checkout.reference && checkout.reference !== attempt.id)
+    (checkout.reference && checkout.reference !== attempt.id) ||
+    (checkout.metadata?.attempt_id && checkout.metadata.attempt_id !== attempt.id) ||
+    (checkout.metadata?.order_id && checkout.metadata.order_id !== attempt.orderId)
   )
     throw new Error("PAYMENT_CHECKOUT_MISMATCH");
-  const chargeId = hintedCharge || checkout.charge_id || checkout.payment_id || attempt.chargeId;
+  const checkoutStatus = String(checkout.status || "").toLowerCase();
+  const chargeId = hintedCharge || checkoutChargeId(checkout) || attempt.chargeId;
   if (!chargeId) {
-    if (["expired", "cancelled"].includes(checkout.status) && attempt.status !== "SUCCEEDED")
-      await prisma.paymentAttempt.update({
-        where: { id: attempt.id },
+    if (["expired", "cancelled"].includes(checkoutStatus))
+      await prisma.paymentAttempt.updateMany({
+        where: { id: attempt.id, confirmedAt: null, paidMinor: 0n, status: { notIn: ["SUCCEEDED", "REFUNDED", "EXCEPTION"] } },
         data: { status: "EXPIRED" },
       });
+    else if (checkoutStatus === "completed") throw new Error("PAYMENT_CHARGE_NOT_AVAILABLE");
     return;
   }
   let replaceUnpaidCharge: string | null = null;
@@ -295,7 +339,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
       prior.payment_id === attempt.chargeId &&
       prior.checkout_id === attempt.checkoutId &&
       prior.currency === "NGN" &&
-      ["failed", "cancelled"].includes(prior.status) &&
+      ["failed", "cancelled"].includes(String(prior.status).toLowerCase()) &&
       minor(prior.amount_paid || "0") === 0n
     )
       replaceUnpaidCharge = attempt.chargeId;
@@ -308,11 +352,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
       extra.currency !== "NGN"
     )
       throw new Error("PAYMENT_CHARGE_MISMATCH");
-    const extraFee = extra.fees?.currency === "NGN" ? minor(extra.fees.amount) : 0n;
-    const raw = minor(extra.amount_paid || "0"),
-      requested = minor(extra.amount);
-    const paid =
-      extra.merchant_bears_cost === false && raw === requested + extraFee ? requested : raw;
+    const { fee: extraFee, received: paid, success: extraConfirmed } = receiptAmounts(extra, attempt.amountMinor);
     if (paid === 0n) return;
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${attempt.orderId}::uuid FOR UPDATE`;
@@ -326,14 +366,15 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
             mode: mode(),
             kind: "EXCESS",
             status: "EXCEPTION",
-            amountMinor: requested,
-            produceMinor: requested,
+            amountMinor: attempt.amountMinor,
+            produceMinor: attempt.amountMinor,
             shippingMinor: 0n,
             chargeId,
             method: extra.method || extra.payment_method,
             processingFeeMinor: extraFee,
             expiresAt: new Date(),
             exceptionCode: "DUPLICATE_CHARGE",
+            confirmedAt: extraConfirmed ? new Date() : null,
           },
         });
       if (paid > receipt.paidMinor) {
@@ -357,21 +398,17 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
     payment.payment_id !== chargeId ||
     payment.checkout_id !== attempt.checkoutId ||
     payment.currency !== "NGN" ||
-    minor(payment.amount) !== attempt.amountMinor
+     (payment.reference && payment.reference !== attempt.id) ||
+     (payment.meta?.attempt_id && payment.meta.attempt_id !== attempt.id) ||
+     (payment.meta?.order_id && payment.meta.order_id !== attempt.orderId)
   )
     throw new Error("PAYMENT_CHARGE_MISMATCH");
-  const fee = payment.fees?.currency === "NGN" ? minor(payment.fees.amount) : 0n;
-  const rawPaid = minor(payment.amount_paid || "0");
-  // Some rails include the customer-borne fee in amount_paid; others report principal.
-  const received =
-    payment.merchant_bears_cost === false && rawPaid === attempt.amountMinor + fee
-      ? attempt.amountMinor
-      : rawPaid;
-  const success =
-    payment.status === "succeeded" &&
-    received === attempt.amountMinor &&
-    minor(payment.amount_remaining || "0") === 0n;
-  const declined = payment.status === "failed" && received === 0n;
+  const { fee, received, success, declined } = receiptAmounts(payment, attempt.amountMinor);
+  const completed = payment.completed_at || checkout.completed_at;
+  const confirmationAt = success && completed ? new Date(completed) : new Date();
+  if (success && (!Number.isFinite(confirmationAt.getTime()) || confirmationAt.getTime() > Date.now() + 300000 ||
+    confirmationAt.getTime() < attempt.createdAt.getTime() - 300000))
+    throw new Error("PAYMENT_COMPLETION_TIME_INVALID");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${attempt.orderId}::uuid FOR UPDATE`;
     const current = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
@@ -401,14 +438,14 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
       current.kind === "ORDER" &&
       (order.status !== "AWAITING_PAYMENT" ||
         order.financialHold ||
-        (order.reservationExpiresAt && order.reservationExpiresAt <= new Date()));
+        (order.reservationExpiresAt && order.reservationExpiresAt <= confirmationAt));
     const topupInvalid =
       current.kind !== "ORDER" &&
       (order.status !== "FUNDED" || order.financialHold || order.delivery?.bookingStartedAt);
     let shipmentError: string | undefined;
     try {
       await assertNoDeliverySettlement(tx, order.id);
-      assertPaymentShipment(order, current);
+      assertPaymentShipment(order, current, success ? confirmationAt : undefined);
     } catch (error) {
       shipmentError = error instanceof AppError ? error.code : "STALE_DELIVERY_QUOTE";
     }
@@ -424,24 +461,32 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
         chargeId: declined ? null : chargeId,
         paidMinor: received,
         processingFeeMinor: fee,
+        ...(success && !current.confirmedAt ? { confirmedAt: confirmationAt } : {}),
         method: payment.method || payment.payment_method,
         status:
           success && !exception
             ? "SUCCEEDED"
             : exception
               ? "EXCEPTION"
-               : ["expired", "cancelled"].includes(checkout.status) && received === 0n
+               : ["expired", "cancelled"].includes(checkoutStatus) && received === 0n
                  ? "EXPIRED"
                : shipmentError
                  ? "BLOCKED"
                : declined
-                ? ["expired", "cancelled"].includes(checkout.status)
+                 ? ["expired", "cancelled"].includes(checkoutStatus)
                   ? "EXPIRED"
                   : "OPEN"
                 : "OPEN",
         exceptionCode: exception || shipmentError || (declined ? "PAYMENT_ATTEMPT_FAILED" : null),
       },
     });
+    if (success && !current.confirmedAt) {
+      await audit(systemRequest(), {
+        action: "payment.provider.confirmed", entityType: "payment", entityId: current.id,
+        after: { orderId: order.id, provider: "bachs", currency: "NGN", principalMinor: received.toString(), feeMinor: fee.toString(), completedAt: confirmationAt.toISOString() },
+      }, tx);
+      if (order.delivery) await deliveryEvent(tx, order.delivery.id, "PAYMENT_CONFIRMED", "bachs", `${order.delivery.id}:payment-confirmed:${current.id}`);
+    }
     if (exception) {
       await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
       return;
@@ -499,8 +544,11 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
           paidMinor: { increment: current.shippingMinor },
           paymentRef: order.delivery.paymentRef || chargeId,
           status: order.delivery.status === "PICKUP_PENDING" ? "PICKUP_READY" : "PAID",
+          nextSyncAt: new Date(),
         },
       });
+    if (current.kind === "ORDER" && order.delivery)
+      await deliveryEvent(tx, order.delivery.id, "PREPARING_FOR_PICKUP", "system", `${order.delivery.id}:preparing`);
     await audit(
       systemRequest(),
       {
@@ -512,7 +560,8 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
       tx,
     );
   });
-  await queueBooking(attempt.orderId).catch(() => {});
+  // The persisted PAID state is also picked up by delivery jobs after a crash here.
+  await queuePaidDelivery(attempt.orderId);
 }
 export async function assertRelease(tx: Prisma.TransactionClient, orderId: string) {
   const order = await tx.tradeOrder.findUniqueOrThrow({

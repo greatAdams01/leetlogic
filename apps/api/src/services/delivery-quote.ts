@@ -198,9 +198,9 @@ export function assertCurrentDeliveryQuote(
   order: ShippingOrder,
   delivery: Delivery,
   quote: DeliveryQuote | null | undefined,
-  options: { selected?: boolean; booking?: boolean; allowExpired?: boolean } = {},
+  options: { selected?: boolean; booking?: boolean; allowExpired?: boolean; confirmationAt?: Date } = {},
 ) {
-  if (!quote || quote.deliveryId !== delivery.id || (!options.allowExpired && quote.expiresAt <= new Date()))
+  if (!quote || quote.deliveryId !== delivery.id || (!options.allowExpired && quote.expiresAt <= (options.confirmationAt || new Date())))
     throw new AppError(409, "QUOTE_EXPIRED", "Choose a current delivery quote before paying.");
   const stale = () => new AppError(409, "STALE_DELIVERY_QUOTE", "Delivery details changed. Review a fresh delivery quote before paying.");
   if (!quote.courierId || !quote.requestToken || !quote.serviceCode || quote.amountMinor < 0n ||
@@ -223,25 +223,27 @@ export function assertCurrentDeliveryQuote(
     if (error instanceof AppError) throw error;
     throw stale();
   }
-  assertDeliveryInput(order, input, options.booking, options.allowExpired);
+  // Confirmation checks the saved shipment at the authoritative payment time, not today's
+  // provider availability. Current eligibility and expiry are checked again before booking.
+  if (!options.confirmationAt) assertDeliveryInput(order, input, options.booking, options.allowExpired);
   return quote;
 }
 
-export function assertCheckoutReady(order: CheckoutOrder, kind?: string) {
+export function assertCheckoutReady(order: CheckoutOrder, kind?: string, confirmationAt?: Date) {
   const d = order.delivery;
   const topup = order.status === "FUNDED" && d?.status === "TOPUP_REQUIRED";
   if (order.financialHold || order.settlementStarted || (order.status !== "AWAITING_PAYMENT" && !topup) ||
     (topup ? order.heldMinor !== order.totalMinor : order.heldMinor !== 0n) ||
     (kind && kind !== (topup ? "DELIVERY_TOPUP" : "ORDER")) || d?.providerShipmentId || d?.bookingStartedAt)
     throw new AppError(409, "PAYMENT_LOCKED", "This order cannot accept a payment right now.");
-  if (!topup && order.reservationExpiresAt && order.reservationExpiresAt <= new Date())
+  if (!topup && order.reservationExpiresAt && order.reservationExpiresAt <= (confirmationAt || new Date()))
     throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
   const collection = d?.status === "PICKUP_PENDING" && !d.selectedQuoteId && d.shippingMinor === 0n && d.paidMinor === 0n;
   let quote: DeliveryQuote | null = null;
   if (!collection) {
     if (!d || (topup ? d.status !== "TOPUP_REQUIRED" : d.status !== "PAYMENT_PENDING" || d.paidMinor !== 0n))
       throw new AppError(409, "QUOTE_EXPIRED", "Choose a current delivery quote before paying.");
-    quote = assertCurrentDeliveryQuote(order, d, d.quotes.find((item) => item.id === d.selectedQuoteId), { booking: true });
+    quote = assertCurrentDeliveryQuote(order, d, d.quotes.find((item) => item.id === d.selectedQuoteId), { booking: true, confirmationAt });
   }
   const produceMinor = topup ? 0n : order.totalMinor;
   const shippingMinor = collection ? 0n : topup ? quote!.amountMinor - d!.paidMinor : quote!.amountMinor;
@@ -285,9 +287,10 @@ export function checkoutSummary(order: CheckoutOrder) {
 export function assertPaymentShipment(
   order: CheckoutOrder,
   payment: PaymentAttempt,
+  confirmationAt?: Date,
 ) {
-  const current = assertCheckoutReady(order, payment.kind);
-  if (payment.expiresAt <= new Date()) throw new AppError(409, "QUOTE_EXPIRED", "Refresh your delivery quote before paying.");
+  const current = assertCheckoutReady(order, payment.kind, confirmationAt);
+  if (payment.expiresAt <= (confirmationAt || new Date())) throw new AppError(409, "QUOTE_EXPIRED", "Refresh your delivery quote before paying.");
   if (current.payableMinor !== payment.amountMinor || payment.orderId !== order.id || payment.buyerId !== order.buyerId ||
     payment.produceMinor !== current.produceMinor || payment.shippingMinor !== current.shippingMinor ||
     payment.quoteId !== (current.quote?.id ?? null))

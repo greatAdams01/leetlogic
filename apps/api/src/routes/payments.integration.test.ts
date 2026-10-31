@@ -43,6 +43,11 @@ suite("provider-backed payment safeguards", () => {
       body: { reason: "Reviewed and approved by test operator" },
     }) as any;
   beforeAll(async () => {
+    const url = new URL(getConfig().DATABASE_URL);
+    const schema = url.searchParams.get("schema") || "";
+    if (!schema.startsWith("leetlogic_payments_integration_") || new URL(getConfig().REDIS_URL).pathname !== "/13")
+      throw new Error("Use the isolated payment integration runner.");
+    redis().options.keyPrefix = `${schema}:`;
     Object.assign(getConfig(), {
       PAYMENTS_ENABLED: true,
       BACHS_MODE: "sandbox",

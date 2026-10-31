@@ -1,5 +1,5 @@
 import { packagingSchema, salePackagingSchema, minimumPackedWeight } from "@leetlogic/contracts";
-import { queueBooking } from "./delivery.js";
+import { queueBooking } from "../services/delivery.js";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma, Prisma } from "@leetlogic/database";

@@ -49,6 +49,10 @@ suite("delivery and language database workflows", () => {
   };
   beforeAll(async () => {
     const c = getConfig();
+    const schema = new URL(c.DATABASE_URL).searchParams.get("schema") || "";
+    if (!schema.startsWith("leetlogic_delivery_integration_") || new URL(c.REDIS_URL).pathname !== "/14")
+      throw new Error("Use the isolated delivery integration runner.");
+    redis().options.keyPrefix = `${schema}:`;
     const month = new Date().toISOString().slice(0, 7);
     await prisma.translationUsage.upsert({
       where: { month },

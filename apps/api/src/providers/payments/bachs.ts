@@ -17,6 +17,39 @@ export function decimal(value: bigint): string {
   if (value < 0n) throw new Error("NEGATIVE_MONEY");
   return `${value / 100n}.${String(value % 100n).padStart(2, "0")}`;
 }
+/** Checkout reads embed the submitted charge; redirects and webhook bodies are not receipts. */
+export function checkoutChargeId(checkout: any): string | undefined {
+  const id = checkout.charge?.payment_id || checkout.charge?.charge_id ||
+    checkout.charge_id || checkout.payment_id;
+  if (id === undefined || id === null) return;
+  if (typeof id !== "string" || !/^[\w-]{1,160}$/.test(id))
+    throw new Error("PAYMENT_CHARGE_ID_INVALID");
+  return id;
+}
+
+/** Accept only the exact principal or that principal plus the provider's explicit customer fee. */
+export function receiptAmounts(payment: any, principal: bigint) {
+  const amount = minor(payment.amount);
+  if (payment.fees && payment.fees.currency !== "NGN")
+    throw new Error("PAYMENT_FEE_CURRENCY_MISMATCH");
+  const fee = payment.fees ? minor(payment.fees.amount) : 0n;
+  if (amount !== principal &&
+    !(payment.merchant_bears_cost === false && amount === principal + fee))
+    throw new Error("PAYMENT_CHARGE_MISMATCH");
+  const rawPaid = minor(payment.amount_paid || "0");
+  // Bachs can report both amount and amount_paid inclusive of the customer-borne fee.
+  // Never subtract a guessed fee or accept arbitrary overpayment as order funding.
+  const received = payment.merchant_bears_cost === false && rawPaid === principal + fee
+    ? principal : rawPaid;
+  const status = String(payment.status || "").toLowerCase();
+  return {
+    fee,
+    received,
+    success: status === "succeeded" && received === principal &&
+      minor(payment.amount_remaining || "0") === 0n,
+    declined: status === "failed" && received === 0n,
+  };
+}
 export function paymentReady(kind = "CHECKOUT") {
   const c = getConfig();
   const enabled =
@@ -149,6 +182,7 @@ export class Bachs {
             ...(account ? { "X-Account-Id": account } : {}),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          redirect: "error",
           signal: AbortSignal.timeout(15000),
         },
       );

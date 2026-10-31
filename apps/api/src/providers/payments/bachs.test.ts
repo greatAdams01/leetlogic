@@ -25,6 +25,8 @@ import {
   hostedUrl,
   paymentReady,
   checkoutReturnUrls,
+  checkoutChargeId,
+  receiptAmounts,
 } from "./bachs.js";
 describe("Bachs payment protocol", () => {
   const fetcher = vi.fn(),
@@ -39,6 +41,30 @@ describe("Bachs payment protocol", () => {
     expect(minor("9999999999999.99")).toBe(999999999999999n);
     expect(decimal(101n)).toBe("1.01");
     for (const bad of ["-1", "1.234", "1e3", "NaN", " 1"]) expect(() => minor(bad)).toThrow();
+  });
+  it("reads the nested charge used by real Bachs checkout responses", () => {
+    expect(checkoutChargeId({ charge: { payment_id: "ch_paid" } })).toBe("ch_paid");
+    expect(checkoutChargeId({ charge: null })).toBeUndefined();
+    expect(checkoutChargeId({ charge_id: "ch_legacy" })).toBe("ch_legacy");
+    expect(() => checkoutChargeId({ charge: { payment_id: "https://private.invalid" } })).toThrow();
+  });
+  it.each(["principal", "fee-inclusive"])("verifies %s charge amounts without funding fees", (format) => {
+    const receipt = receiptAmounts({
+      amount: format === "principal" ? "94625.00" : "96517.50",
+      amount_paid: "96517.50", amount_remaining: "0.00", status: "succeeded",
+      merchant_bears_cost: false, fees: { amount: "1892.50", currency: "NGN" },
+    }, 9462500n);
+    expect(receipt).toEqual({ fee: 189250n, received: 9462500n, success: true, declined: false });
+  });
+  it("does not relax amount, fee-currency or payment-status checks", () => {
+    const receipt = { amount: "102.00", amount_paid: "102.00", amount_remaining: "0.00",
+      fees: { amount: "2.00", currency: "NGN" }, merchant_bears_cost: false, status: "succeeded" };
+    expect(() => receiptAmounts({ ...receipt, amount: "103.00" }, 10000n)).toThrow("PAYMENT_CHARGE_MISMATCH");
+    expect(() => receiptAmounts({ ...receipt, merchant_bears_cost: true }, 10000n)).toThrow();
+    expect(() => receiptAmounts({ ...receipt, fees: { amount: "2.00", currency: "USD" } }, 10000n)).toThrow();
+    expect(receiptAmounts({ ...receipt, status: "pending" }, 10000n).success).toBe(false);
+    expect(receiptAmounts({ ...receipt, amount_paid: "103.00" }, 10000n).success).toBe(false);
+    expect(receiptAmounts({ ...receipt, amount_remaining: "1.00" }, 10000n).success).toBe(false);
   });
   it("verifies raw bytes, rotation and timestamp freshness", () => {
     const raw = Buffer.from('{"event":"collection.success"}'),
