@@ -257,11 +257,16 @@ export function ProduceListing() {
                   <option value="">—</option>
                   {catalogue.addresses.map((item: any) => (
                     <option key={item.id} value={item.id}>
-                      {item.line1}, {item.city}, {item.state}
+                      {item.line1}, {item.city}, {item.state}{item.postalCode ? ` · ${item.postalCode}` : ""}
                     </option>
                   ))}
                 </select>
               </label>
+              <p><Link href="/account#addresses" target="_blank" rel="noreferrer">{say("Edit pickup address")}</Link></p>
+              <button type="button" onClick={async () => {
+                try { setCatalogue(await customerApi("listing-drafts/catalogue")); }
+                catch (e) { setNotice(ui(locale, e instanceof Error ? e.message : "Request failed. Please try again.")); }
+              }}>{say("Reload saved addresses")}</button>
               <label>
                 {say("Delivery scope *")}
                 <select name="shippingScope" defaultValue="NATIONWIDE">

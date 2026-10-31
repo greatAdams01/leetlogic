@@ -7,7 +7,6 @@ const ready = {
   SHIPBUBBLE_MODE: "test",
   SHIPBUBBLE_TEST_KEY_CONFIRMED: true,
   DELIVERY_ALLOWED_CATEGORIES: "category",
-  DELIVERY_ALLOWED_STATES: "Rivers",
 } as Config;
 describe("delivery quote configuration", () => {
   it.each([
@@ -15,7 +14,6 @@ describe("delivery quote configuration", () => {
     { SHIPBUBBLE_CATEGORY_ID: undefined },
     { SHIPBUBBLE_TEST_KEY_CONFIRMED: false },
     { DELIVERY_ALLOWED_CATEGORIES: " , " },
-    { DELIVERY_ALLOWED_STATES: " , " },
   ])("rejects incomplete configuration before shipment eligibility: %j", (missing) => {
     expect(() => deliveryQuoteConfiguration({ ...ready, ...missing })).toThrow(
       expect.objectContaining({
@@ -24,13 +22,12 @@ describe("delivery quote configuration", () => {
       }),
     );
   });
-  it("normalizes configured categories and states", () => {
+  it("normalizes commodity configuration without a geographic allowlist", () => {
     expect(
       deliveryQuoteConfiguration({
         ...ready,
         DELIVERY_ALLOWED_CATEGORIES: " category, , other ",
-        DELIVERY_ALLOWED_STATES: " Rivers, LAGOS, ",
       }),
-    ).toEqual({ categories: ["category", "other"], states: ["rivers", "lagos"] });
+    ).toEqual({ categories: ["category", "other"] });
   });
 });

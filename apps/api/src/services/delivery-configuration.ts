@@ -9,7 +9,6 @@ export function deliveryQuoteConfiguration(config: Config) {
       .map((item) => item.trim())
       .filter(Boolean);
   const categories = list(config.DELIVERY_ALLOWED_CATEGORIES);
-  const states = list(config.DELIVERY_ALLOWED_STATES).map((state) => state.toLowerCase());
   const missing = [
     !config.SHIPBUBBLE_API_KEY?.trim() && "SHIPBUBBLE_API_KEY",
     !config.SHIPBUBBLE_CATEGORY_ID && "SHIPBUBBLE_CATEGORY_ID",
@@ -17,7 +16,6 @@ export function deliveryQuoteConfiguration(config: Config) {
       !config.SHIPBUBBLE_TEST_KEY_CONFIRMED &&
       "SHIPBUBBLE_TEST_KEY_CONFIRMED",
     !categories.length && "DELIVERY_ALLOWED_CATEGORIES",
-    !states.length && "DELIVERY_ALLOWED_STATES",
   ].filter(Boolean);
   if (missing.length) {
     const error = new AppError(
@@ -29,9 +27,9 @@ export function deliveryQuoteConfiguration(config: Config) {
       provider: "shipbubble",
       operation: "quote-configuration",
       reason: `Missing configuration: ${missing.join(", ")}`,
-      hint: "Configure the verified key mode, provider package category and supported product categories/states before requesting quotes.",
+      hint: "Configure the verified key mode, provider package category and supported product categories before requesting quotes. Routes are checked by the provider nationwide.",
     };
     throw error;
   }
-  return { categories, states };
+  return { categories };
 }

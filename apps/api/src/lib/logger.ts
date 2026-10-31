@@ -45,6 +45,9 @@ export function formatLogLine(record: Record<string, unknown>): string {
   if (error.provider)
     output += `  Provider: ${clean(error.provider)}${error.operation ? ` · ${clean(error.operation)}` : ""}${error.providerStatus ? ` · HTTP ${clean(error.providerStatus)}` : ""}${error.reason ? ` · ${clean(error.reason)}` : ""}\n`;
   if (error.type) output += `  Type: ${clean(error.type)}\n`;
+  const database = object(error.database);
+  if (database.prismaCode)
+    output += `  Database: ${clean(database.prismaCode)}${database.model ? ` · model ${clean(database.model)}` : ""}${database.column ? ` · column ${clean(database.column)}` : ""}${database.table ? ` · table ${clean(database.table)}` : ""}\n`;
   if (error.hint) output += `  Fix: ${clean(error.hint)}\n`;
   // Stack frames remain available in debug mode, on separate readable lines.
   if (error.stack && process.env.LOG_LEVEL === "debug") {

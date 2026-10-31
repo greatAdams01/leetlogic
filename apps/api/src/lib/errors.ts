@@ -65,7 +65,7 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
     error instanceof AppError
       ? error
       : dependency
-        ? new AppError(503, dependency.code, dependency.message)
+        ? new AppError(503, dependency.code, "Service is temporarily unavailable. Please try again.")
         : (databaseError ?? new AppError(500, "INTERNAL_ERROR", "An unexpected error occurred"));
   const original = error instanceof Error ? error : undefined;
   res.locals.requestError = {
@@ -73,6 +73,7 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
     code: dependency?.code || appError.code,
     message: dependency?.message || appError.message,
     ...(dependency ? { hint: dependency.hint } : {}),
+    ...(dependency?.database ? { database: dependency.database } : {}),
     ...(appError.diagnostics ? appError.diagnostics : {}),
     // Keep source frames without Prisma query text, credentials, or submitted values.
     ...(appError.status >= 500 && original?.stack

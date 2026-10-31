@@ -181,7 +181,6 @@ suite("delivery and language database workflows", () => {
       stepUpAt: Math.floor(Date.now() / 1000),
     });
     c.DELIVERY_ALLOWED_CATEGORIES = categoryId;
-    c.DELIVERY_ALLOWED_STATES = "Lagos";
   });
   afterAll(async () => {
     vi.restoreAllMocks();
@@ -209,22 +208,22 @@ suite("delivery and language database workflows", () => {
   });
   it("reports missing pricing configuration without sending the shipment to staff review", async () => {
     const config = getConfig();
-    const prior = config.DELIVERY_ALLOWED_STATES;
+    const prior = config.DELIVERY_ALLOWED_CATEGORIES;
     const quotes = vi.spyOn(shippingProvider, "quotes");
     try {
-      config.DELIVERY_ALLOWED_STATES = " , ";
+      config.DELIVERY_ALLOWED_CATEGORIES = " , ";
       const response = await request(app)
         .post(`/v1/orders/${orderId}/delivery/quotes`)
         .set(customer())
         .send(input);
       expect(response.status).toBe(503);
       expect(response.body.error.code).toBe("DELIVERY_CONFIGURATION_REQUIRED");
-      expect(JSON.stringify(response.body)).not.toContain("DELIVERY_ALLOWED_STATES");
+      expect(JSON.stringify(response.body)).not.toContain("DELIVERY_ALLOWED_CATEGORIES");
       expect(quotes).not.toHaveBeenCalled();
       expect(await prisma.delivery.count({ where: { orderId } })).toBe(0);
       expect(await prisma.deliveryEvent.count({ where: { delivery: { orderId } } })).toBe(0);
     } finally {
-      config.DELIVERY_ALLOWED_STATES = prior;
+      config.DELIVERY_ALLOWED_CATEGORIES = prior;
       quotes.mockRestore();
     }
   });
@@ -275,6 +274,8 @@ suite("delivery and language database workflows", () => {
     expect(
       (await request(app).post(`${path}/pickup`).set(sellerAuth).send({ addressId })).status,
     ).toBe(409);
+    // This paid-order fixture must not lock the farm address in the following pin test.
+    await prisma.tradeOrder.update({ where: { id: order.id }, data: { status: "COMPLETED" } });
   });
   it("stores only the signed-in farmer’s valid map pin and keeps it out of public listings", async () => {
     const sellerAuth = { Authorization: `Bearer ${seller}` };
@@ -425,8 +426,9 @@ suite("delivery and language database workflows", () => {
         ).status,
       ).toBe(404);
       const invalid = await request(app).post(`${path}/quotes`).set(customer()).send(input);
-      expect(invalid.body.error.code).toBe("DELIVERY_UNSUPPORTED");
-      expect(await prisma.delivery.findUnique({ where: { orderId: id } })).toMatchObject({ status: "QUOTE_REQUIRED", selectedQuoteId: null, shippingMinor: 0n, failureCode: "DELIVERY_UNSUPPORTED" });
+      const code = "SHIPMENT_HANDLING_UNSUPPORTED";
+      expect(invalid.body.error.code).toBe(code);
+      expect(await prisma.delivery.findUnique({ where: { orderId: id } })).toMatchObject({ status: "QUOTE_REQUIRED", selectedQuoteId: null, shippingMinor: 0n, failureCode: code });
       expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id } })).packagingSnapshot).toMatchObject({ version: 2, packaging: packing });
       const edited = { ...input, parcel: { ...input.parcel, handling: "COLD_CHAIN" } };
       await prisma.tradeOrder.update({ where: { id }, data: { status: "FUNDED" } });
@@ -1576,9 +1578,13 @@ suite("delivery and language database workflows", () => {
         userId: verifyAccessToken(seller, "customer").sub,
         countryCode: "US",
       });
-    expect(saved.status).toBe(201);
-    expect(saved.body.address.countryCode).toBe("NG");
-    expect(saved.body.address.userId).toBe(verifyAccessToken(buyer, "customer").sub);
+    expect(saved.status).toBe(422);
+    const owned = await request(app).post("/v1/me/addresses").set(customer()).send({
+      label: "Home", state: "Lagos", lga: "Ikeja", city: "Lagos", line1: "24 Example Road",
+    });
+    expect(owned.status).toBe(201);
+    expect(owned.body.address.countryCode).toBe("NG");
+    expect(owned.body.address.userId).toBe(verifyAccessToken(buyer, "customer").sub);
     expect(
       (
         await request(app)

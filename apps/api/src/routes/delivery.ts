@@ -10,9 +10,11 @@ import {
   deliveryInputHash,
   deriveDeliveryInput,
   savedPickup,
+  savedAddressLocation,
   shippingOrderInclude,
   storedDeliveryInput,
 } from "../services/delivery-quote.js";
+import { lockDeliveryRequestAddresses } from "../services/addresses.js";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { prisma, type Prisma } from "@leetlogic/database";
@@ -221,14 +223,15 @@ customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
   if (order.buyerId !== req.auth!.sub)
     throw new AppError(403, "BUYER_REQUIRED", "Only the buyer can choose pickup.");
   await prisma.$transaction(async (tx) => {
+    await lockDeliveryRequestAddresses(tx, order);
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
     await unlockedCheckout(tx, order.id);
     const current = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: order.id },
-      include: { delivery: true, shipment: true },
+      include: { ...shippingOrderInclude, delivery: true, shipment: true },
     });
     if (
-      current.status !== "AWAITING_PAYMENT" ||
+      current.status !== "AWAITING_PAYMENT" || current.financialHold ||
       current.shipment ||
       current.delivery?.bookingStartedAt ||
       current.delivery?.paidMinor
@@ -243,9 +246,9 @@ customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
       include: { profile: true },
     });
     const pickup = {
-      ...savedPickup(order),
-      name: order.farmerProfile.farmName,
-      phone: order.farmerProfile.user.phoneE164,
+       ...savedPickup(current),
+       name: current.farmerProfile.farmName,
+       phone: current.farmerProfile.user.phoneE164,
       country: "NG",
     };
     const destination = {
@@ -267,6 +270,8 @@ customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
         shippingMinor: 0n,
         courier: null,
         failureCode: null,
+        ...(current.delivery?.package && typeof current.delivery.package === "object" && !Array.isArray(current.delivery.package)
+          ? { package: { ...current.delivery.package, quoteRequestId: randomUUID() } } : {}),
       },
     });
     await audit(
@@ -288,24 +293,23 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
   });
   if (!address) throw new AppError(422, "INVALID_ADDRESS", "Choose one of your saved addresses.");
   await prisma.$transaction(async (tx) => {
+    await lockDeliveryRequestAddresses(tx, order, undefined, addressId);
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
     await unlockedCheckout(tx, order.id);
     const current = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: order.id },
       include: { delivery: true, shipment: true },
     });
-    if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.paidMinor)
+    if (current.status !== "AWAITING_PAYMENT" || current.financialHold || current.shipment || current.delivery?.paidMinor || current.delivery?.bookingStartedAt)
       throw new AppError(409, "DELIVERY_LOCKED", "Pickup cannot change after payment or dispatch.");
+    const confirmedAddress = await tx.address.findFirst({ where: { id: addressId, userId: req.auth!.sub, countryCode: "NG", deletedAt: null } });
+    if (!confirmedAddress) throw new AppError(422, "INVALID_ADDRESS", "Choose one of your saved addresses.");
     const pickup = {
       name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
       phone: order.farmerProfile.user.phoneE164,
       email: order.farmerProfile.user.profile?.email || "",
-      address: `${address.line1}, ${address.city}, ${address.lga}`,
-      state: address.state,
+      ...savedAddressLocation(confirmedAddress),
       country: "NG",
-      ...(address.latitude !== null && address.longitude !== null
-        ? { latitude: Number(address.latitude), longitude: Number(address.longitude) }
-        : {}),
     };
     const delivery = await tx.delivery.upsert({
       where: { orderId: order.id },
@@ -317,6 +321,8 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
         courier: null,
         failureCode: null,
         status: "QUOTE_REQUIRED",
+        ...(current.delivery?.package && typeof current.delivery.package === "object" && !Array.isArray(current.delivery.package)
+          ? { package: { ...current.delivery.package, quoteRequestId: randomUUID() } } : {}),
       },
     });
     await tx.deliveryQuote.deleteMany({ where: { deliveryId: delivery.id } });
@@ -379,11 +385,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
             name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
             phone: order.farmerProfile.user.phoneE164,
             email: order.farmerProfile.user.profile?.email || "",
-            address: savedPickup(order).address,
-            state: savedPickup(order).state,
-            ...(savedPickup(order).latitude != null && savedPickup(order).longitude != null
-              ? { latitude: savedPickup(order).latitude, longitude: savedPickup(order).longitude }
-              : {}),
+            ...savedPickup(order),
           },
         },
         delivery: delivery
@@ -402,7 +404,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
   });
   router.post("/:id/delivery/quotes", async (req, res) => {
     const order = await orderAccess(req);
-    const body = quoteBody.parse(req.body);
+    const destinationId = uuid.safeParse(req.body?.destination?.addressId);
     const c = getConfig();
     if (req.auth!.subject === "customer" && order.buyerId !== req.auth!.sub)
       throw new AppError(403, "BUYER_REQUIRED", "Only the buyer can choose delivery");
@@ -420,17 +422,34 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     // Invalidate the previous choice BEFORE the provider call. A failed address/date change
     // must not leave the old shipment payable. A revision also prevents late responses winning.
     const prepared = await prisma.$transaction(async (tx) => {
+      await lockDeliveryRequestAddresses(tx, order, destinationId.success ? destinationId.data : undefined);
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
       await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: order.id },
         include: { ...shippingOrderInclude, delivery: true, shipment: true },
       });
-      if (current.status !== "AWAITING_PAYMENT" || current.shipment || current.delivery?.paidMinor || current.delivery?.bookingStartedAt)
+      if (current.status !== "AWAITING_PAYMENT" || current.financialHold || current.shipment || current.delivery?.paidMinor || current.delivery?.bookingStartedAt)
         throw new AppError(409, "DELIVERY_LOCKED", "Order changed; refresh and retry");
-      const input = deriveDeliveryInput(current, { ...body, pickupDate: body.parcel.pickupDate });
-      const suggested = packageSuggestion(current.packagingSnapshot ?? current.listing.packaging, current.quantity)!;
       const quoteRequestId = randomUUID();
+      // Invalid edits must also retire the old fee; return the validation error after committing.
+      if (current.delivery) {
+        await tx.deliveryQuote.updateMany({ where: { deliveryId: current.delivery.id }, data: { expiresAt: new Date() } });
+        await tx.delivery.update({ where: { id: current.delivery.id }, data: {
+          status: "QUOTE_REQUIRED", selectedQuoteId: null, shippingMinor: 0n, courier: null, failureCode: null,
+          ...(current.delivery.package && typeof current.delivery.package === "object" && !Array.isArray(current.delivery.package)
+            ? { package: { ...current.delivery.package, quoteRequestId } } : {}),
+        } });
+      }
+      let input;
+      try {
+        const body = quoteBody.parse(req.body);
+        input = deriveDeliveryInput(current, { ...body, pickupDate: body.parcel.pickupDate });
+      } catch (error) {
+        if (current.delivery) await tx.delivery.update({ where: { id: current.delivery.id }, data: { failureCode: error instanceof AppError ? error.code : "VALIDATION_ERROR" } });
+        return { error };
+      }
+      const suggested = packageSuggestion(current.packagingSnapshot ?? current.listing.packaging, current.quantity)!;
       const fields = {
         pickup: input.pickup,
         destination: input.destination,
@@ -450,8 +469,9 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         where: { deliveryId: d.id },
         data: { expiresAt: new Date() },
       });
-      return { current, d, input, inputHash: deliveryInputHash(current, input), quoteRequestId };
+      return { current, d, input, inputHash: deliveryInputHash(current, input), quoteRequestId, expiresAt: new Date(Date.now() + 15 * 60000) };
     });
+    if ("error" in prepared) throw prepared.error;
     let rates;
     try {
       assertDeliveryInput(prepared.current, prepared.input);
@@ -470,7 +490,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, delivery: true, shipment: true } });
       const d = current.delivery;
-      if (current.status !== "AWAITING_PAYMENT" || current.shipment || !d || d.paidMinor || d.bookingStartedAt ||
+      if (current.status !== "AWAITING_PAYMENT" || current.financialHold || current.shipment || !d || d.paidMinor || d.bookingStartedAt ||
         (d.package as { quoteRequestId?: string } | null)?.quoteRequestId !== prepared.quoteRequestId)
         throw new AppError(409, "STALE_DELIVERY_QUOTE", "Delivery details changed. Review a fresh delivery quote before paying.");
       const stored = storedDeliveryInput(d);
@@ -484,7 +504,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
               deliveryId: d.id,
               ...rate,
               inputHash: prepared.inputHash,
-              expiresAt: new Date(Date.now() + 15 * 60000),
+               expiresAt: prepared.expiresAt,
             },
           });
         assertCurrentDeliveryQuote(current, d, quote, { selected: false });
@@ -516,7 +536,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       const d = await tx.delivery.findUnique({ where: { orderId: order.id } });
       const candidate = await tx.deliveryQuote.findUnique({ where: { id: quoteId } });
       if (
-        current.status !== "AWAITING_PAYMENT" ||
+        current.status !== "AWAITING_PAYMENT" || current.financialHold ||
         current.shipment || !d || d.paidMinor || d.bookingStartedAt
       )
         throw new AppError(409, "QUOTE_EXPIRED", "Request a fresh delivery quote before payment");
@@ -585,7 +605,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         status: order.status === "FUNDED" ? "BOOKING_BLOCKED" : "QUOTE_REQUIRED",
         failureCode: null,
       } });
-      return { currentOrder, input, selected, inputHash: deliveryInputHash(currentOrder, input), quoteRequestId };
+      return { currentOrder, input, selected, inputHash: deliveryInputHash(currentOrder, input), quoteRequestId, expiresAt: new Date(Date.now() + 15 * 60000) };
     });
     let rate;
     try {
@@ -619,7 +639,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           deliveryId: d.id,
           ...refreshedRate,
           inputHash: prepared.inputHash,
-          expiresAt: new Date(Date.now() + 15 * 60000),
+          expiresAt: prepared.expiresAt,
         },
       });
       assertCurrentDeliveryQuote(currentOrder, current, quote, { selected: false });

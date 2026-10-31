@@ -29,6 +29,7 @@ import {
 import { accountRoleKey, restoredAccount, signInRole } from "./lib/onboarding";
 import { readSecurity } from "./lib/farmer-security";
 import { singleFlight } from "./lib/async-cache";
+import { needsSignIn } from "./lib/auth-errors";
 const readAccount = singleFlight<number, { user: Customer }>(() => api<{ user: Customer }>("/me"));
 const Context = createContext<any>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -68,8 +69,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (l) setLocale(validLocale(l));
         const signed = await hydrateSession();
         if (signed) {
+          const version = sessionVersion();
           try {
-            const user = await loadUser(false);
+            let user: Customer;
+            try {
+              user = await loadUser(false);
+            } catch (error) {
+              if (sessionVersion() !== version) return;
+              if (needsSignIn(error)) throw error;
+              // Keep the encrypted session, but publish no account or dashboard until /me works.
+              setStack([{ name: "otp", query: "resume-sign-in" }]);
+              return;
+            }
+            if (sessionVersion() !== version) return;
             const preferred = validLocale(user.preferredLocale);
             setLocale(preferred);
             await AsyncStorage.setItem("locale", preferred);
@@ -83,11 +95,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   ? "unlock"
                   : "create"
                 : null;
+            if (sessionVersion() !== version) return;
             setSecurity(nextSecurity);
             setRole(restored.role);
             setUser(user);
             reset(restored.route);
           } catch {
+            if (sessionVersion() !== version) return;
             setUser(null);
             setSecurity(null);
             await clearSession();
@@ -178,6 +192,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     recoverAccount.current = null;
     setSecurity(nextSecurity);
     setRole(restored.role);
+    setFeedback(null);
     // Publish the account only after the role and security gate are ready.
     setUser(account);
     reset(restored.route);

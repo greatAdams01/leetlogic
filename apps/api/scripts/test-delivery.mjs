@@ -1,10 +1,12 @@
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 const require = createRequire(import.meta.url);
 const databaseRequire = createRequire(resolve("../../packages/database/package.json"));
 const url = new URL(process.env.DATABASE_URL);
-url.searchParams.set("schema", "leetlogic_delivery_integration");
+// Retain previous diagnostics without their mock provider IDs or worker queues leaking into this run.
+url.searchParams.set("schema", `leetlogic_delivery_integration_${randomUUID().replaceAll("-", "").slice(0, 12)}`);
 const redisUrl = new URL(process.env.REDIS_URL);
 redisUrl.pathname = "/14";
 const env = {
@@ -14,7 +16,7 @@ const env = {
   NODE_ENV: "test",
   PAYMENTS_ENABLED: "false",
   LOG_LEVEL: "fatal",
-  PRIVATE_STORAGE_ROOT: "/tmp/leetlogic-delivery-tests",
+  PRIVATE_STORAGE_ROOT: process.env.PRIVATE_STORAGE_ROOT || ".private-objects/delivery-tests",
   DELIVERY_INTEGRATION: "1",
 };
 execFileSync(
@@ -30,6 +32,6 @@ execFileSync(
 );
 execFileSync(
   process.execPath,
-  [require.resolve("vitest/vitest.mjs"), "run", "src/routes/delivery.integration.test.ts"],
+  [require.resolve("vitest/vitest.mjs"), "run", "--no-file-parallelism", "src/routes/delivery.integration.test.ts", "src/routes/addresses.integration.test.ts"],
   { env, stdio: "inherit" },
 );

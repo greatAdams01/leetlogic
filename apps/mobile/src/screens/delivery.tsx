@@ -1,5 +1,6 @@
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
-import { savedFarmPoint } from "../lib/farm-location";
+import { checkoutAddress } from "../lib/checkout-address";
+import { postcodeStatus } from "../../../../packages/contracts/src/addresses";
 import { OrderDisputes } from "../components/order-disputes";
 import { OrderPayment } from "../components/order-payment";
 import { Select } from "../components/Select";
@@ -166,6 +167,8 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
                 : "Choose an address to continue"}
             </Label>
             <Label muted>{a.user?.phoneE164}</Label>
+            {address?.postalCode && <Label>{address.postalCode}</Label>}
+            {address && <Label muted>{a.ui(postcodeStatus(address))}</Label>}
           </View>
           <View style={checkout.check}>
             <Label style={{ color: "white", fontFamily: "NotoBold" }}>✓</Label>
@@ -1028,18 +1031,17 @@ export function Quotes() {
     }));
     if (!firstLoad) return;
     initialized.current = r.data.order.id;
-    if (r.data.delivery?.destination && r.data.delivery.status !== "PICKUP_PENDING")
-      setDestination(r.data.delivery.destination);
+    if (r.data.delivery?.destination && r.data.delivery.status !== "PICKUP_PENDING") {
+      const savedDestination = a.user?.addresses.find((address) => address.id === r.data!.delivery?.destination.addressId);
+      setDestination({ ...r.data.delivery.destination, ...(savedDestination ? checkoutAddress(savedDestination) : {}) });
+    }
     else {
       const address =
         a.user?.addresses.find((item) => item.isDefaultDelivery) || a.user?.addresses[0];
       if (address)
         setDestination((current) => ({
           ...current,
-          address: `${address.line1}, ${address.city}, ${address.lga}`,
-          state: address.state,
-          latitude: savedFarmPoint(address)?.latitude,
-          longitude: savedFarmPoint(address)?.longitude,
+           ...checkoutAddress(address),
         }));
     }
   }, [r.data]);
@@ -1123,6 +1125,8 @@ export function Quotes() {
           <Label>
             {r.data.order.suggestedPickup.address}, {r.data.order.suggestedPickup.state}
           </Label>
+          {r.data.order.suggestedPickup.postalCode && <Label>{r.data.order.suggestedPickup.postalCode}</Label>}
+          {r.data.order.suggestedPickup.instructions && <Label muted>{r.data.order.suggestedPickup.instructions}</Label>}
           {!r.data.order.suggestedPickup.email && (
             <Field
               label="Farmer contact email"
@@ -1144,6 +1148,9 @@ export function Quotes() {
           {destination.name} · {destination.phone}
         </Label>
         <Label muted>{destination.email}</Label>
+        {destination.postalCode && <Label>{destination.postalCode}</Label>}
+        {destination.addressId && <Label muted>{a.ui(postcodeStatus(a.user?.addresses.find((address) => address.id === destination.addressId) || {}))}</Label>}
+        {destination.instructions && <Label muted>{destination.instructions}</Label>}
         <Button
           title={editDestination ? "Done" : "Edit delivery details"}
           secondary
@@ -1158,13 +1165,11 @@ export function Quotes() {
             {a.user?.addresses.map((ad) => (
               <Pressable
                 key={ad.id}
+                disabled={busy}
                 onPress={() =>
                   setDestination((d) => ({
                     ...d,
-                    address: `${ad.line1}, ${ad.city}, ${ad.lga}`,
-                    state: ad.state,
-                    latitude: savedFarmPoint(ad)?.latitude,
-                    longitude: savedFarmPoint(ad)?.longitude,
+                     ...checkoutAddress(ad),
                   }))
                 }
               >
@@ -1172,10 +1177,13 @@ export function Quotes() {
                   <Label>
                     {ad.label} · {ad.line1}, {ad.state}
                   </Label>
+                  {ad.postalCode && <Label>{ad.postalCode}</Label>}
+                  <Label muted>{a.ui(postcodeStatus(ad))}</Label>
                 </Card>
               </Pressable>
             ))}
           </View>
+          <Button title="Add or verify a delivery address" secondary disabled={busy} onPress={() => a.go("addresses")} />
           <Card>
             {(["name", "phone", "email", "address"] as const).map((k) => (
               <Field
@@ -1190,6 +1198,7 @@ export function Quotes() {
                   }[k]
                 }
                 value={destination[k]}
+                editable={!busy}
                 autoCapitalize={k === "email" ? "none" : "sentences"}
                 keyboardType={
                   k === "phone" ? "phone-pad" : k === "email" ? "email-address" : "default"
@@ -1198,7 +1207,7 @@ export function Quotes() {
                   setDestination((d) => ({
                     ...d,
                     [k]: v,
-                    ...(k === "address" ? { latitude: undefined, longitude: undefined } : {}),
+                    ...(k === "address" ? { addressId: undefined, latitude: undefined, longitude: undefined } : {}),
                   }))
                 }
               />
@@ -1207,10 +1216,12 @@ export function Quotes() {
               label="State"
               value={destination.state}
               options={nigeriaStates}
+              disabled={busy}
               onChange={(state) =>
-                setDestination((d) => ({ ...d, state, latitude: undefined, longitude: undefined }))
+                setDestination((d) => ({ ...d, state, addressId: undefined, latitude: undefined, longitude: undefined }))
               }
             />
+            {!destination.addressId && <Field label="Additional directions (optional)" value={destination.instructions || ""} maxLength={700} editable={!busy} onChangeText={(instructions) => setDestination((d) => ({ ...d, instructions }))} />}
           </Card>
         </>
       )}

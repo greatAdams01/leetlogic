@@ -58,6 +58,12 @@ export type Address = {
   city: string;
   lga: string;
   line1: string;
+  line2?: string | null;
+  landmark?: string | null;
+  postalCode?: string | null;
+  postcodeVerifiedAt?: string | null;
+  postcodeVerificationLevel?: number | null;
+  postcodeVerificationMode?: "TEST" | "LIVE" | null;
 };
 export type Customer = {
   capabilities: { capability: "BUYER" | "SELLER" }[];
@@ -84,6 +90,9 @@ export type Order = {
   delivery: { status: string; shippingMinor: string } | null;
 };
 export type Contact = {
+  addressId?: string;
+  postalCode?: string | null;
+  instructions?: string;
   name: string;
   phone: string;
   email: string;

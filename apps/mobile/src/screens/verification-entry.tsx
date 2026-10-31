@@ -16,7 +16,9 @@ import { LocalizedText as Text } from "../localization";
 import { useApp } from "../state";
 import { Icon, Notice, colors } from "../components/ui";
 import { Button } from "../components/ui";
-import { api, API_URL, deviceId, saveSession, sessionVersion } from "../lib/api";
+import { api, API_URL, authHeaders, clearSession, deviceId, saveSession, sessionVersion } from "../lib/api";
+import { needsSignIn, profileFailureCode } from "../lib/auth-errors";
+import { validLocale } from "../lib/localization";
 import {
   maskedPhone,
   otpDigits,
@@ -80,16 +82,18 @@ function ContinueButton({
   disabled,
   onPress,
   verifying = false,
+  loadingAccount = false,
   label = "Continue",
 }: {
   busy: boolean;
   disabled?: boolean;
   onPress: () => void;
   verifying?: boolean;
+  loadingAccount?: boolean;
   label?: string;
 }) {
   const a = useApp();
-  const title = busy ? (verifying ? "Verifying…" : "Sending…") : label;
+  const title = busy ? (loadingAccount ? "Loading your account…" : verifying ? "Verifying…" : "Sending…") : label;
   return (
     <Pressable
       accessibilityRole="button"
@@ -261,13 +265,16 @@ export function Phone() {
 }
 export function Otp() {
   const a = useApp();
+  const resuming = a.route.query === "resume-sign-in";
+  const [profilePending, setProfilePending] = useState(resuming);
+  const verifiedSession = useRef<number | null>(resuming ? sessionVersion() : null);
   const [code, setCode] = useState("");
   const [focused, setFocused] = useState(false);
   const [seconds, setSeconds] = useState(60);
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
-  const [error, setError] = useState("");
-  const [errorCode, setErrorCode] = useState("");
+  const [error, setError] = useState(resuming ? a.error({ code: "PROFILE_UNAVAILABLE" }) : "");
+  const [errorCode, setErrorCode] = useState(resuming ? "PROFILE_UNAVAILABLE" : "");
   const input = useRef<TextInput>(null);
   const deadline = useRef(Date.now() + 60_000);
   const submitting = useRef(false);
@@ -283,26 +290,45 @@ export function Otp() {
     };
   }, []);
   const verify = async (completedCode = code) => {
-    if (submitting.current || completedCode.length !== 6) return;
+    if (submitting.current || (verifiedSession.current === null && completedCode.length !== 6)) return;
+    if (verifiedSession.current !== null && sessionVersion() !== verifiedSession.current) return;
     submitting.current = true;
     setBusy(true);
     setError("");
     setErrorCode("");
     try {
-      const initialVersion = sessionVersion();
-      const result = await api("/auth/otp/verify", {
-        method: "POST",
-        body: { phone: a.route.id, deviceId: await deviceId(), code: completedCode, intent: a.authIntent || "LOGIN", ...(a.authIntent === "REGISTER" ? { role: a.role } : {}) },
-      });
-      if (sessionVersion() !== initialVersion) return;
-      await saveSession(result);
-      const verifiedVersion = sessionVersion();
+      if (verifiedSession.current === null) {
+        const initialVersion = sessionVersion();
+        const result = await api("/auth/otp/verify", {
+          method: "POST",
+          body: { phone: a.route.id, deviceId: await deviceId(), code: completedCode, intent: a.authIntent || "LOGIN", ...(a.authIntent === "REGISTER" ? { role: a.role } : {}) },
+        });
+        if (sessionVersion() !== initialVersion) return;
+        await saveSession(result);
+        verifiedSession.current = sessionVersion();
+        setCode("");
+        setProfilePending(true);
+      }
+      const verifiedVersion = verifiedSession.current;
       const user = await a.loadUser(false);
       if (sessionVersion() !== verifiedVersion) return;
-      await a.changeLocale(a.locale);
+      await a.changeLocale(resuming ? validLocale(user.preferredLocale) : a.locale);
       if (sessionVersion() !== verifiedVersion) return;
       await a.finishSignIn(user);
     } catch (e) {
+      if (verifiedSession.current !== null) {
+        if (needsSignIn(e)) {
+          // Never clear a newer login when an older profile request fails.
+          if (sessionVersion() === verifiedSession.current) await clearSession();
+          if (!authHeaders().Authorization) a.startLogin();
+          return;
+        }
+        if (sessionVersion() !== verifiedSession.current) return;
+        const failureCode = profileFailureCode(e);
+        setErrorCode(failureCode);
+        setError(a.error({ code: failureCode }));
+        return;
+      }
       const failure = e as { code?: string; retryAfterSeconds?: number };
       if (["OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED"].includes(failure?.code || "")) {
         deadline.current = Date.now();
@@ -320,7 +346,7 @@ export function Otp() {
     }
   };
   const resend = async () => {
-    if (submitting.current || seconds > 0) return;
+    if (verifiedSession.current !== null || submitting.current || seconds > 0) return;
     submitting.current = true;
     setBusy(true);
     setResending(true);
@@ -353,12 +379,14 @@ export function Otp() {
     }
   };
   return (
-    <VerificationLayout otp disabled={busy}>
+    <VerificationLayout otp disabled={busy || profilePending}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={v.otpBody}>
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="header" style={v.heading}>
-            {a.authIntent === "REGISTER" ? a.ui("Verify Your Account") : a.ui("Log In")}
+            {profilePending ? a.t("auth.title") : a.authIntent === "REGISTER" ? a.ui("Verify Your Account") : a.ui("Log In")}
           </Text>
+          {profilePending && <Text style={v.explanation}>Your phone number is verified.</Text>}
+          {!profilePending && <>
           <Text style={[v.explanation, { marginTop: 0 }]}>
             {a.authIntent === "REGISTER"
               ? a.ui("Enter the verification code sent to your phone number to complete your registration.")
@@ -431,16 +459,19 @@ export function Otp() {
                 : a.ui("Resend code")}
             </Text>
           </Pressable>
+          </>}
           {error && <Notice text={error} error />}
+          {profilePending && <Button title={a.t("common.cancel")} disabled={busy} onPress={() => void a.signOut()} />}
           {errorCode === "ACCOUNT_NOT_FOUND" && <Button title="Create Account" onPress={() => a.startRegistration(a.route.id || "")} />}
           {errorCode === "PHONE_ALREADY_REGISTERED" && <Button title="Log In" onPress={a.startLogin} />}
         </View>
         <SafeAreaView edges={["bottom"]} style={v.otpFooter}>
           <ContinueButton
-            label={a.authIntent === "REGISTER" ? a.ui("Verify & Continue") : a.ui("Log In")}
+            label={profilePending ? a.t("common.retry") : a.authIntent === "REGISTER" ? a.ui("Verify & Continue") : a.ui("Log In")}
             verifying={!resending}
+            loadingAccount={profilePending}
             busy={busy}
-            disabled={code.length !== 6}
+            disabled={!profilePending && code.length !== 6}
             onPress={() => void verify()}
           />
         </SafeAreaView>

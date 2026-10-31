@@ -14,7 +14,7 @@ type Session = { accessToken: string; refreshToken: string };
 let session: Session | null = null;
 let generation = 0;
 export const sessionVersion = () => generation;
-let refresh: Promise<void> | null = null;
+let refresh: { version: number; request: Promise<void> } | null = null;
 let devicePromise: Promise<string> | null = null;
 export const uuid = () => Crypto.randomUUID();
 export function deviceId() {
@@ -79,10 +79,18 @@ async function rotate() {
     signal: AbortSignal.timeout(20000),
   });
   if (!r.ok) {
-    if (r.status === 401) await clearSession();
-    throw new ApiError(r.status, "SESSION_EXPIRED", "Please sign in again.");
+    if (r.status === 401) {
+      if (session?.refreshToken === token) await clearSession();
+      throw new ApiError(401, "SESSION_EXPIRED", "Please sign in again.");
+    }
+    throw new ApiError(r.status, "DEPENDENCY_UNAVAILABLE", "Service is temporarily unavailable. Please try again.");
   }
-  const data = await r.json();
+  let data;
+  try { data = await r.json(); } catch {
+    throw new ApiError(502, "INVALID_SERVER_RESPONSE", "We couldn’t complete this action. Please try again or contact support if it continues.");
+  }
+  if (typeof data?.accessToken !== "string" || typeof data?.refreshToken !== "string")
+    throw new ApiError(502, "INVALID_SERVER_RESPONSE", "We couldn’t complete this action. Please try again or contact support if it continues.");
   if (session?.refreshToken === token) await saveSession(data, true);
 }
 export async function api<T = any>(
@@ -131,9 +139,14 @@ export async function api<T = any>(
   try {
     response = await send();
     if (response.status === 401 && session && !path.startsWith("/auth/")) {
-      await (refresh ??= rotate().finally(() => {
-        refresh = null;
-      }));
+      const version = sessionVersion();
+      if (!refresh || refresh.version !== version) {
+        const pending = { version, request: rotate().finally(() => {
+          if (refresh === pending) refresh = null;
+        }) };
+        refresh = pending;
+      }
+      await refresh.request;
       response = await send();
     }
   } catch (e) {

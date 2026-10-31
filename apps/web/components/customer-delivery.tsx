@@ -8,6 +8,10 @@ import { useLanguage } from "./language-provider";
 import type { MessageKey } from "../lib/locales/messages";
 import { formatMoney as money } from "../../../packages/contracts/src/money";
 import { ui, localizedError } from "../../mobile/src/lib/localization";
+import { CustomerAddresses } from "./customer-addresses";
+import { addressInstructions, addressText, postcodeStatus } from "../../../packages/contracts/src/addresses";
+import { savedFarmPoint } from "../../mobile/src/lib/farm-location";
+import type { Address, Contact } from "../../mobile/src/lib/domain";
 export function CustomerDelivery({
   id,
   staff = false,
@@ -30,6 +34,18 @@ export function CustomerDelivery({
   context.current = { id, staff, dirty };
   const [now, setNow] = useState(Date.now());
   const [stepUpCode, setStepUpCode] = useState("");
+  const [customer, setCustomer] = useState<any>(null);
+  const [destination, setDestination] = useState<Contact>({ name: "", email: "", phone: "", address: "", state: "", country: "NG" });
+  const initializedDestination = useRef("");
+  const markDirty = () => { context.current.dirty = true; setDirty(true); };
+  const chooseAddress = (address?: Address) => {
+    markDirty();
+    setDestination((current) => ({ ...current, addressId: address?.id,
+      ...(address ? { address: addressText(address), state: address.state, postalCode: address.postalCode, instructions: addressInstructions(address) } : {}),
+      latitude: address ? savedFarmPoint(address)?.latitude : undefined,
+      longitude: address ? savedFarmPoint(address)?.longitude : undefined,
+    }));
+  };
   const manage = !staff || staffPermissions.includes("orders.manage");
   const call = useCallback(async (suffix = "", body?: unknown) => {
     if (!staff) return customerApi(`orders/${id}/delivery${suffix}`, body);
@@ -64,6 +80,21 @@ export function CustomerDelivery({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { requestVersion.current++; clearInterval(timer); };
   }, [load]);
+  useEffect(() => {
+    let active = true;
+    setCustomer(null);
+    if (!staff) void customerApi("me").then((result) => { if (active) setCustomer(result.user || null); }).catch(() => {});
+    return () => { active = false; };
+  }, [id, staff]);
+  useEffect(() => {
+    if (!data || data.order.id !== id) return;
+    const key = `${id}:${data.delivery?.package?.quoteRequestId || "new"}`;
+    if (initializedDestination.current === key) return;
+    if (context.current.dirty && initializedDestination.current.startsWith(`${id}:`)) return;
+    initializedDestination.current = key;
+    setDestination(data.delivery?.status === "PICKUP_PENDING" ? { name: "", email: "", phone: "", address: "", state: "", country: "NG" } :
+      data.delivery?.destination || { name: "", email: "", phone: "", address: "", state: "", country: "NG" });
+  }, [data, id, dirty]);
   async function action(suffix: string, body: unknown) {
     const currentContext = () => context.current.id === id && context.current.staff === staff;
     if (running.current || !currentContext()) return;
@@ -112,11 +143,11 @@ export function CustomerDelivery({
       );
     await action("/quotes", {
       pickup: { ...data.order.suggestedPickup, email: form.get("pickup.email") },
-      destination: contact("destination"),
+      destination: { ...destination, ...contact("destination"), postalCode: form.get("destination.postalCode") || null, instructions: form.get("destination.instructions") || "" },
       parcel: { pickupDate: form.get("date") },
     });
   }
-  if (!data)
+  if (!data || data.order.id !== id)
     return (
       <section className="customer-panel">
         <h1>{t("delivery.title")}</h1>
@@ -134,6 +165,7 @@ export function CustomerDelivery({
   const quoted = !dirty && (collection || currentQuote || (data.order.status !== "AWAITING_PAYMENT" && !!d?.selectedQuoteId));
   const canEdit = manage && (staff || data.order.isBuyer) && data.order.status === "AWAITING_PAYMENT" &&
     !data.order.checkoutActive && !d?.paidMinor?.match(/[1-9]/) && !d?.bookingStartedAt && !d?.providerShipmentId;
+  const savedDestination: Address | undefined = customer?.addresses?.find((address: Address) => address.id === destination.addressId);
   return (
     <section className="customer-panel">
       <h1>{data.order.title}</h1>
@@ -202,11 +234,24 @@ export function CustomerDelivery({
         <button disabled={busy} onClick={() => action("/collection", {})}>{say("Pickup")}</button>
       )}
       {canEdit && !packing && <p role="status">{error({ code: "PACKING_REQUIRED" })}</p>}
+      {canEdit && !staff && customer && <details>
+        <summary>{say("Add or verify a delivery address")}</summary>
+        <CustomerAddresses addresses={customer.addresses || []} onSaved={async (address) => {
+          if (context.current.id !== id || context.current.staff !== staff) return;
+          setCustomer((current: any) => ({ ...current, addresses: [...(current.addresses || []).filter((item: Address) => item.id !== address.id), address] }));
+          chooseAddress(address);
+          await load();
+        }} />
+      </details>}
       {canEdit && packing && (
-          <form key={`${id}:${d?.package?.quoteRequestId || "new"}`} onSubmit={quotes} onChange={() => {
-            context.current.dirty = true;
-            setDirty(true);
-          }}>
+          <form key={`${id}:${staff}`} onSubmit={quotes} onChange={markDirty}>
+            {!staff && customer?.addresses?.length > 0 && <label>{say("Saved delivery address")}
+              <select disabled={busy} value={destination.addressId || ""} onChange={(e) => chooseAddress(customer.addresses.find((address: Address) => address.id === e.target.value))}>
+                <option value="">{say("Enter address manually")}</option>
+                {customer.addresses.map((address: Address) => <option key={address.id} value={address.id}>{address.label}: {address.line1}, {address.state}{address.postalCode ? ` · ${address.postalCode}` : ""}</option>)}
+              </select>
+            </label>}
+            {savedDestination && <p>{say(postcodeStatus(savedDestination))}</p>}
             {["pickup", "destination"].map((prefix) => (
               <fieldset key={prefix} disabled={busy}>
                 <legend>{t(`delivery.${prefix}` as MessageKey)}</legend>
@@ -216,19 +261,23 @@ export function CustomerDelivery({
                     <input
                       name={`${prefix}.${key}`}
                       required
-                      readOnly={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email)}
+                      readOnly={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email) || prefix === "destination" && !!savedDestination && ["address", "state"].includes(key)}
                       type={key === "email" ? "email" : key === "phone" ? "tel" : "text"}
                       value={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email)
-                        ? data.order.suggestedPickup?.[key] || "" : undefined}
-                      defaultValue={prefix === "pickup" && (key !== "email" || !!data.order.suggestedPickup.email) ? undefined :
-                        (prefix === "pickup" ? data.order.suggestedPickup?.[key] : collection ? "" : d?.destination?.[key]) ||
-                        ""
-                      }
+                        ? data.order.suggestedPickup?.[key] || "" : prefix === "destination"
+                          ? key === "address" && savedDestination ? addressText(savedDestination) : key === "state" && savedDestination ? savedDestination.state : destination[key as keyof Contact] || "" : undefined}
+                      defaultValue={prefix === "pickup" && key === "email" && !data.order.suggestedPickup.email ? "" : undefined}
+                      onChange={prefix === "destination" ? (e) => setDestination((current) => ({ ...current, [key]: e.target.value,
+                        ...(["address", "state"].includes(key) ? { addressId: undefined, latitude: undefined, longitude: undefined } : {}) })) : undefined}
                     />
                   </label>
                 ))}
               </fieldset>
             ))}
+            <label>{say("Digital postcode (optional)")}<input name="destination.postalCode" readOnly={!!savedDestination} disabled={busy}
+              value={savedDestination?.postalCode || destination.postalCode || ""} onChange={(e) => setDestination((current) => ({ ...current, postalCode: e.target.value }))} maxLength={40} /></label>
+            <label>{say("Additional directions (optional)")}<textarea name="destination.instructions" readOnly={!!savedDestination} disabled={busy}
+              value={savedDestination ? addressInstructions(savedDestination) : destination.instructions || ""} onChange={(e) => setDestination((current) => ({ ...current, instructions: e.target.value }))} maxLength={700} /></label>
             {data.order.packageSuggestion && (
               <p>
                 {say("Calculated from the farmer’s saved shipping details and your order quantity.")}

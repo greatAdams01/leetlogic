@@ -6,6 +6,10 @@ export type FarmForm = {
   lga: string;
   city: string;
   line1: string;
+  line2?: string;
+  landmark?: string;
+  postalCode?: string;
+  verificationToken?: string | null;
   coordinates?: { latitude: number; longitude: number };
 };
 export type VerificationStep =

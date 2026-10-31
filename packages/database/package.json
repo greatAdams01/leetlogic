@@ -13,10 +13,11 @@
     "test": "vitest run --passWithNoTests",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
+    "deploy": "prisma migrate deploy",
+    "status": "prisma migrate status",
     "seed:catalogue": "node --env-file-if-exists=../../.env --import tsx prisma/seed-catalogue.ts",
     "seed": "node --env-file-if-exists=../../.env --import tsx prisma/seed.ts"
   },
   "dependencies": { "@prisma/client": "^6.0.0" },
   "devDependencies": { "prisma": "^6.0.0", "tsx": "^4.20.0" }
 }
-

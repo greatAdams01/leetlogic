@@ -18,6 +18,11 @@ const nextConfig = {
     root: existsSync(join(workspaceDirectory, "pnpm-workspace.yaml"))
       ? workspaceDirectory
       : appDirectory,
+    // The shared NodeNext contract keeps a .js specifier for its emitted ESM.
+    // Resolve its TypeScript source when imported directly into the web bundle.
+    resolveAlias: {
+      "./coordinates.js": "../../packages/contracts/src/coordinates.ts",
+    },
   },
 };
 

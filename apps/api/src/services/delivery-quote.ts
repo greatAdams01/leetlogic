@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { Delivery, DeliveryQuote, PaymentAttempt, Prisma } from "@leetlogic/database";
+import type { Address, Delivery, DeliveryQuote, PaymentAttempt, Prisma } from "@leetlogic/database";
+import { addressInstructions, addressText, normalizeNigerianState } from "@leetlogic/contracts";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
 import {
@@ -13,6 +14,7 @@ import { deliveryQuoteConfiguration } from "./delivery-configuration.js";
 import { orderShipping, packageSuggestion } from "./packaging.js";
 
 export const shippingOrderInclude = {
+  buyer: { include: { addresses: { where: { deletedAt: null } } } },
   listing: { include: { locationAddress: true } },
   farmerProfile: {
     include: { user: { include: { profile: true, addresses: { where: { deletedAt: null } } } } },
@@ -43,32 +45,45 @@ const fingerprint = (value: unknown) =>
     )
     .digest("hex");
 
-export function savedPickup(order: ShippingOrder) {
+export function savedAddressLocation(address: Address) {
+  if (address.line1 === "Farm location pending full address")
+    throw new AppError(422, "PICKUP_ADDRESS_REQUIRED", "Confirm the full street address as well as any map pin before requesting delivery.");
+  const instructions = addressInstructions(address);
+  return {
+    addressId: address.id,
+    address: addressText(address), state: normalizeNigerianState(address.state) || address.state,
+    ...(address.postalCode ? { postalCode: address.postalCode } : {}),
+    ...(instructions ? { instructions } : {}),
+    ...(address.latitude != null && address.longitude != null
+      ? { latitude: Number(address.latitude), longitude: Number(address.longitude) } : {}),
+  };
+}
+export function savedPickupAddress(order: ShippingOrder): Address {
   const snapshot = order.delivery?.pickup as Partial<Contact> | null;
   const listingAddress = order.listing.locationAddress;
   const addresses = [listingAddress, ...order.farmerProfile.user.addresses].filter(
-    (address) => address.userId === order.farmerProfile.userId && address.countryCode === "NG",
+    (address) => !address.deletedAt && address.userId === order.farmerProfile.userId && address.countryCode === "NG",
   );
   // Historical quotes may contain a buyer address in pickup. Resolve farmer-owned addresses only.
-  const saved = snapshot?.address && snapshot.state
+  const saved = snapshot?.addressId ? addresses.find((address) => address.id === snapshot.addressId)
+    : snapshot?.address && snapshot.state
     ? addresses.find(
         (address) =>
-          address.state.toLowerCase() === snapshot.state!.toLowerCase() &&
+           normalizeNigerianState(address.state) === normalizeNigerianState(snapshot.state!) &&
           [address.line1, `${address.line1}, ${address.city}`, `${address.line1}, ${address.city}, ${address.lga}`]
             .some((text) => normalize(text) === normalize(snapshot.address!)),
       )
     : null;
-  const address = saved || listingAddress;
-  return {
-    address: [address.line1, address.city, address.lga].filter(Boolean).join(", "),
-    state: address.state,
-    ...(address.latitude != null && address.longitude != null
-      ? { latitude: Number(address.latitude), longitude: Number(address.longitude) }
-      : {}),
-  };
+  const defaultAddress = addresses.find((address) => address.id === listingAddress.id);
+  if ((snapshot?.addressId && !saved) || (!saved && !defaultAddress))
+    throw new AppError(422, "PICKUP_ADDRESS_REQUIRED", "The farmer must confirm a saved pickup address before delivery can be quoted.");
+  return saved || defaultAddress!;
+}
+export function savedPickup(order: ShippingOrder) {
+  return savedAddressLocation(savedPickupAddress(order));
 }
 
-export function checkPickup(order: ShippingOrder, pickup: Pick<Contact, "address" | "state">) {
+export function checkPickup(order: ShippingOrder, pickup: Pick<Contact, "address" | "state" | "addressId">) {
   const expected = savedPickup(order);
   const listing = order.listing.locationAddress;
   const fullListingAddress = [listing.line1, listing.city, listing.lga].filter(Boolean).join(", ");
@@ -76,7 +91,8 @@ export function checkPickup(order: ShippingOrder, pickup: Pick<Contact, "address
     // Older clients sent the listing's street without city or local government.
     (normalize(expected.address) === normalize(fullListingAddress) &&
       normalize(pickup.address) === normalize(listing.line1));
-  if (!matches || pickup.state.toLowerCase() !== expected.state.toLowerCase())
+  if (!matches || normalizeNigerianState(pickup.state) !== expected.state ||
+    (pickup.addressId && pickup.addressId !== expected.addressId))
     throw new AppError(422, "PICKUP_ADDRESS_MISMATCH", "Pickup changed. Refresh to use the farmer’s saved pickup address.");
 }
 
@@ -91,6 +107,19 @@ export function deriveDeliveryInput(
   checkPickup(order, requested.pickup);
   const confirmed = savedPickup(order);
   const farmer = order.farmerProfile.user;
+  const requestedDestination = requested.destination;
+  let destination = requestedDestination;
+  if (requestedDestination.addressId) {
+    const address = order.buyer.addresses.find((address) => address.id === requestedDestination.addressId &&
+      address.userId === order.buyerId && address.countryCode === "NG" && !address.deletedAt);
+    if (!address) throw new AppError(422, "DESTINATION_ADDRESS_REQUIRED", "Choose one of your saved delivery addresses, or enter the full address manually.");
+    const saved = savedAddressLocation(address);
+    if (normalize(requestedDestination.address) !== normalize(saved.address) ||
+      normalizeNigerianState(requestedDestination.state) !== saved.state)
+      throw new AppError(422, "DESTINATION_ADDRESS_MISMATCH", "Your saved address changed. Reload it and request a fresh delivery quote.");
+    // Contact details remain editable; location, postcode, directions and pin are authoritative.
+    destination = { name: requestedDestination.name, phone: requestedDestination.phone, email: requestedDestination.email, country: "NG", ...saved };
+  }
   return {
     pickup: contactSchema.parse({
       name: farmer.profile?.fullName || order.farmerProfile.farmName,
@@ -99,7 +128,7 @@ export function deriveDeliveryInput(
       ...confirmed,
       country: "NG",
     }),
-    destination: contactSchema.parse(requested.destination),
+    destination: contactSchema.parse(destination),
     parcel: parcelSchema.parse({
       weightKg: suggested.weightKg,
       packageCount: suggested.packageCount,
@@ -120,14 +149,22 @@ export function assertDeliveryInput(order: ShippingOrder, input: DeliveryInput, 
   if (booking && ((c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS) ||
     (c.BACHS_MODE === "live") !== (c.SHIPBUBBLE_MODE === "live")))
     throw new AppError(503, "BOOKING_DISABLED", "Delivery booking is not available in this payment environment. Choose pickup or try again later.");
-  const { categories, states } = deliveryQuoteConfiguration(c);
+  const { categories } = deliveryQuoteConfiguration(c);
   const shipping = orderShipping(order.packagingSnapshot, order.listing);
-  const suggested = packageSuggestion(order.packagingSnapshot ?? order.listing.packaging, order.quantity)!;
-  if (shipping.shippingScope === "LOCAL" && input.pickup.state.toLowerCase() !== input.destination.state.toLowerCase())
+  const suggested = packageSuggestion(order.packagingSnapshot ?? order.listing.packaging, order.quantity);
+  if (!suggested) throw new AppError(422, "PACKING_REQUIRED", "The farmer must complete shipping measurements before delivery is available. You can choose pickup instead.");
+  if (shipping.shippingScope === "LOCAL" && normalizeNigerianState(input.pickup.state) !== normalizeNigerianState(input.destination.state))
     throw new AppError(422, "DELIVERY_SCOPE_UNSUPPORTED", "This farmer offers delivery within their state. Choose a delivery address in the same state.");
-  if (suggested.specialHandling.length || !categories.includes(shipping.categoryId) ||
-    !states.includes(input.pickup.state.toLowerCase()) || !states.includes(input.destination.state.toLowerCase()))
-    throw new AppError(422, "DELIVERY_UNSUPPORTED", "No automated delivery is available for this shipment or route. Choose pickup or contact support for a suitable transport arrangement.");
+  if (suggested.specialHandling.length) {
+    const error = new AppError(422, "SHIPMENT_HANDLING_UNSUPPORTED", "No integrated delivery service can confirm these special handling requirements. Choose pickup or contact support for suitable transport.");
+    error.diagnostics = { provider: "shipbubble", operation: "shipment-eligibility", reason: `Unsupported handling flags: ${suggested.specialHandling.join(", ")}`, hint: "Do not downgrade the saved farmer packing requirements to STANDARD." };
+    throw error;
+  }
+  if (!categories.includes(shipping.categoryId)) {
+    const error = new AppError(422, "DELIVERY_COMMODITY_UNSUPPORTED", "Automatic courier delivery is not enabled for this produce category. Choose pickup or contact support to check carrier commodity coverage.");
+    error.diagnostics = { provider: "shipbubble", operation: "shipment-eligibility", reason: `Product category ${shipping.categoryId} is not in DELIVERY_ALLOWED_CATEGORIES`, hint: "Confirm this commodity with the carrier, then configure its local category UUID. This is not a state or address rejection." };
+    throw error;
+  }
   assertShippingParcel(input.parcel, allowPastDate);
 }
 

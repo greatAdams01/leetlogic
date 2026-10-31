@@ -14,7 +14,9 @@ import { useApp } from "../state";
 import { Page, Heading, Label, Field, Button, Card, Notice, colors, s } from "../components/ui";
 import { Select } from "../components/Select";
 import { api } from "../lib/api";
-import { changeState, farmTypes, localGovernments, nigeriaStates } from "../lib/locations";
+import { changeState, farmTypes, localGovernments, nigeriaStates, postcodeLocation } from "../lib/locations";
+import { PostcodeEntry } from "../components/postcode-entry";
+import { postcodeStatus, type PostcodeLookup } from "../../../../packages/contracts/src/addresses";
 import {
   editableVerification,
   farmDetailsValid,
@@ -58,7 +60,11 @@ export function Seller() {
     lga: "",
     city: "",
     line1: "",
+    line2: "",
+    landmark: "",
+    postalCode: "",
   });
+  const [postcodeCheck, setPostcodeCheck] = useState<PostcodeLookup | null>(null);
   const draftKey = `seller-onboarding-${a.user!.id}`;
   const draftWrites = useRef(Promise.resolve());
   const savedFarm = useRef<FarmForm | null>(null);
@@ -111,6 +117,9 @@ export function Seller() {
           lga: address?.lga || "",
           city: address?.city || "",
           line1: address?.line1 || "",
+          line2: address?.line2 || "",
+          landmark: address?.landmark || "",
+          postalCode: address?.postalCode || "",
           coordinates: savedFarmPoint(address),
         };
         setForm(restoredForm);
@@ -156,7 +165,7 @@ export function Seller() {
               (key) => typeof draft.form[key] === "string",
             );
           if (validForm && ["details", "location"].includes(draft.step)) {
-            setForm(draft.form);
+            setForm({ ...draft.form, verificationToken: undefined });
             setStep(
               draft.step === "location" && !farmDetailsValid(draft.form) ? "details" : draft.step,
             );
@@ -185,7 +194,7 @@ export function Seller() {
       .catch(() => {})
       .then(async () => {
         if (editableVerification(status))
-          await SecureStore.setItemAsync(draftKey, JSON.stringify({ step, form }));
+          await SecureStore.setItemAsync(draftKey, JSON.stringify({ step, form: { ...form, verificationToken: undefined } }));
         else await SecureStore.deleteItemAsync(draftKey);
       });
     void draftWrites.current.catch(() => {});
@@ -234,11 +243,16 @@ export function Seller() {
     }
   };
   const update = (key: keyof FarmForm, value: string) => {
+    if (requestActive.current) return;
     setDeclaration(false);
-    setForm((f) => ({ ...f, [key]: value }));
+    const location = ["state", "lga", "city", "line1", "line2", "landmark", "postalCode"].includes(key);
+    if (location) setPostcodeCheck(null);
+    setForm((f) => ({ ...f, [key]: value, ...(location ? { verificationToken: null } : {}),
+      ...(["state", "lga", "city", "line1"].includes(key) ? { coordinates: undefined } : {}) }));
   };
   const document = verification?.documents.filter((d) => d.documentType === documentType).at(-1);
   const edit = (next: VerificationStep) => {
+    if (requestActive.current) return;
     setEditing(true);
     move(next);
   };
@@ -271,8 +285,10 @@ export function Seller() {
           }
           onPress={() =>
             void run(async () => {
-              await api("/me/seller-profile", { method: "POST", body: form });
-              savedFarm.current = { ...form };
+              await api("/me/seller-profile", { method: "POST", body: { ...form, postalCode: form.postalCode || null } });
+              // Verification now belongs to the saved address, not an expiring form proof.
+              const saved = { ...form, verificationToken: undefined };
+              setForm(saved); savedFarm.current = saved; setPostcodeCheck(null);
               await a.loadUser();
               await refresh();
               continueTo("identity");
@@ -456,18 +472,21 @@ export function Seller() {
                   label="Farm / business name *"
                   value={form.farmName}
                   maxLength={160}
+                  editable={!busy}
                   onChangeText={(v) => update("farmName", v)}
                 />
                 <Select
                   label="Farm type *"
                   value={form.farmType}
                   options={farmTypes}
+                  disabled={busy}
                   onChange={(v) => update("farmType", v)}
                 />
                 <Field
                   label="Description (optional)"
                   value={form.description}
                   maxLength={1000}
+                  editable={!busy}
                   multiline
                   onChangeText={(v) => update("description", v)}
                 />
@@ -482,37 +501,51 @@ export function Seller() {
                 We’ll use this address for produce pickup unless you choose another location for an
                 order.
               </Label>
+              <PostcodeEntry value={form.postalCode || ""} revision={JSON.stringify([form.state, form.lga, form.city, form.line1])}
+                coordinates={form.coordinates} disabled={busy}
+                onChange={(value) => update("postalCode", value)} onManual={() => { setPostcodeCheck(null); setForm((current) => ({ ...current, verificationToken: null })); }}
+                onVerified={(lookup) => {
+                  setDeclaration(false); setPostcodeCheck(lookup);
+                  setForm((current) => ({ ...postcodeLocation(current, lookup.fields), postalCode: lookup.postcode, verificationToken: lookup.verificationToken,
+                    coordinates: Object.keys(lookup.fields).some((key) => lookup.fields[key as keyof typeof lookup.fields] !== current[key as keyof FarmForm]) ? undefined : current.coordinates }));
+                }} />
+              {postcodeCheck && <Notice text={a.ui(postcodeStatus({ postalCode: postcodeCheck.postcode, postcodeVerifiedAt: "checked", postcodeVerificationLevel: postcodeCheck.level, postcodeVerificationMode: postcodeCheck.mode }))} />}
               <FarmPin
                 value={form.coordinates}
                 disabled={busy}
-                onConfirm={(coordinates) => setForm((current) => ({ ...current, coordinates }))}
+                onConfirm={(coordinates) => { setPostcodeCheck(null); setForm((current) => ({ ...current, coordinates, verificationToken: null })); }}
               />
               <View style={{ gap: 24 }}>
                 <Select
                   label="State *"
                   value={form.state}
                   options={nigeriaStates}
-                  onChange={(state) => setForm((f) => changeState(f, state))}
+                  disabled={busy}
+                  onChange={(state) => { if (requestActive.current) return; setPostcodeCheck(null); setForm((f) => ({ ...changeState(f, state), coordinates: undefined, verificationToken: null })); }}
                 />
                 <Select
                   label="Local government area *"
                   value={form.lga}
                   options={localGovernments(form.state)}
-                  disabled={!form.state}
+                  disabled={busy || !form.state}
                   onChange={(v) => update("lga", v)}
                 />
                 <Field
                   label="City / town *"
                   value={form.city}
                   maxLength={100}
+                  editable={!busy}
                   onChangeText={(v) => update("city", v)}
                 />
                 <Field
                   label="Full farm address *"
                   value={form.line1}
                   maxLength={180}
+                  editable={!busy}
                   onChangeText={(v) => update("line1", v)}
                 />
+                <Field label="Additional directions (optional)" value={form.line2 || ""} maxLength={180} editable={!busy} onChangeText={(v) => update("line2", v)} />
+                <Field label="Landmark (optional)" value={form.landmark || ""} maxLength={180} editable={!busy} onChangeText={(v) => update("landmark", v)} />
               </View>
             </>
           )}

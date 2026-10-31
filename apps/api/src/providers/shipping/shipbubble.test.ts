@@ -31,7 +31,7 @@ describe("Shipbubble protocol", () => {
     fetcher.mockResolvedValue(Response.json({ status: "success", data: { address_code: 1 } }));
     await provider.validateAddress({ ...contact, latitude: 6.52, longitude: 3.37 });
     expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toEqual({
-      ...contact,
+      name: contact.name, email: contact.email, phone: contact.phone,
       address: `${contact.address}, Nigeria`,
       latitude: 6.52,
       longitude: 3.37,
@@ -149,7 +149,7 @@ describe("Shipbubble protocol", () => {
           name: "Produce",
           valueMinor: 50000n,
         }),
-      ).rejects.toMatchObject({ code: "DELIVERY_UNSUPPORTED" });
+      ).rejects.toMatchObject({ code: parcel.handling === "STANDARD" ? "SHIPMENT_TOO_LARGE" : "SHIPMENT_HANDLING_UNSUPPORTED" });
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("quotes two 50.5 kg rice bags separately without inventing a combined box", async () => {

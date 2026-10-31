@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Router } from "express";
 import {
   coordinatesSchema,
+  addressInputSchema,
   sellerProfileSchema,
   updateLocaleSchema,
   updateMeSchema,
@@ -11,8 +12,11 @@ import {
 import { prisma } from "@leetlogic/database";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
+import { confirmedPostcode, issuePostcodeVerification, limitPostcodeRequests, nipost, uncheckedPostcode } from "../services/postcode-verification.js";
+import { guardAddressChange, lockAddressOwners, saveCustomerAddress } from "../services/addresses.js";
 
 export const meRouter = Router();
+meRouter.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
 meRouter.use(requireAuth("customer"));
 meRouter.get("/", async (req, res) => {
   const user = await prisma.user.findUnique({
@@ -46,6 +50,7 @@ meRouter.patch("/locale", async (req, res) => {
 meRouter.post("/seller-profile", requireRole("SELLER"), async (req, res) => {
   const body = sellerProfileSchema.parse(req.body);
   const result = await prisma.$transaction(async (tx) => {
+    await lockAddressOwners(tx, [req.auth!.sub]);
     const existing = await tx.farmerProfile.findUnique({
       where: { userId: req.auth!.sub },
       include: { primaryAddress: true },
@@ -74,13 +79,19 @@ meRouter.post("/seller-profile", requireRole("SELLER"), async (req, res) => {
       previousAddress.lga === body.lga &&
       previousAddress.city === body.city &&
       previousAddress.line1 === body.line1 &&
+      (body.line2 === undefined || previousAddress.line2 === body.line2) &&
+      (body.landmark === undefined || previousAddress.landmark === body.landmark) &&
+      (body.postalCode === undefined || previousAddress.postalCode === body.postalCode) &&
       (!body.coordinates ||
         (previousAddress.latitude !== null &&
           previousAddress.longitude !== null &&
           Number(previousAddress.latitude) === body.coordinates.latitude &&
           Number(previousAddress.longitude) === body.coordinates.longitude));
+    const verified = confirmedPostcode(req.auth!.sub, { ...body, line1: body.line1 || "" });
     const address = sameAddress
-      ? previousAddress
+      ? body.verificationToken !== undefined
+        ? await tx.address.update({ where: { id: previousAddress.id }, data: verified })
+        : previousAddress
       : await tx.address.create({
           data: {
             userId: req.auth!.sub,
@@ -89,6 +100,10 @@ meRouter.post("/seller-profile", requireRole("SELLER"), async (req, res) => {
             lga: body.lga,
             city: body.city,
             line1: body.line1 ?? "Farm location pending full address",
+            line2: body.line2,
+            landmark: body.landmark,
+            postalCode: body.postalCode,
+            ...verified,
             isDefaultFarm: true,
             ...(body.coordinates || {}),
           },
@@ -135,54 +150,51 @@ meRouter.patch("/farm-location", requireRole("SELLER"), async (req, res) => {
       "Save your farm address before adding its map location.",
     );
   await prisma.$transaction(async (tx) => {
+    await lockAddressOwners(tx, [req.auth!.sub]);
+    const current = await tx.farmerProfile.findUniqueOrThrow({ where: { userId: req.auth!.sub } });
+    if (!current.primaryAddressId) throw new AppError(422, "FARM_ADDRESS_REQUIRED", "Save your farm address before adding its map location.");
+    await tx.$queryRaw`SELECT id FROM addresses WHERE id = ${current.primaryAddressId}::uuid FOR UPDATE`;
+    const address = await tx.address.findFirst({ where: { id: current.primaryAddressId, userId: req.auth!.sub, countryCode: "NG", deletedAt: null } });
+    if (!address) throw new AppError(404, "ADDRESS_NOT_FOUND", "Your farm address could not be found.");
+    const changed = address.latitude == null || address.longitude == null || Number(address.latitude) !== coordinates.latitude || Number(address.longitude) !== coordinates.longitude;
+    if (changed) await guardAddressChange(tx, address.id);
     const updated = await tx.address.updateMany({
-      where: { id: farmer.primaryAddressId!, userId: req.auth!.sub, deletedAt: null },
-      data: coordinates,
+      where: { id: current.primaryAddressId, userId: req.auth!.sub, deletedAt: null },
+      data: { ...coordinates, ...(changed ? uncheckedPostcode : {}) },
     });
     if (!updated.count)
       throw new AppError(404, "ADDRESS_NOT_FOUND", "Your farm address could not be found.");
     await audit(
       req,
-      { action: "farm.location.pinned", entityType: "address", entityId: farmer.primaryAddressId! },
+      { action: "farm.location.pinned", entityType: "address", entityId: current.primaryAddressId },
       tx,
     );
   });
   res.json({ saved: true });
 });
 
-const addressSchema = z.object({
-  coordinates: coordinatesSchema.optional(),
-  isDefaultDelivery: z.boolean().optional().default(false),
-  label: z.string().trim().min(1).max(60),
-  state: z.string().trim().min(2).max(80),
-  lga: z.string().trim().min(2).max(80),
-  city: z.string().trim().min(2).max(100),
-  line1: z.string().trim().min(5).max(180),
-});
 meRouter.post("/addresses", async (req, res) => {
-  const { coordinates, isDefaultDelivery, ...body } = addressSchema.parse(req.body);
-  const address = await prisma.$transaction(async (tx) => {
-    if (isDefaultDelivery)
-      await tx.address.updateMany({
-        where: { userId: req.auth!.sub, deletedAt: null, isDefaultDelivery: true },
-        data: { isDefaultDelivery: false },
-      });
-    const created = await tx.address.create({
-      data: {
-        ...body,
-        ...coordinates,
-        isDefaultDelivery,
-        countryCode: "NG",
-        userId: req.auth!.sub,
-      },
-    });
-    if (isDefaultDelivery)
-      await audit(
-        req,
-        { action: "delivery.location.defaulted", entityType: "address", entityId: created.id },
-        tx,
-      );
-    return created;
-  });
+  const body = addressInputSchema.parse(req.body);
+   const address = await saveCustomerAddress(req.auth!.sub, body, undefined, req);
   res.status(201).json({ address });
+});
+meRouter.patch("/addresses/:id", async (req, res) => {
+  const id = z.string().uuid().parse(req.params.id);
+   const address = await saveCustomerAddress(req.auth!.sub, addressInputSchema.parse(req.body), id, req);
+  res.json({ address });
+});
+meRouter.post("/postcodes/lookup", async (req, res) => {
+  const { code } = z.object({ code: z.string().min(1).max(40) }).strict().parse(req.body);
+  await limitPostcodeRequests(req.auth!.sub);
+  res.json(issuePostcodeVerification(req.auth!.sub, await nipost.lookup(code)));
+});
+meRouter.post("/postcodes/search", async (req, res) => {
+  const { q } = z.object({ q: z.string().trim().min(1).max(40) }).strict().parse(req.body);
+  await limitPostcodeRequests(req.auth!.sub);
+  res.json(await nipost.search(q));
+});
+meRouter.post("/postcodes/reverse", async (req, res) => {
+  const point = coordinatesSchema.parse(req.body);
+  await limitPostcodeRequests(req.auth!.sub);
+  res.json(await nipost.reverse(point));
 });

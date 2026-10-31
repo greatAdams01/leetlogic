@@ -24,16 +24,18 @@ export const updateMeSchema = z.object({
 export const updateLocaleSchema = z.object({ locale: localeSchema });
 export { coordinatesSchema } from "./coordinates.js";
 import { coordinatesSchema } from "./coordinates.js";
+import { addressLocationSchema } from "./addresses.js";
+export * from "./addresses.js";
 export const sellerProfileSchema = z.object({
   coordinates: coordinatesSchema.optional(),
   line1: z.string().trim().min(5).max(180).optional(),
   farmName: z.string().trim().min(2).max(160),
   farmType: z.string().trim().min(2).max(80),
   description: z.string().trim().max(1000).optional(),
-  state: z.string().trim().min(2).max(80),
-  lga: z.string().trim().min(2).max(80),
-  city: z.string().trim().min(2).max(100),
-});
+}).merge(addressLocationSchema.extend({
+  line1: z.string().trim().min(5).max(180).optional(),
+  coordinates: coordinatesSchema.optional(),
+}));
 export const verificationDocumentSchema = z.object({
   documentType: z.enum(["NIN_SLIP", "VOTER_CARD", "DRIVERS_LICENSE", "PASSPORT"]),
   objectKey: z.string().min(8).max(500),

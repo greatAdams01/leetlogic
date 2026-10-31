@@ -226,11 +226,17 @@ describe("complete mobile interface localization", () => {
 
 it("localizes authentication guidance and never displays raw server diagnostics", () => {
   for (const locale of localeOrder) {
-    for (const code of ["ACCOUNT_NOT_FOUND", "PHONE_ALREADY_REGISTERED", "OTP_INVALID", "OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED", "NETWORK_ERROR", "INTERNAL_ERROR", "AUTH_RATE_LIMITED"]) {
+    for (const code of ["ACCOUNT_NOT_FOUND", "PHONE_ALREADY_REGISTERED", "OTP_INVALID", "OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED", "NETWORK_ERROR", "INTERNAL_ERROR", "AUTH_RATE_LIMITED", "PROFILE_UNAVAILABLE"]) {
       const message = localizedError(locale, { code, message: "SECRET stack trace", retryAfterSeconds: 42 });
       expect(message).not.toContain("SECRET");
       expect(message).not.toBe(ui(locale, "Request failed. Please try again."));
     }
     expect(localizedError(locale, { code: "AUTH_RATE_LIMITED", retryAfterSeconds: 42 })).toContain("42");
   }
+});
+it("explains profile failures without implying the verified OTP was incorrect", () => {
+  const message = localizedError("en", { code: "PROFILE_UNAVAILABLE", message: "Prisma private details" });
+  expect(message).toContain("load your account");
+  expect(message).toContain("don’t need another verification code");
+  expect(message).not.toMatch(/incorrect|expired|Prisma/);
 });

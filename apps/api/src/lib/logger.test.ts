@@ -66,4 +66,10 @@ describe("development log formatting", () => {
     expect(output).toContain("Development OTP for testing");
     expect(output).toContain("  code: 123456\n");
   });
+  it("shows the allowlisted Prisma code and missing object in development diagnostics", () => {
+    const output = formatLogLine({ time: 0, level: 50, err: {
+      code: "DATABASE_SCHEMA_MISMATCH", database: { prismaCode: "P2022", model: "User", column: "addresses.postcode_verified_at" },
+    } });
+    expect(output).toContain("Database: P2022 · model User · column addresses.postcode_verified_at");
+  });
 });

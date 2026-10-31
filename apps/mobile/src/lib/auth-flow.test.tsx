@@ -1,6 +1,7 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Customer } from "./domain";
 const h = vi.hoisted(() => ({
   store: new Map<string, string>(),
   signed: false,
@@ -10,6 +11,8 @@ const h = vi.hoisted(() => ({
   hydrated: false,
   account: null as any,
   failRequest: false,
+  profileError: null as unknown,
+  profileRequest: null as (() => Promise<unknown>) | null,
   requests: [] as { path: string; options: any }[],
 }));
 vi.mock("react-native", () => ({
@@ -32,7 +35,11 @@ vi.mock("./api", () => ({
   api: async (path: string, options: any) => {
     h.requests.push({ path, options });
     if (path === "/auth/otp/request" && h.failRequest) throw new Error("SMS unavailable");
-    if (path === "/me") return { user: h.account };
+    if (path === "/me") {
+      if (h.profileRequest) return h.profileRequest();
+      if (h.profileError) throw h.profileError;
+      return { user: h.account };
+    }
     return path === "/auth/logout" ? new Promise(() => {}) : { messages: {} };
   },
   deviceId: async () => "device",
@@ -58,6 +65,8 @@ beforeEach(() => {
   h.read.mockReset();
   h.read.mockImplementation(async () => h.record);
   h.failRequest = false;
+  h.profileError = null;
+  h.profileRequest = null;
   h.requests = [];
   h.signed = false;
 });
@@ -319,4 +328,68 @@ it("preserves the entered phone and language when switching directly from login 
   await act(async () => current.selectRole("SELLER"));
   expect(current.route).toEqual({ name: "phone", id: "+2348012345678" });
   expect(current.authIntent).toBe("REGISTER"); expect(current.locale).toBe("ha");
+});
+
+it("keeps startup profile outages private and preserves the secure session for retry", async () => {
+  h.hydrated = true;
+  h.signed = true;
+  h.profileError = Object.assign(new Error("private database details"), { status: 503, code: "DATABASE_SCHEMA_MISMATCH" });
+  await act(async () => { tree = create(<AppProvider><Probe /></AppProvider>); });
+  expect(current.ready).toBe(true);
+  expect(current.user).toBeNull();
+  expect(current.security).toBeNull();
+  expect(current.route).toEqual({ name: "otp", query: "resume-sign-in" });
+  expect(h.signed).toBe(true);
+  expect(h.requests.some((entry) => entry.path.includes("/auth/"))).toBe(false);
+  h.profileError = null;
+  h.account = farmer;
+  h.record = { biometric: true };
+  await act(async () => { await current.finishSignIn(await current.loadUser(false)); });
+  expect(current.user).toEqual(farmer);
+  expect(current.role).toBe("SELLER");
+  expect(current.security).toBe("unlock");
+  expect(current.route.name).toBe("home");
+});
+
+it("still clears genuinely rejected sessions during startup", async () => {
+  h.hydrated = true;
+  h.signed = true;
+  h.profileError = { status: 401, code: "SESSION_EXPIRED" };
+  await act(async () => { tree = create(<AppProvider><Probe /></AppProvider>); });
+  expect(current.user).toBeNull();
+  expect(h.signed).toBe(false);
+  expect(current.route.name).not.toBe("otp");
+});
+it("does not publish a late startup profile after logout", async () => {
+  h.hydrated = true;
+  h.signed = true;
+  let resolve!: (value: object) => void;
+  h.profileRequest = () => new Promise((done) => { resolve = done; });
+  await act(async () => { tree = create(<AppProvider><Probe /></AppProvider>); });
+  await act(async () => { await current.signOut(); });
+  await act(async () => resolve({ user: farmer }));
+  expect(current.ready).toBe(true);
+  expect(current.user).toBeNull();
+  expect(current.security).toBeNull();
+  expect(current.route.name).toBe("language");
+  expect(h.signed).toBe(false);
+});
+it("does not replace a newer signed-in account with an old startup outage", async () => {
+  h.hydrated = true;
+  h.signed = true;
+  let reject!: (error: object) => void;
+  h.profileRequest = () => new Promise((_resolve, done) => { reject = done; });
+  await act(async () => { tree = create(<AppProvider><Probe /></AppProvider>); });
+  const buyer: Customer = {
+    id: "new-buyer", phoneE164: "+2348098765432", preferredLocale: "en",
+    capabilities: [{ capability: "BUYER" }], profile: null, farmerProfile: null, addresses: [],
+  };
+  h.generation++;
+  await act(async () => { await current.finishSignIn(buyer); });
+  await act(async () => reject({ status: 503, code: "DATABASE_SCHEMA_MISMATCH" }));
+  expect(current.ready).toBe(true);
+  expect(current.user).toEqual(buyer);
+  expect(current.role).toBe("BUYER");
+  expect(current.route.name).toBe("home");
+  expect(h.signed).toBe(true);
 });

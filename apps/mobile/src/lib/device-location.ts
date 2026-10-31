@@ -1,6 +1,8 @@
 import * as Location from "expo-location";
 
 import { savedFarmPoint, type FarmPoint } from "./farm-location";
+import { normalizeNigerianState } from "../../../../packages/contracts/src/addresses";
+import { localGovernments } from "./locations";
 export { savedFarmPoint, type FarmPoint } from "./farm-location";
 export async function captureFarmPosition(context: "farm" | "buyer" = "farm") {
   const fail = (farm: string, buyer: string) => new Error(context === "buyer" ? buyer : farm);
@@ -53,12 +55,16 @@ export async function captureFarmPosition(context: "farm" | "buyer" = "farm") {
 
 export async function describePosition(point: FarmPoint) {
   const [place] = await Location.reverseGeocodeAsync(point);
+  const state = place?.region ? normalizeNigerianState(place.region) : undefined;
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const candidate = place?.district || place?.subregion;
+  const lga = state && candidate ? localGovernments(state).find((name) => normalize(name) === normalize(candidate)) : undefined;
   return place
     ? {
-        line1: [place.name, place.street].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(", ") || "Pinned delivery location",
-        city: place.city || place.subregion || place.district || "Pinned location",
-        lga: place.district || place.subregion || place.city || "Pinned location",
-        state: place.region || "Nigeria",
+        ...([place.name, place.street].filter(Boolean).length ? { line1: [place.name, place.street].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(", ") } : {}),
+        ...(place.city || place.subregion ? { city: place.city || place.subregion! } : {}),
+        ...(lga ? { lga } : {}),
+        ...(state ? { state } : {}),
       }
     : null;
 }

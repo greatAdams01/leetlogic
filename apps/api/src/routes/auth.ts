@@ -30,6 +30,7 @@ async function checkAccount(phone: string, intent: string, role?: string) {
   return user;
 }
 export const authRouter = Router();
+authRouter.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
 authRouter.post("/otp/request", async (req, res) => {
   const body = requestOtpSchema.parse(req.body);
   const phone = normalizeNigerianPhone(body.phone);

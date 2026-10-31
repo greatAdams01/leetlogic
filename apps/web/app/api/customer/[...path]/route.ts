@@ -22,10 +22,18 @@ function refreshSession(base: string, refreshToken: string) {
     cache: "no-store",
     signal: AbortSignal.timeout(10000),
   })
-    .then(async (response) => (response.ok ? response.json() : null))
-    .catch(() => null);
+    .then(async (response) => {
+      if (response.status === 401) return null;
+      // A temporary refresh outage is not evidence that the customer's session is invalid.
+      if (!response.ok) throw new Error("Session refresh unavailable");
+      const tokens = await response.json();
+      if (typeof tokens.accessToken !== "string" || typeof tokens.refreshToken !== "string")
+        throw new Error("Invalid refresh response");
+      return tokens;
+    })
+    .catch((error) => { refreshes.delete(key); throw error; });
   refreshes.set(key, pending);
-  const timer = setTimeout(() => refreshes.delete(key), 15000);
+  const timer = setTimeout(() => { if (refreshes.get(key) === pending) refreshes.delete(key); }, 15000);
   timer.unref();
   return pending;
 }
@@ -51,6 +59,7 @@ export async function handle(req: NextRequest, context: { params: Promise<{ path
   const device = req.cookies.get("ll_customer_device")?.value || randomUUID();
   let access = req.cookies.get("ll_customer_access")?.value;
   let refresh = req.cookies.get("ll_customer_refresh")?.value;
+  let rotated = false;
   let body: string | ArrayBuffer | undefined;
   const contentType = req.headers.get("content-type") || "application/json";
   try {
@@ -73,11 +82,12 @@ export async function handle(req: NextRequest, context: { params: Promise<{ path
         method: req.method,
         headers: {
           "Content-Type": contentType,
-          ...(access ? { Authorization: `Bearer ${access}` } : {}),
+           ...(access ? { Authorization: `Bearer ${access}` } : {}),
+           ...(req.headers.get("idempotency-key") ? { "Idempotency-Key": req.headers.get("idempotency-key")! } : {}),
         },
         ...(body ? { body } : {}),
         cache: "no-store",
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(/\/delivery\/(quotes|refresh-quote)$/.test(route) ? 120000 : 30000),
       });
     let upstream = await call();
     if (upstream.status === 401 && refresh && !route.startsWith("auth/")) {
@@ -85,6 +95,7 @@ export async function handle(req: NextRequest, context: { params: Promise<{ path
       if (tokens) {
         access = tokens.accessToken;
         refresh = tokens.refreshToken;
+        rotated = true;
         upstream = await call();
       }
     }
@@ -118,10 +129,18 @@ export async function handle(req: NextRequest, context: { params: Promise<{ path
       for (const name of ["ll_customer_access", "ll_customer_refresh"]) result.cookies.delete(name);
     return result;
   } catch {
-    return NextResponse.json(
-      { error: { message: "Service unavailable. Please retry." } },
-      { status: 503 },
+    const result = NextResponse.json(
+      { error: { code: "DEPENDENCY_UNAVAILABLE", message: "Service unavailable. Please retry." } },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
+    if (route === "auth/logout")
+      for (const name of ["ll_customer_access", "ll_customer_refresh"]) result.cookies.delete(name);
+    else if (rotated) {
+      // Rotation consumed the old refresh token even if the subsequent read failed to connect/parse.
+      result.cookies.set("ll_customer_access", access!, cookieOptions);
+      result.cookies.set("ll_customer_refresh", refresh!, cookieOptions);
+    }
+    return result;
   }
 }
 export const GET = handle;

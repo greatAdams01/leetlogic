@@ -51,12 +51,46 @@ describe("request diagnostics", () => {
       new Prisma.PrismaClientKnownRequestError("private query", {
         code: "P2021",
         clientVersion: "test",
+        meta: { modelName: "TranslationEntry", table: "public.translation_entries" },
       }),
     );
     const result = await request(app).get("/v1/content/translations?locale=ig");
     expect(result.status).toBe(503);
     expect(result.body.error.code).toBe("DATABASE_SCHEMA_MISMATCH");
     expect(records[0]!.err.hint).toContain("migrations");
+    expect(records[0]!.err.database).toEqual({ prismaCode: "P2021", model: "TranslationEntry", table: "public.translation_entries" });
+    expect(result.body.error.message).toBe("Service is temporarily unavailable. Please try again.");
+    expect(JSON.stringify(result.body)).not.toMatch(/Prisma|public\.translation_entries|database schema/i);
+  });
+  it("identifies a missing related column in server-only metadata, not in the public response", async () => {
+    vi.spyOn(prisma.translationEntry, "findMany").mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("private SQL with a phone and OTP", {
+        code: "P2022", clientVersion: "test",
+        meta: { modelName: "User", column: "addresses.postcode_verified_at", query: "private payload" },
+      }),
+    );
+    const result = await request(app).get("/v1/content/translations");
+    expect(result.status).toBe(503);
+    expect(records[0]!.err.database).toEqual({ prismaCode: "P2022", model: "User", column: "addresses.postcode_verified_at" });
+    expect(JSON.stringify(result.body)).not.toMatch(/addresses|postcode|Prisma|P2022|private/);
+    expect(JSON.stringify(records)).not.toMatch(/private SQL|private payload/);
+  });
+  it("rejects malformed database metadata rather than logging submitted values", async () => {
+    vi.spyOn(prisma.translationEntry, "findMany").mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("private", {
+        code: "P2022", clientVersion: "test",
+        meta: { modelName: { secret: "private-model" }, column: "addresses.private-value\npassword=secret", table: "postgres://private" },
+      }),
+    );
+    await request(app).get("/v1/content/translations");
+    expect(records[0]!.err.database).toEqual({ prismaCode: "P2022" });
+    expect(JSON.stringify(records)).not.toMatch(/private-model|private-value|password=secret|postgres:\/\//);
+  });
+  it("never includes submitted authentication codes or phone numbers in request logs", async () => {
+    const result = await request(app).post("/v1/auth/otp/verify")
+      .send({ phone: "+2348012345678", deviceId: "device", code: "678901", intent: "invalid" });
+    expect(result.status).toBe(422);
+    expect(JSON.stringify(records)).not.toMatch(/678901|2348012345678/);
   });
   it("reports Redis outages without leaking connection credentials", async () => {
     const error = new Error("redis://user:secret@host");

@@ -1,15 +1,21 @@
 import { z } from "zod";
 import { AppError } from "../../lib/errors.js";
 import { getConfig } from "../../config.js";
+import { nigeriaStateSchema, postalCodeSchema } from "@leetlogic/contracts";
 export const contactSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().email(),
   phone: z.string().regex(/^\+?\d{10,15}$/),
   address: z.string().trim().min(15).max(500),
-  state: z.string().trim().min(2).max(80),
+  state: nigeriaStateSchema,
   country: z.literal("NG").default("NG"),
+  addressId: z.string().uuid().optional(),
+  postalCode: postalCodeSchema.optional(),
+  instructions: z.string().trim().max(700).optional(),
   latitude: z.number().finite().min(-90).max(90).optional(),
   longitude: z.number().finite().min(-180).max(180).optional(),
+}).refine((contact) => (contact.latitude === undefined) === (contact.longitude === undefined), {
+  message: "Confirm both map coordinates, or omit the map pin", path: ["latitude"],
 });
 export const parcelSchema = z.object({
   weightKg: z.number().finite().positive().max(1_000_000),
@@ -32,12 +38,16 @@ export function assertShippingParcel(parcel: Parcel, allowPastDate = false) {
     (!allowPastDate && (parcel.pickupDate < today || pickupTime > Date.parse(`${today}T00:00:00Z`) + 7 * 86400000)))
     throw new AppError(422, "INVALID_PICKUP_DATE", "Choose a pickup date within the next seven days.");
   const count = parcel.packageCount ?? 1;
-  if (!Number.isInteger(count) || count < 1 || count > 20)
-    throw new AppError(422, "DELIVERY_UNSUPPORTED", "Choose pickup or arrange transport for this number of parcels.");
-  if (parcel.handling !== "STANDARD" ||
-    ![parcel.weightKg, parcel.length, parcel.width, parcel.height].every((value) => Number.isFinite(value) && value > 0) ||
-    Math.max(parcel.length, parcel.width, parcel.height) > 200 || parcel.weightKg / count > c.DELIVERY_MAX_WEIGHT_KG)
-    throw new AppError(422, "DELIVERY_UNSUPPORTED", "No automated delivery is available for these shipping requirements. Choose pickup or contact support.");
+  if (!Number.isInteger(count) || count < 1 ||
+    ![parcel.weightKg, parcel.length, parcel.width, parcel.height].every((value) => Number.isFinite(value) && value > 0))
+    throw new AppError(422, "SHIPMENT_INFORMATION_REQUIRED", "The shipment needs a positive whole parcel count, measured packed weight and all three dimensions.");
+  if (parcel.handling !== "STANDARD")
+    throw new AppError(422, "SHIPMENT_HANDLING_UNSUPPORTED", "No integrated delivery service can confirm these special handling requirements. Choose pickup or contact support for suitable transport.");
+  if (count > 20 || Math.max(parcel.length, parcel.width, parcel.height) > 200 || parcel.weightKg / count > c.DELIVERY_MAX_WEIGHT_KG) {
+    const error = new AppError(422, "SHIPMENT_TOO_LARGE", "This shipment exceeds the integrated service’s parcel or size limits. Choose pickup or contact support for larger-load transport.");
+    error.diagnostics = { provider: "shipbubble", operation: "shipment-eligibility", reason: `Parcels=${count}; per-parcel weight=${parcel.weightKg / count} kg; dimensions=${parcel.length}x${parcel.width}x${parcel.height} cm`, hint: "The operational ceiling is not vehicle capacity. Never reduce saved measurements or assume a motorcycle can carry this load." };
+    throw error;
+  }
 }
 export type ShippingRate = {
   courierId: string;
@@ -87,6 +97,13 @@ const trackingSchema = z.object({
     .object({ currency: z.literal("NGN"), shipping_fee: z.number().nonnegative() })
     .optional(),
 });
+function providerResponse<S extends z.ZodTypeAny>(schema: S, value: unknown, operation: string): z.infer<S> {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+  const error = new AppError(502, "SHIPBUBBLE_RESPONSE_INVALID", "The delivery provider returned an invalid response. Retry the quotation or check the saved booking status.");
+  error.diagnostics = { provider: "shipbubble", operation, reason: "Response did not match the documented provider contract", hint: "Do not substitute rates, or replay a label purchase whose result is ambiguous." };
+  throw error;
+}
 export function mapShipment(value: unknown): TrackedShipment {
   const data = trackingSchema.parse(value);
   return {
@@ -108,25 +125,34 @@ export class Shipbubble implements ShippingProvider {
       throw new AppError(503, "DELIVERY_UNAVAILABLE", "Delivery integration is not configured");
     if (c.SHIPBUBBLE_MODE === "test" && !c.SHIPBUBBLE_TEST_KEY_CONFIRMED)
       throw new AppError(503, "TEST_KEY_REQUIRED", "Configure a Shipbubble test key for test mode");
-    const response = await this.request(`https://api.shipbubble.com/v1${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${c.SHIPBUBBLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-      signal: AbortSignal.timeout(20000),
-    });
+    let response: Response;
+    try {
+      response = await this.request(`https://api.shipbubble.com/v1${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${c.SHIPBUBBLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        redirect: "error", signal: AbortSignal.timeout(20000),
+      });
+    } catch {
+      const error = new AppError(503, "DELIVERY_PROVIDER_UNAVAILABLE", "The delivery provider is temporarily unavailable. Wait a moment and retry.", undefined, 10);
+      error.diagnostics = { provider: "shipbubble", operation: path, reason: "Provider request timed out or could not connect", hint: "Check provider health. Do not replay an ambiguous booking; quotation requests may be retried." };
+      throw error;
+    }
     const envelope = await response.json().catch(() => null);
     if (!response.ok || envelope?.status !== "success") {
       const invalidAddress =
         path === "/shipping/address/validate" && [400, 422].includes(response.status);
+      const temporary = response.status === 429 || response.status >= 500;
       const error = new AppError(
-        invalidAddress ? 422 : 502,
-        invalidAddress ? "DELIVERY_ADDRESS_INVALID" : "SHIPBUBBLE_REQUEST_FAILED",
+        invalidAddress ? 422 : temporary ? 503 : 502,
+        invalidAddress ? "DELIVERY_ADDRESS_INVALID" : temporary ? "DELIVERY_PROVIDER_UNAVAILABLE" : "SHIPBUBBLE_REQUEST_FAILED",
         invalidAddress
           ? "Check the full street address, city, state and map pin before requesting delivery."
-          : "Delivery provider could not complete the request",
+          : temporary ? "The delivery provider is temporarily unavailable. Wait a moment and retry." : "Delivery provider could not complete the request",
+        undefined, temporary ? Math.max(1, Math.min(60, Number(response.headers.get("retry-after")) || 10)) : undefined,
       );
       error.diagnostics = {
         provider: "shipbubble",
@@ -143,17 +169,17 @@ export class Shipbubble implements ShippingProvider {
   }
   async validateAddress(contact: Contact) {
     // Shipbubble accepts a full address string or confirmed coordinates.
-    const { latitude, longitude, ...address } = contact;
-    const parts = [address.address];
-    if (!address.address.toLowerCase().includes(address.state.toLowerCase()))
-      parts.push(address.state);
-    if (!/\bnigeria\b/i.test(address.address)) parts.push("Nigeria");
-    return z.object({ address_code: z.number().int() }).parse(
+    const { name, email, phone, address, state, latitude, longitude } = contactSchema.parse(contact);
+    const parts = [address];
+    if (!address.toLowerCase().includes(state.toLowerCase())) parts.push(state);
+    if (!/\bnigeria\b/i.test(address)) parts.push("Nigeria");
+    return providerResponse(z.object({ address_code: z.number().int() }),
       await this.call("/shipping/address/validate", "POST", {
-        ...address,
+        name, email, phone,
         address: parts.join(", "),
         ...(latitude !== undefined && longitude !== undefined ? { latitude, longitude } : {}),
       }),
+      "/shipping/address/validate",
     ).address_code;
   }
   private async quoteAddresses(pickup: Contact, destination: Contact): Promise<[number, number]> {
@@ -222,11 +248,21 @@ export class Shipbubble implements ShippingProvider {
           )),
         );
       }
-      return combineParcelRates(parts);
+      const combined = combineParcelRates(parts);
+      if (!combined.length && parts.some((rates) => rates.length))
+        throw new AppError(409, "NO_COMPATIBLE_DELIVERY_OPTIONS", "No single provider courier service quoted every parcel. Try another date or choose pickup.");
+      return combined;
     }
     const [sender, receiver] =
       validated ?? (await this.quoteAddresses(input.pickup, input.destination));
-    const data = z
+    const instructions = [
+      input.parcel.notes,
+      input.pickup.instructions ? `Pickup directions: ${input.pickup.instructions}` : "",
+      input.destination.instructions ? `Delivery directions: ${input.destination.instructions}` : "",
+      input.pickup.postalCode ? `Pickup postcode: ${input.pickup.postalCode}` : "",
+      input.destination.postalCode ? `Delivery postcode: ${input.destination.postalCode}` : "",
+    ].filter(Boolean).join(" · ");
+    const data = providerResponse(z
       .object({
         request_token: z.string().min(1),
         couriers: z.array(
@@ -246,14 +282,13 @@ export class Shipbubble implements ShippingProvider {
             tracking_level: z.number().min(0).max(10).nullish().catch(undefined),
           }),
         ),
-      })
-      .parse(
+      }),
         await this.call("/shipping/fetch_rates", "POST", {
           sender_address_code: sender,
           reciever_address_code: receiver,
           pickup_date: input.parcel.pickupDate,
           service_type: "pickup",
-          delivery_instructions: input.parcel.notes || undefined,
+           delivery_instructions: instructions || undefined,
           category_id: c.SHIPBUBBLE_CATEGORY_ID,
           package_items: [
             {
@@ -267,11 +302,12 @@ export class Shipbubble implements ShippingProvider {
           package_dimension: {
             length: input.parcel.length,
             width: input.parcel.width,
-            height: input.parcel.height,
-          },
-        }),
-      );
-    return data.couriers
+             height: input.parcel.height,
+           },
+         }),
+         "/shipping/fetch_rates",
+       );
+    const rates = data.couriers
       .filter(
         (x) =>
           x.service_type === "pickup" &&
@@ -292,29 +328,30 @@ export class Shipbubble implements ShippingProvider {
           trackingLevel: x.tracking_level ?? null,
         },
       }));
+    if (data.couriers.length && !rates.length)
+      throw new AppError(409, "NO_COMPATIBLE_DELIVERY_OPTIONS", "The returned courier services do not support this checkout’s pickup and exact-price requirements. Try another date or choose pickup.");
+    return rates;
   }
   async book(quote: Pick<ShippingRate, "requestToken" | "serviceCode" | "courierId">) {
     const c = getConfig();
     if (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS)
       throw new AppError(503, "LIVE_BOOKING_DISABLED", "Live delivery booking is disabled");
     return mapShipment(
-      await this.call("/shipping/labels", "POST", {
+      providerResponse(trackingSchema, await this.call("/shipping/labels", "POST", {
         request_token: quote.requestToken,
         service_code: quote.serviceCode,
         courier_id: quote.courierId,
-      }),
+      }), "/shipping/labels"),
     );
   }
   async wallet(): Promise<bigint> {
     const data = await this.call("/shipping/wallet/balance");
-    const value = z.object({ balance: z.number().nonnegative() }).parse(data).balance;
+    const value = providerResponse(z.object({ balance: z.number().nonnegative() }), data, "/shipping/wallet/balance").balance;
     return BigInt(Math.round(value * 100));
   }
   async track(id: string) {
-    const data = z
-      .array(z.unknown())
-      .parse(await this.call(`/shipping/labels/list/${encodeURIComponent(id)}`));
-    const shipment = data.map(mapShipment).find((x) => x.id === id);
+    const data = providerResponse(z.array(z.unknown()), await this.call(`/shipping/labels/list/${encodeURIComponent(id)}`), "/shipping/labels/list");
+    const shipment = data.map((value) => mapShipment(providerResponse(trackingSchema, value, "/shipping/labels/list"))).find((x) => x.id === id);
     if (!shipment) throw new AppError(404, "SHIPMENT_NOT_FOUND", "Provider shipment not found");
     return shipment;
   }

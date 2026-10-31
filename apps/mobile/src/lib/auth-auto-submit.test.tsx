@@ -4,6 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   api: vi.fn(),
   save: vi.fn(),
+  load: vi.fn(),
+  clear: vi.fn(),
+  login: vi.fn(),
+  signOut: vi.fn(),
+  changeLocale: vi.fn(),
+  signed: false,
+  query: "",
   generation: 0,
   check: vi.fn(),
   create: vi.fn(),
@@ -51,18 +58,20 @@ vi.mock("../state", () => ({
     user: { id: "farmer" },
     security: h.mode,
     authIntent: h.intent,
-    route: { id: h.phone },
+    route: { id: h.phone, query: h.query },
     locale: "en",
     ui: (s: string) => s,
     t: (s: string) => s,
-    error: (e: Error) => e.message,
+    error: (e: Error & { code?: string }) => e.message || e.code,
     unlock: h.unlock,
     recoverSecurity: h.recover,
     startRegistration: h.register,
+    startLogin: h.login,
+    signOut: h.signOut,
     go: vi.fn(),
     finishSignIn: h.finish,
-    loadUser: async () => ({ id: "farmer" }),
-    changeLocale: async () => {},
+    loadUser: h.load,
+    changeLocale: h.changeLocale,
   }),
 }));
 vi.mock("./api", () => ({
@@ -71,6 +80,8 @@ vi.mock("./api", () => ({
   API_URL: "http://localhost:3000",
   deviceId: async () => "device",
   saveSession: h.save,
+  clearSession: h.clear,
+  authHeaders: () => h.signed ? { Authorization: "Bearer saved-session" } : {},
 }));
 vi.mock("./farmer-security", () => ({
   readSecurity: async () => null,
@@ -88,7 +99,13 @@ beforeEach(() => {
   h.mode = "create";
   h.intent = "LOGIN";
   h.phone = "08012345678";
+  h.query = "";
+  h.signed = false;
   h.api.mockResolvedValue({});
+  h.load.mockReset().mockResolvedValue({ id: "farmer", preferredLocale: "en" });
+  h.save.mockImplementation(async () => { h.generation++; h.signed = true; });
+  h.clear.mockImplementation(async () => { h.generation++; h.signed = false; });
+  h.changeLocale.mockResolvedValue(undefined);
   h.check.mockResolvedValue(undefined);
   h.create.mockResolvedValue(undefined);
 });
@@ -245,4 +262,90 @@ it.each(["LOGIN", "REGISTER"])("keeps verification copy specific to %s after an 
   await act(async () => resend.props.onPress());
   check();
   expect(h.api).toHaveBeenLastCalledWith("/auth/otp/request", expect.objectContaining({ body: expect.objectContaining({ intent }) }));
+});
+
+it("retries only the profile after a verified OTP and never reports it as an incorrect code", async () => {
+  h.load.mockRejectedValueOnce(Object.assign(new Error("private Prisma details"), { status: 503, code: "DATABASE_SCHEMA_MISMATCH" }));
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  expect(h.save).toHaveBeenCalledOnce();
+  expect(h.clear).not.toHaveBeenCalled();
+  expect(h.finish).not.toHaveBeenCalled();
+  expect(h.load).toHaveBeenCalledWith(false);
+  expect(tree.root.findByType("Notice" as any).props.text).toBe("PROFILE_UNAVAILABLE");
+  expect(tree.root.findAllByType("TextInput" as any)).toHaveLength(0);
+  const retry = tree.root.findAllByType("Pressable" as any).find((node) => node.props.accessibilityLabel === "common.retry")!;
+  await act(async () => retry.props.onPress());
+  expect(h.api).toHaveBeenCalledOnce();
+  expect(h.load).toHaveBeenCalledTimes(2);
+  expect(h.finish).toHaveBeenCalledOnce();
+});
+
+it("coalesces repeated profile retry taps without repeating OTP verification", async () => {
+  h.load.mockRejectedValueOnce({ status: 503 });
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  let resolve!: (user: object) => void;
+  h.load.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  const retry = tree.root.findAllByType("Pressable" as any).find((node) => node.props.accessibilityLabel === "common.retry")!;
+  await act(async () => { retry.props.onPress(); retry.props.onPress(); });
+  expect(h.load).toHaveBeenCalledTimes(2);
+  expect(h.api).toHaveBeenCalledOnce();
+  expect(tree.root.findAllByType("Pressable" as any).some((node) => node.props.accessibilityLabel === "Loading your account…")).toBe(true);
+  await act(async () => resolve({ id: "farmer" }));
+  expect(h.finish).toHaveBeenCalledOnce();
+});
+it("keeps role-conflict accounts private and shows support guidance without another OTP", async () => {
+  h.load.mockRejectedValueOnce({ status: 409, code: "ACCOUNT_ROLE_CONFLICT" });
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  expect(tree.root.findByType("Notice" as any).props.text).toBe("ACCOUNT_ROLE_CONFLICT");
+  expect(h.finish).not.toHaveBeenCalled();
+  expect(h.clear).not.toHaveBeenCalled();
+  expect(h.api).toHaveBeenCalledOnce();
+});
+
+it("does not publish a late profile after the secure session changes", async () => {
+  let resolve!: (user: object) => void;
+  h.load.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  h.generation++;
+  h.signed = false;
+  await act(async () => resolve({ id: "old-account" }));
+  expect(h.finish).not.toHaveBeenCalled();
+  expect(h.changeLocale).not.toHaveBeenCalled();
+});
+
+it("clears a rejected session and restarts login rather than retrying a consumed code", async () => {
+  h.load.mockRejectedValueOnce({ status: 401, code: "SESSION_EXPIRED" });
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  expect(h.clear).toHaveBeenCalledOnce();
+  expect(h.login).toHaveBeenCalledOnce();
+  expect(h.finish).not.toHaveBeenCalled();
+  expect(h.api).toHaveBeenCalledOnce();
+});
+
+it("resumes a securely saved sign-in after restart without requesting or verifying another OTP", async () => {
+  h.query = "resume-sign-in";
+  h.signed = true;
+  h.load.mockResolvedValue({ id: "farmer", preferredLocale: "ha" });
+  await act(async () => { tree = create(<Otp />); });
+  expect(tree.root.findAllByType("TextInput" as any)).toHaveLength(0);
+  const retry = tree.root.findAllByType("Pressable" as any).find((node) => node.props.accessibilityLabel === "common.retry")!;
+  await act(async () => retry.props.onPress());
+  expect(h.api).not.toHaveBeenCalled();
+  expect(h.save).not.toHaveBeenCalled();
+  expect(h.changeLocale).toHaveBeenCalledWith("ha");
+  expect(h.finish).toHaveBeenCalledOnce();
+});
+
+it("allows a pending sign-in to be explicitly cancelled through secure logout", async () => {
+  h.load.mockRejectedValueOnce({ status: 503 });
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  const cancel = tree.root.findAllByType("Button" as any).find((node) => node.props.title === "common.cancel")!;
+  await act(async () => cancel.props.onPress());
+  expect(h.signOut).toHaveBeenCalledOnce();
 });

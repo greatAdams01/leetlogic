@@ -75,7 +75,7 @@ Use Netlify's automatically detected Next.js runtime for either setup.
 2. Start PostgreSQL and Redis with `docker compose up -d`.
 3. Install dependencies with `pnpm install`.
 4. Generate the Prisma client with `pnpm db:generate`.
-5. Apply migrations with `pnpm db:migrate`.
+5. Apply reviewed migrations with `pnpm db:deploy` (back up an existing database first).
 6. Seed languages, units, permissions and roles with `pnpm db:seed`.
 7. Start the API with `pnpm dev`.
 
@@ -98,6 +98,12 @@ removing them yourself; do not overwrite secrets blindly. In particular, changin
 a JWT, token-hashing, or TOTP encryption key can invalidate sessions or prevent
 reading encrypted data. These are persistent credentials, not values to regenerate
 when fixing an environment path.
+
+Use `pnpm db:status` to check applied/pending migrations, `pnpm db:deploy` to apply
+existing migrations, and `pnpm db:generate` after schema changes. `pnpm db:migrate`
+is for authoring development migrations, not repairing a populated database.
+See [account authentication](docs/account-role-authentication.md) for safe recovery
+when OTP verification succeeds but profile retrieval fails.
 
 Expo is separate: its optional `apps/mobile/.env` may contain **only public**
 `EXPO_PUBLIC_*` values such as the API URL (see `apps/mobile/.env.example`). Never
@@ -158,6 +164,8 @@ unexpected exit; services explicitly stopped still need the command above.
 ## Delivery and language pilot
 
 Delivery, customer language selection, cached Azure translation, and typed produce drafts extend the existing app. See [delivery and language operations](docs/delivery-language.md) for configuration, APIs, tests, and launch blockers. Voice remains disabled until a free Igbo speech service passes the required validation. Provider switches default off.
+
+Optional NIPOST NDAPS postcode checks and saved addresses support nationwide quote requests without promising carrier coverage. See [NIPOST keys, sandbox data, manual fallback and migration rollout](docs/nipost-addresses.md).
 
 ## Native mobile app
 

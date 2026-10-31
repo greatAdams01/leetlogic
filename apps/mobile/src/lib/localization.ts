@@ -45,6 +45,10 @@ export function localizedError(locale: Locale, value: unknown): string {
         seconds: Math.ceil(error.retryAfterSeconds!),
       },
     );
+  if (code === "POSTCODE_RATE_LIMITED" && Number.isFinite(error.retryAfterSeconds) && error.retryAfterSeconds! > 0)
+    return ui(locale, "Too many postcode checks. Try again in {seconds} seconds, or enter your address manually.", { seconds: Math.ceil(error.retryAfterSeconds!) });
+  if (code === "DELIVERY_PROVIDER_UNAVAILABLE" && Number.isFinite(error.retryAfterSeconds) && error.retryAfterSeconds! > 0)
+    return ui(locale, "The delivery provider is busy. Try again in {seconds} seconds or choose pickup.", { seconds: Math.ceil(error.retryAfterSeconds!) });
   const codes: Record<string, string> = {
     INVALID_PHOTO: "We couldn’t prepare this photo. Choose another image and try again.",
     PHOTO_LIMIT:
@@ -79,6 +83,7 @@ export function localizedError(locale: Locale, value: unknown): string {
     DEVICE_STORAGE_UNAVAILABLE:
       "Cannot access secure storage on this device. Restart the app and try again.",
     DATABASE_UNAVAILABLE: "We can’t access your account right now. Please try again later.",
+    PROFILE_UNAVAILABLE: "We couldn’t load your account right now. Please retry; you don’t need another verification code.",
     REDIS_UNAVAILABLE: "We can’t verify your code right now. Please try again later.",
     DEPENDENCY_UNAVAILABLE:
       "We couldn’t complete this action. Please try again or contact support if it continues.",
@@ -132,11 +137,35 @@ export function localizedError(locale: Locale, value: unknown): string {
     PAYMENT_REVIEW_REQUIRED: "Your payment is being reviewed. Please contact support for help.",
     PACKING_REQUIRED: "The farmer must complete shipping measurements before delivery is available. You can choose pickup instead.",
     DELIVERY_UNSUPPORTED: "No automated delivery is available for this shipment or route. Choose pickup or contact support for a suitable transport arrangement.",
+    DELIVERY_COMMODITY_UNSUPPORTED: "Automatic delivery is not enabled for this produce category. Choose pickup or contact support to check carrier coverage.",
+    SHIPMENT_HANDLING_UNSUPPORTED: "No integrated delivery service can confirm this shipment’s special handling. Choose pickup or contact support for suitable transport.",
+    SHIPMENT_TOO_LARGE: "This shipment exceeds the integrated service’s parcel or size limits. Choose pickup or contact support for larger-load transport.",
+    SHIPMENT_INFORMATION_REQUIRED: "The farmer must complete packed weight, dimensions and parcel quantities before delivery can be quoted.",
+    DELIVERY_PROVIDER_UNAVAILABLE: "The delivery provider is temporarily unavailable. Please retry or choose pickup.",
+    PICKUP_ADDRESS_REQUIRED: "The farmer must confirm a saved pickup address before delivery can be quoted.",
+    DESTINATION_ADDRESS_REQUIRED: "Choose a saved delivery address or enter the full address manually.",
+    DESTINATION_ADDRESS_MISMATCH: "Your saved address changed. Reload it and request a fresh delivery quote.",
+    ADDRESS_NOT_FOUND: "Your saved address could not be found. Reload your addresses and try again.",
+    ADDRESS_IN_USE: "This address is in use for a paid delivery. Save a new address instead, or wait until the order is completed.",
+    ADDRESS_PIN_CONFIRMATION_REQUIRED: "Confirm both map coordinates identify your address, or remove them and continue manually.",
+    POSTCODE_INVALID_FORMAT: "Enter a full digital postcode in the displayed format, or enter your address manually.",
+    POSTCODE_NOT_FOUND: "Postcode not found. Check the code or enter your address manually.",
+    POSTCODE_SERVICE_CONFIGURATION: "Postcode verification is unavailable. You can enter your address manually.",
+    POSTCODE_SERVICE_UNAVAILABLE: "Postcode verification is temporarily unavailable. Retry or enter your address manually.",
+    POSTCODE_PROVIDER_ERROR: "Postcode verification could not complete the request. Retry or enter your address manually.",
+    POSTCODE_PROVIDER_RESPONSE_INVALID: "Postcode verification returned an invalid response. Retry or enter your address manually.",
+    POSTCODE_ACCESS_REQUIRED: "This NIPOST key can check postcode validity only. Complete the address manually.",
+    POSTCODE_CREDITS_REQUIRED: "NIPOST address details are temporarily unavailable. Complete the address manually.",
+    POSTCODE_RATE_LIMITED: "Too many postcode checks. Wait a moment and retry, or enter your address manually.",
+    POSTCODE_VERIFICATION_EXPIRED: "Check the postcode again, or save the address without postcode verification.",
+    POSTCODE_ADDRESS_MISMATCH: "The address differs from the checked postcode. Review it or use manual address entry.",
     DELIVERY_SCOPE_UNSUPPORTED: "This farmer offers delivery within their state. Choose a delivery address in the same state.",
     QUOTES_UNAVAILABLE: "Delivery pricing is temporarily unavailable. Please try again later.",
     SHIPBUBBLE_REQUEST_FAILED: "Delivery pricing is temporarily unavailable. Please try again later.",
+    SHIPBUBBLE_RESPONSE_INVALID: "The delivery provider returned an invalid response. Retry the quotation or check the saved booking status.",
     BOOKING_DISABLED: "Delivery pricing is temporarily unavailable. Please try again later.",
     NO_DELIVERY_OPTIONS: "No delivery service is available for this shipment and date. Try another date or choose pickup.",
+    NO_COMPATIBLE_DELIVERY_OPTIONS: "No compatible courier service quoted the complete shipment. Try another date or choose pickup.",
     INVALID_PICKUP_DATE: "Choose a pickup date within the next seven days.",
     PACKED_WEIGHT_TOO_LOW: "Packed weight must include the produce weight and its packaging.",
     DELIVERY_UNAVAILABLE: "Delivery quotes are not available yet.",

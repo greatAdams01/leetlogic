@@ -2,10 +2,12 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, type RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { addressInstructions, addressText } from "../../../packages/contracts/src/addresses";
+import type { Address } from "../../mobile/src/lib/domain";
 
 const h = vi.hoisted(() => ({
   api: vi.fn(), init: vi.fn(), refresh: vi.fn(), select: vi.fn(), quotes: vi.fn(), collection: vi.fn(),
-  changed: vi.fn(), open: vi.fn(), payment: null as any, delivery: null as any,
+  changed: vi.fn(), open: vi.fn(), saveAddress: vi.fn(), payment: null as any, delivery: null as any, customer: null as any,
 }));
 vi.mock("./customer-api", () => ({ customerApi: h.api }));
 vi.mock("../components/language-provider", () => ({ useLanguage: () => ({ locale: "en", t: (key: string) => ({
@@ -29,6 +31,19 @@ const pending = (status = "OPEN", amountMinor = "11000", kind = "ORDER") => ({
   expiresAt: new Date(Date.now() + 60000).toISOString(),
 });
 const copy = (value: any) => JSON.parse(JSON.stringify(value));
+const address: Address = {
+  id: "11111111-1111-4111-8111-111111111111", label: "Home", state: "Lagos", lga: "Ikeja",
+  city: "Lagos", line1: "24 Community Road", line2: "Use the side gate", landmark: "Community hall",
+  postalCode: "LA-01-A03-FK-01", latitude: 6.52, longitude: 3.37, isDefaultDelivery: true,
+  postcodeVerifiedAt: "2026-10-31T09:00:00Z", postcodeVerificationLevel: 2, postcodeVerificationMode: "LIVE",
+};
+const field = (view: RenderResult, name: string) => view.container.querySelector(`[name="${name}"]`) as HTMLInputElement;
+const chooseAddress = async (value: string) => {
+  await act(async () => { fireEvent.change(screen.getByLabelText("Saved delivery address"), { target: { value } }); });
+};
+const submitQuotes = async (view: RenderResult) => {
+  await act(async () => { fireEvent.submit(field(view, "date").form!); });
+};
 const button = (name: string) => screen.queryByRole("button", { name }) as HTMLButtonElement | null;
 const click = async (name: string) => { await act(async () => { fireEvent.click(button(name)!); }); };
 const mountPayment = async () => {
@@ -61,6 +76,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("location", { assign: h.open });
   h.changed.mockResolvedValue(undefined);
+  h.customer = null;
+  h.saveAddress.mockResolvedValue({ address });
   h.payment = {
     enabled: true, orderStatus: "AWAITING_PAYMENT", heldMinor: "0", releasedMinor: "0", refundedMinor: "0",
     checkoutReady: true, checkoutActive: false, payableMinor: "11000", items: [],
@@ -104,12 +121,18 @@ beforeEach(() => {
     return { selected: true };
   });
   h.api.mockImplementation(async (path: string, body: any) => {
+    if (path === "me") return { user: copy(h.customer) };
+    if (path.startsWith("me/addresses")) return h.saveAddress(body);
     if (path.endsWith("/checkout")) return h.init(body);
     if (path.endsWith("/refresh")) return h.refresh();
     if (path.endsWith("/delivery/select")) return h.select(body);
     if (path.endsWith("/delivery/quotes")) return h.quotes(body);
     if (path.endsWith("/delivery/collection")) return h.collection(body);
-    if (path.endsWith("/delivery")) return copy(h.delivery);
+    if (path.endsWith("/delivery")) {
+      const result = copy(h.delivery);
+      result.order.id = path.split("/")[1];
+      return result;
+    }
     return copy(h.payment);
   });
 });
@@ -417,5 +440,128 @@ describe("web courier selection and delivery requirements", () => {
     expect(button("Choose delivery")?.disabled).toBe(true);
     expect(button("Make Payment")).toBeNull();
     expect(button("Check Payment")).not.toBeNull();
+  });
+});
+
+describe("web saved-address checkout", () => {
+  beforeEach(() => { h.customer = { id: "buyer", addresses: [address] }; });
+
+  it("uses a saved destination and confirmed pin without replacing the buyer's contact details", async () => {
+    const view = await mountDelivery();
+    await act(async () => {
+      fireEvent.change(field(view, "destination.name"), { target: { value: "Recipient" } });
+      fireEvent.change(field(view, "destination.email"), { target: { value: "recipient@example.test" } });
+      fireEvent.change(field(view, "destination.phone"), { target: { value: "+2348098765432" } });
+    });
+    await chooseAddress(address.id);
+    for (const name of ["address", "state", "postalCode", "instructions"])
+      expect(field(view, `destination.${name}`).readOnly).toBe(true);
+    expect(field(view, "destination.address").value).toBe(addressText(address));
+    expect(button("Make Payment")?.disabled).toBe(true);
+    expect(button("Choose delivery")?.disabled).toBe(true);
+    await submitQuotes(view);
+    expect(h.quotes).toHaveBeenCalledWith(expect.objectContaining({
+      destination: expect.objectContaining({
+        name: "Recipient", email: "recipient@example.test", phone: "+2348098765432",
+        addressId: address.id, address: addressText(address), state: address.state, postalCode: address.postalCode,
+        instructions: addressInstructions(address), latitude: 6.52, longitude: 3.37,
+      }),
+    }));
+    expect(h.quotes.mock.calls[0]![0].destination).not.toHaveProperty("verificationToken");
+    expect(h.quotes.mock.calls[0]![0].destination).not.toHaveProperty("postcodeVerifiedAt");
+    expect(button("Make Payment")).toBeNull();
+    await act(async () => { fireEvent.click(screen.getAllByRole("button", { name: "Choose delivery" })[1]!); });
+    expect(button("Make Payment")?.disabled).toBe(false);
+  });
+
+  it("keeps manual address entry available without sending the saved address ID or its pin", async () => {
+    const view = await mountDelivery();
+    await chooseAddress(address.id);
+    await chooseAddress("");
+    expect(field(view, "destination.address").readOnly).toBe(false);
+    expect(field(view, "destination.postalCode").readOnly).toBe(false);
+    await act(async () => {
+      fireEvent.change(field(view, "destination.address"), { target: { value: "Plot 8 Community Road, Ogbia" } });
+      fireEvent.change(field(view, "destination.state"), { target: { value: "Bayelsa" } });
+      fireEvent.change(field(view, "destination.postalCode"), { target: { value: "560001" } });
+    });
+    await submitQuotes(view);
+    expect(h.quotes).toHaveBeenCalledWith(expect.objectContaining({
+      destination: expect.objectContaining({
+        address: "Plot 8 Community Road, Ogbia", state: "Bayelsa", postalCode: "560001",
+        addressId: undefined, latitude: undefined, longitude: undefined,
+      }),
+    }));
+  });
+
+  it("preserves pickup email, date and buyer edits when saving an address invalidates the quote", async () => {
+    h.delivery.order.suggestedPickup.email = "";
+    Object.assign(h.delivery.delivery.destination, { addressId: address.id, address: addressText(address) });
+    const updated = { ...address, line1: "26 Community Road", latitude: null, longitude: null };
+    h.saveAddress.mockImplementation(async () => {
+      unselected();
+      h.delivery.delivery.package.quoteRequestId = "address-change";
+      return { address: updated };
+    });
+    const view = await mountDelivery();
+    const form = field(view, "date").form;
+    const date = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    await act(async () => {
+      fireEvent.change(field(view, "pickup.email"), { target: { value: "pickup@example.test" } });
+      fireEvent.change(field(view, "date"), { target: { value: date } });
+      fireEvent.change(field(view, "destination.name"), { target: { value: "Recipient" } });
+      fireEvent.click(screen.getByText("Add or verify a delivery address"));
+    });
+    await click("Edit saved address");
+    fireEvent.change(screen.getByLabelText("Full street address"), { target: { value: updated.line1 } });
+    await act(async () => { fireEvent.submit(screen.getByRole("form", { name: "Save address" })); });
+    expect(h.saveAddress).toHaveBeenCalledOnce();
+    expect(field(view, "pickup.email").value).toBe("pickup@example.test");
+    expect(field(view, "date").value).toBe(date);
+    expect(field(view, "date").form).toBe(form);
+    expect(field(view, "destination.name").value).toBe("Recipient");
+    expect(field(view, "destination.address").value).toBe(addressText(updated));
+    expect((screen.getByLabelText("Saved delivery address") as HTMLSelectElement).value).toBe(address.id);
+    expect(screen.getAllByRole("button", { name: "Choose delivery" }).every((item) => (item as HTMLButtonElement).disabled)).toBe(true);
+    await submitQuotes(view);
+    expect(h.quotes).toHaveBeenCalledWith(expect.objectContaining({
+      pickup: expect.objectContaining({ email: "pickup@example.test" }),
+      destination: expect.objectContaining({ addressId: address.id, address: addressText(updated), name: "Recipient" }),
+      parcel: { pickupDate: date },
+    }));
+  });
+
+  it("does not apply a delayed address save to another order's checkout", async () => {
+    let resolveSave!: (value: any) => void;
+    h.saveAddress.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    const view = await mountDelivery();
+    await act(async () => { fireEvent.click(screen.getByText("Add or verify a delivery address")); });
+    await click("Edit saved address");
+    await act(async () => { fireEvent.submit(screen.getByRole("form", { name: "Save address" })); });
+    h.delivery.order.title = "Other order";
+    h.delivery.delivery.destination.address = "Other buyer address Lagos";
+    await act(async () => view.rerender(<CustomerDelivery id="other" />));
+    expect(field(view, "destination.address").value).toBe("Other buyer address Lagos");
+    await act(async () => resolveSave({ address }));
+    expect(field(view, "destination.address").value).toBe("Other buyer address Lagos");
+    expect((screen.getByLabelText("Saved delivery address") as HTMLSelectElement).value).toBe("");
+    expect(h.api.mock.calls.filter(([path]) => path === "orders/order/delivery")).toHaveLength(1);
+  });
+
+  it.each(["active checkout", "paid order"])("hides both address-saving and destination forms during %s", async (lock) => {
+    if (lock === "active checkout") {
+      h.delivery.order.checkoutActive = true;
+      h.payment.checkoutActive = true;
+      h.payment.items = [pending("UNKNOWN")];
+    } else {
+      h.delivery.order.status = "FUNDED";
+      h.delivery.delivery.paidMinor = "1000";
+      h.payment.orderStatus = "FUNDED";
+    }
+    const view = await mountDelivery();
+    expect(view.container.querySelector("form")).toBeNull();
+    expect(screen.queryByText("Add or verify a delivery address")).toBeNull();
+    expect(screen.queryByLabelText("Saved delivery address")).toBeNull();
+    expect(h.saveAddress).not.toHaveBeenCalled();
   });
 });

@@ -3,13 +3,16 @@ import { FarmPin } from "../components/farm-pin";
 import { savedFarmPoint, type FarmPoint } from "../lib/farm-location";
 import { farmLocation } from "../lib/farm-location";
 import { LocalizedText as Text } from "../localization";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, Pressable, AppState } from "react-native";
 import { useApp, useResource } from "../state";
 import { Page, Heading, Label, Field, Button, Card, Notice, Icon, s } from "../components/ui";
 import { Select } from "../components/Select";
-import { changeState, localGovernments, nigeriaStates } from "../lib/locations";
-import { api } from "../lib/api";
+import { changeState, localGovernments, nigeriaStates, postcodeLocation } from "../lib/locations";
+import { PostcodeEntry } from "../components/postcode-entry";
+import { postcodeStatus, type PostcodeLookup } from "../../../../packages/contracts/src/addresses";
+import type { Address } from "../lib/domain";
+import { api, uuid } from "../lib/api";
 import { sellerMenuState } from "../lib/seller-menu";
 import { colors } from "../components/ui";
 import { whenIdle } from "../lib/idle";
@@ -280,12 +283,18 @@ export function Details() {
   );
 }
 export function Addresses() {
+  const emptyForm = { label: "", line1: "", line2: "", landmark: "", postalCode: "", state: "", lga: "", city: "" };
   const a = useApp(),
-    [form, setForm] = useState({ label: "", line1: "", state: "", lga: "", city: "" }),
+    [form, setForm] = useState(emptyForm),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [saved, setSaved] = useState(false),
-    [coordinates, setCoordinates] = useState<FarmPoint | undefined>();
+    [coordinates, setCoordinates] = useState<FarmPoint | undefined>(),
+    [editingId, setEditingId] = useState<string>(),
+    [proof, setProof] = useState<string | null>(),
+    [check, setCheck] = useState<PostcodeLookup | null>(null);
+  const submitting = useRef(false);
+  const saveKey = useRef<string | undefined>(undefined);
   const seller = a.role === "SELLER" || !!a.user?.farmerProfile;
   const addingPickup = seller && a.route.id === "pickup";
   const defaultDelivery = a.user?.addresses.find((address) => address.isDefaultDelivery);
@@ -293,6 +302,40 @@ export function Addresses() {
     a.user?.addresses || [],
     a.user?.farmerProfile?.primaryAddressId,
   );
+  const clearCheck = () => { setProof(null); setCheck(null); };
+  const editField = (key: keyof typeof emptyForm, value: string) => {
+    saveKey.current = undefined;
+    if (key !== "label") clearCheck();
+    if (["line1", "city", "state", "lga"].includes(key)) setCoordinates(undefined);
+    setForm((f) => key === "state" ? changeState(f, value) : { ...f, [key]: value });
+  };
+  const editAddress = (address: Address) => {
+    saveKey.current = undefined;
+    setEditingId(address.id); setProof(undefined); setCheck(null); setSaved(false); setError("");
+    setCoordinates(savedFarmPoint(address));
+    setForm({ label: address.label || "Farm location", line1: address.line1, line2: address.line2 || "", landmark: address.landmark || "",
+      postalCode: address.postalCode || "", state: address.state, lga: address.lga, city: address.city });
+  };
+  const save = async () => {
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true); setSaved(false); setError("");
+    try {
+      await api(editingId ? `/me/addresses/${editingId}` : "/me/addresses", {
+        method: editingId ? "PATCH" : "POST",
+        ...(!editingId ? { key: saveKey.current ??= uuid() } : {}),
+        body: { ...form, label: form.label || (seller ? "Pickup address" : "Delivery address"),
+          postalCode: form.postalCode || null, verificationToken: proof,
+          isDefaultDelivery: !seller, coordinates: coordinates || null },
+      });
+      setForm(emptyForm); setEditingId(undefined); setProof(undefined); setCheck(null);
+      saveKey.current = undefined;
+      setSaved(true); setCoordinates(undefined);
+      await a.loadUser();
+      if (addingPickup) a.back();
+      else if (!seller) a.alert("Delivery address saved.", "Return to continue your order.", [{ text: "Go back", onPress: a.back }]);
+    } catch (e) { setError(a.error(e)); }
+    finally { submitting.current = false; setBusy(false); }
+  };
   return (
     <Page
       title={
@@ -330,10 +373,14 @@ export function Addresses() {
             <Label>
               {ad.line1}, {ad.city}, {ad.lga}, {ad.state}
             </Label>
+            {ad.landmark && <Label muted>{ad.landmark}</Label>}
+            {ad.postalCode && <Label>{ad.postalCode}</Label>}
+            <Label muted>{a.ui(postcodeStatus(ad))}</Label>
+            <Button title="Edit saved address" secondary disabled={busy} onPress={() => editAddress(ad)} />
           </Card>
         ),
       )}
-      {seller && !addingPickup && farmAddress && (
+      {seller && !addingPickup && farmAddress && !editingId && (
         <FarmPin
           value={savedFarmPoint(farmAddress)}
           onConfirm={async (point) => {
@@ -342,27 +389,36 @@ export function Addresses() {
           }}
         />
       )}
-      {(!seller || addingPickup) && (
+      {(!seller || addingPickup || editingId) && (
         <>
           <Text style={s.sectionTitle}>
-            {seller ? "Different pickup address" : "Add a delivery address"}
+            {editingId ? "Edit saved address" : seller ? "Different pickup address" : "Add a delivery address"}
           </Text>
+          <PostcodeEntry value={form.postalCode} revision={JSON.stringify([a.user?.id, editingId, form.state, form.lga, form.city, form.line1])}
+            coordinates={coordinates} disabled={busy}
+            onChange={(value) => editField("postalCode", value)}
+            onManual={() => { saveKey.current = undefined; clearCheck(); }}
+            onVerified={(lookup) => {
+              const next = postcodeLocation(form, lookup.fields);
+              saveKey.current = undefined;
+              if (["state", "lga", "city", "line1"].some((key) => next[key as keyof typeof next] !== form[key as keyof typeof form])) setCoordinates(undefined);
+              setForm({ ...next, postalCode: lookup.postcode }); setProof(lookup.verificationToken); setCheck(lookup);
+            }} />
+          {check && <Notice text={a.ui(postcodeStatus({ postalCode: check.postcode, postcodeVerifiedAt: "checked", postcodeVerificationMode: check.mode, postcodeVerificationLevel: check.level }))} />}
           <FarmPin
-            value={coordinates || (!seller ? savedFarmPoint(defaultDelivery) : undefined)}
+            value={coordinates}
             context={seller ? "farm" : "buyer"}
             autoLocate={!seller && !defaultDelivery}
+            disabled={busy}
             onConfirm={async (point) => {
+              clearCheck();
+              saveKey.current = undefined;
               setCoordinates(point);
               if (!seller) {
                 const place = await import("../lib/device-location")
                   .then(({ describePosition }) => describePosition(point))
                   .catch(() => null);
-                if (place)
-                  setForm((current) => ({
-                    ...current,
-                    ...place,
-                    label: current.label || "Current location",
-                  }));
+                 if (place) setForm((current) => ({ ...current, ...place, label: current.label || "Current location" }));
               }
             }}
           />
@@ -383,60 +439,33 @@ export function Addresses() {
                   }[k]
                 }
                 value={form[k]}
-                onChangeText={(v) => setForm((f) => ({ ...f, [k]: v }))}
+                 editable={!busy}
+                 onChangeText={(v) => editField(k, v)}
               />
             ))}
             <Select
               label="State"
               value={form.state}
               options={nigeriaStates}
-              onChange={(state) => setForm((f) => changeState(f, state))}
+               disabled={busy}
+               onChange={(state) => editField("state", state)}
             />
             <Select
               label="Local government area"
               value={form.lga}
               options={localGovernments(form.state)}
-              disabled={!form.state}
-              onChange={(lga) => setForm((f) => ({ ...f, lga }))}
+               disabled={busy || !form.state}
+               onChange={(lga) => editField("lga", lga)}
             />
+            <Field label="Additional directions (optional)" value={form.line2} maxLength={180} editable={!busy} onChangeText={(v) => editField("line2", v)} />
+            <Field label="Landmark (optional)" value={form.landmark} maxLength={180} editable={!busy} onChangeText={(v) => editField("landmark", v)} />
           </Card>
           <Button
             title={busy ? "Saving…" : seller ? "Save pickup address" : "Save address"}
-            disabled={busy || (!coordinates && (!form.state || !form.lga))}
-            onPress={async () => {
-              setBusy(true);
-              try {
-                setSaved(false);
-                setError("");
-                await api("/me/addresses", {
-                  method: "POST",
-                  body: {
-                    label: form.label || (coordinates ? "Current location" : "Delivery address"),
-                    line1: form.line1 || "Pinned delivery location",
-                    city: form.city || "Pinned location",
-                    lga: form.lga || "Pinned location",
-                    state: form.state || "Nigeria",
-                    isDefaultDelivery: !seller,
-                    ...(coordinates ? { coordinates } : {}),
-                  },
-                });
-                await a.loadUser();
-                setForm({ label: "", line1: "", state: "", lga: "", city: "" });
-                setSaved(true);
-                setCoordinates(undefined);
-                if (addingPickup) a.back();
-                else if (!seller) {
-                  a.alert("Delivery address saved.", "Return to continue your order.", [
-                    { text: "Go back", onPress: a.back },
-                  ]);
-                }
-              } catch (e) {
-                setError(a.error(e));
-              } finally {
-                setBusy(false);
-              }
-            }}
+            disabled={busy || !form.state || form.lga.trim().length < 2 || form.city.trim().length < 2 || form.line1.trim().length < 5}
+            onPress={() => void save()}
           />
+          {editingId && <Button title="Cancel" secondary disabled={busy} onPress={() => { setEditingId(undefined); setForm(emptyForm); setCoordinates(undefined); clearCheck(); }} />}
         </>
       )}
       {seller && !addingPickup && !farmAddress && (

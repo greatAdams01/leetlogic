@@ -58,7 +58,6 @@ suite("provider-backed payment safeguards", () => {
       SHIPBUBBLE_MODE: "test",
       SHIPBUBBLE_TEST_KEY_CONFIRMED: true,
       SHIPBUBBLE_CATEGORY_ID: 24032950,
-      DELIVERY_ALLOWED_STATES: "Lagos",
       DELIVERY_MAX_WEIGHT_KG: 1000,
     });
     const users = await Promise.all(
@@ -1272,7 +1271,7 @@ suite("provider-backed payment safeguards", () => {
     await prisma.tradeOrder.update({ where: { id: o.id }, data: { packagingSnapshot: { ...snapshot, packaging } } });
     const response = await request(app).post(`/v1/orders/${o.id}/delivery/quotes`).set(customerAuth()).send({ pickup: d.pickup, destination: d.destination, parcel: d.package });
     expect(response.status).toBe(422);
-    expect(response.body.error.code).toBe(kind === "missing packing" ? "PACKING_REQUIRED" : "DELIVERY_UNSUPPORTED");
+    expect(response.body.error.code).toBe(kind === "missing packing" ? "PACKING_REQUIRED" : kind === "oversized" ? "SHIPMENT_TOO_LARGE" : "SHIPMENT_HANDLING_UNSUPPORTED");
     expect(shippingProvider.quotes).not.toHaveBeenCalled();
     expect((await request(app).get(`/v1/orders/${o.id}/payments`).set(customerAuth())).body.checkoutReady).toBe(false);
     expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).not.toBe("MANUAL_REVIEW");
@@ -1653,7 +1652,6 @@ suite("provider-backed payment safeguards", () => {
       SHIPBUBBLE_MODE: "test",
       SHIPBUBBLE_CATEGORY_ID: 24032950,
       DELIVERY_ALLOWED_CATEGORIES: category.id,
-      DELIVERY_ALLOWED_STATES: "Lagos",
       DELIVERY_MAX_WEIGHT_KG: 1000,
     });
     const service = (requestToken: string, amountMinor: bigint) => ({

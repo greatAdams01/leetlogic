@@ -71,4 +71,69 @@ describe("account refresh session identity", () => {
     expect(photo.mime).toBe("image/jpeg");
     expect(fetcher.mock.calls[2]![1].headers.Authorization).toBe("Bearer renewed");
   });
+  it("retains a secure session during a refresh outage and retries successfully without another OTP", async () => {
+    await saveSession({ accessToken: "expired", refreshToken: "valid-refresh" });
+    const version = sessionVersion();
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({}, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ accessToken: "renewed", refreshToken: "new-refresh" }))
+      .mockResolvedValueOnce(Response.json({ user: { id: "buyer" } }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(api("/me")).rejects.toMatchObject({ status: 503, code: "DEPENDENCY_UNAVAILABLE" });
+    expect(authHeaders().Authorization).toBe("Bearer expired");
+    expect(sessionVersion()).toBe(version);
+    expect(await api("/me")).toEqual({ user: { id: "buyer" } });
+    expect(sessionVersion()).toBe(version);
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("otp"))).toBe(false);
+  });
+  it("does not clear a newer login when an old refresh request is rejected", async () => {
+    await saveSession({ accessToken: "old-access", refreshToken: "old-refresh" });
+    let resolve!: (response: Response) => void;
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }));
+    vi.stubGlobal("fetch", fetcher);
+    const result = api("/me").catch((error) => error);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await saveSession({ accessToken: "new-access", refreshToken: "new-refresh" });
+    const version = sessionVersion();
+    resolve(Response.json({}, { status: 401 }));
+    expect(await result).toMatchObject({ code: "SESSION_EXPIRED" });
+    expect(authHeaders().Authorization).toBe("Bearer new-access");
+    expect(sessionVersion()).toBe(version);
+  });
+  it("clears a truly expired session, but preserves it when a refresh response is malformed", async () => {
+    await saveSession({ accessToken: "access", refreshToken: "refresh" });
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ private: "invalid" }))
+      .mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({}, { status: 401 }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(api("/me")).rejects.toMatchObject({ code: "INVALID_SERVER_RESPONSE" });
+    expect(authHeaders().Authorization).toBe("Bearer access");
+    await expect(api("/me")).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
+    expect(authHeaders().Authorization).toBeUndefined();
+  });
+  it("does not share an old account's pending refresh with a new login", async () => {
+    await saveSession({ accessToken: "old-access", refreshToken: "old-refresh" });
+    let resolve!: (response: Response) => void;
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }))
+      .mockResolvedValueOnce(Response.json({}, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ accessToken: "renewed-new-access", refreshToken: "renewed-new-refresh" }))
+      .mockResolvedValueOnce(Response.json({ user: { id: "new-account" } }));
+    vi.stubGlobal("fetch", fetcher);
+    const old = api("/me").catch((error) => error);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await saveSession({ accessToken: "new-access", refreshToken: "new-refresh" });
+    const newer = api("/me").catch((error) => error);
+    try {
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(5));
+    } finally { resolve(Response.json({}, { status: 401 })); }
+    expect(await newer).toEqual({ user: { id: "new-account" } });
+    expect(await old).toMatchObject({ code: "SESSION_EXPIRED" });
+    expect(authHeaders().Authorization).toBe("Bearer renewed-new-access");
+    expect(JSON.parse(fetcher.mock.calls[3]![1].body).refreshToken).toBe("new-refresh");
+  });
 });

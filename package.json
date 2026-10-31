@@ -12,6 +12,8 @@
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @leetlogic/database generate",
     "db:migrate": "pnpm --filter @leetlogic/database migrate",
+    "db:deploy": "pnpm --filter @leetlogic/database deploy",
+    "db:status": "pnpm --filter @leetlogic/database status",
     "db:seed": "pnpm --filter @leetlogic/database seed",
     "locales:check": "pnpm --filter @leetlogic/localization check",
     "verify": "pnpm locales:check && pnpm build && pnpm typecheck && pnpm test",

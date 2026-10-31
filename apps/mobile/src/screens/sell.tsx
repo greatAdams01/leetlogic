@@ -19,6 +19,7 @@ import {
   type ListingUnit,
 } from "../lib/listing-form";
 import { farmLocation } from "../lib/farm-location";
+import { postcodeStatus } from "../../../../packages/contracts/src/addresses";
 import { Confirmation } from "../components/feedback";
 import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect, useRef } from "react";
@@ -521,11 +522,14 @@ export function Sell() {
                 ? `${address.line1}, ${address.city}, ${address.lga}, ${address.state}`
                 : a.ui("Complete your farm address before listing produce.")}
             </Label>
+            {address?.postalCode && <Label>{address.postalCode}</Label>}
+            {address && <Label muted>{a.ui(postcodeStatus(address))}</Label>}
             <Label muted style={listingStyles.help}>
               Your farm is the default pickup location. You can choose a different address when
               arranging an order’s delivery.
             </Label>
             {!address && <Button title="Farm location" secondary onPress={() => a.go("seller")} />}
+            {address && <Button title="Edit pickup address" secondary onPress={() => a.go("addresses")} />}
           </Card>
           <Label style={{ fontFamily: "NotoBold" }}>Delivery scope *</Label>
           {(
