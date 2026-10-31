@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   finish: vi.fn(),
   unlock: vi.fn(),
   recover: vi.fn(),
+  register: vi.fn(),
   mode: "create",
   phone: "08012345678",
 }));
@@ -55,6 +56,8 @@ vi.mock("../state", () => ({
     error: (e: Error) => e.message,
     unlock: h.unlock,
     recoverSecurity: h.recover,
+    startRegistration: h.register,
+    go: vi.fn(),
     finishSignIn: h.finish,
     loadUser: async () => ({ id: "farmer" }),
     changeLocale: async () => {},
@@ -184,4 +187,36 @@ it("does not save a late OTP response after the session has changed", async () =
   await act(async () => resolve({ accessToken: "old-session" }));
   expect(h.save).not.toHaveBeenCalled();
   expect(h.finish).not.toHaveBeenCalled();
+});
+
+it("guides an unknown phone directly to registration and clears guidance when the number changes", async () => {
+  h.api.mockRejectedValue(Object.assign(new Error("Create an account"), { code: "ACCOUNT_NOT_FOUND" }));
+  await act(async () => { tree = create(<Phone />); });
+  const submit = tree.root.findAllByType("Pressable" as any).find((n) => n.props.accessibilityLabel === "Continue")!;
+  await act(async () => submit.props.onPress());
+  const register = tree.root.findAllByType("Button" as any).find((n) => n.props.title === "Create Account")!;
+  expect(register).toBeDefined();
+  const continueButtons = () => tree.root.findAllByType("Pressable" as any).filter((n) => n.props.accessibilityLabel === "Continue");
+  expect(continueButtons()).toHaveLength(0);
+  expect(tree.root.findAllByType("Notice" as any)).toHaveLength(1);
+  await act(async () => register.props.onPress());
+  expect(h.register).toHaveBeenCalledWith("+2348012345678");
+  await act(async () => input().props.onChangeText("08012345679"));
+  expect(tree.root.findAllByType("Button" as any).some((n) => n.props.title === "Create Account")).toBe(false);
+  expect(tree.root.findAllByType("Notice" as any)).toHaveLength(0);
+  expect(continueButtons()).toHaveLength(1);
+  h.api.mockResolvedValueOnce({});
+  await act(async () => continueButtons()[0]!.props.onPress());
+  expect(h.api).toHaveBeenLastCalledWith("/auth/otp/request", expect.objectContaining({ body: expect.objectContaining({ phone: "+2348012345679" }) }));
+});
+it("allows an expired code to be resent immediately instead of waiting on the old countdown", async () => {
+  h.api.mockRejectedValueOnce(Object.assign(new Error("Expired"), { code: "OTP_EXPIRED" }));
+  await act(async () => { tree = create(<Otp />); });
+  await act(async () => input().props.onChangeText("123456"));
+  expect(input().props.value).toBe("");
+  const resend = tree.root.findAllByType("Pressable" as any).find((n) => n.props.style && n.props.accessibilityState && n.props.accessibilityRole === "button" && !n.props.accessibilityLabel)!;
+  expect(resend.props.disabled).toBe(false);
+  h.api.mockResolvedValueOnce({});
+  await act(async () => resend.props.onPress());
+  expect(h.api).toHaveBeenLastCalledWith("/auth/otp/request", expect.objectContaining({ body: expect.objectContaining({ phone: h.phone, intent: "LOGIN" }) }));
 });

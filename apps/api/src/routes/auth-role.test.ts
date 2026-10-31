@@ -1,8 +1,9 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ find: vi.fn(), create: vi.fn(), update: vi.fn(), request: vi.fn(), verify: vi.fn(), session: vi.fn() }));
+const h = vi.hoisted(() => ({ find: vi.fn(), create: vi.fn(), update: vi.fn(), request: vi.fn(), verify: vi.fn(), limit: vi.fn(), session: vi.fn() }));
 vi.mock("@leetlogic/database", async (original) => ({ ...await original<any>(), prisma: { user: { findUnique: h.find, create: h.create, update: h.update } } }));
+vi.mock("../services/auth-attempts.js", () => ({ limitAuthAttempts: h.limit }));
 vi.mock("../services/otp.js", () => ({ requestOtp: h.request, verifyOtp: h.verify }));
 vi.mock("../services/sessions.js", () => ({ createSession: h.session, revokeAll: vi.fn(), revokeSession: vi.fn(), rotateSession: vi.fn() }));
 import { authRouter } from "./auth.js";
@@ -45,4 +46,12 @@ it("handles concurrent duplicate registration with a login message", async () =>
   h.find.mockResolvedValue(null); h.create.mockRejectedValue({ code: "P2002" });
   const response = await request(app).post("/auth/otp/verify").send({ ...body, intent: "REGISTER", role: "SELLER" });
   expect(response.status).toBe(409); expect(response.body.error.code).toBe("PHONE_ALREADY_REGISTERED");
+});
+
+it("limits unknown-number lookups before checking account existence", async () => {
+  const { AppError } = await import("../lib/errors.js");
+  h.limit.mockRejectedValue(new AppError(429, "AUTH_RATE_LIMITED", "Too many attempts", undefined, 42));
+  const response = await request(app).post("/auth/otp/request").send(body);
+  expect(response.status).toBe(429); expect(response.body.error.retryAfterSeconds).toBe(42);
+  expect(response.headers["retry-after"]).toBe("42"); expect(h.find).not.toHaveBeenCalled();
 });

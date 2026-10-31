@@ -30,7 +30,7 @@ export function localizedError(locale: Locale, value: unknown): string {
   const message = typeof value === "string" ? value : error?.message || "";
   const code = error?.code || message;
   if (
-    ["OTP_RESEND_TOO_SOON", "OTP_RATE_LIMITED", "RATE_LIMITED"].includes(code) &&
+    ["OTP_RESEND_TOO_SOON", "OTP_RATE_LIMITED", "RATE_LIMITED", "AUTH_RATE_LIMITED"].includes(code) &&
     Number.isFinite(error.retryAfterSeconds) &&
     error.retryAfterSeconds! > 0
   )
@@ -38,7 +38,9 @@ export function localizedError(locale: Locale, value: unknown): string {
       locale,
       code === "OTP_RESEND_TOO_SOON"
         ? "A code was already sent. Wait {seconds} seconds before resending."
-        : "Too many code requests. Try again in {seconds} seconds.",
+        : code === "AUTH_RATE_LIMITED"
+          ? "Too many sign-in attempts. Try again in {seconds} seconds."
+          : "Too many code requests. Try again in {seconds} seconds.",
       {
         seconds: Math.ceil(error.retryAfterSeconds!),
       },
@@ -87,6 +89,11 @@ export function localizedError(locale: Locale, value: unknown): string {
     AUTH_REQUIRED: "Please sign in again.",
     SESSION_EXPIRED: "Please sign in again.",
     SIGN_IN_REQUIRED: "Please sign in again.",
+    ACCOUNT_NOT_FOUND: "We couldn’t find an account linked to this phone number. Create an account to get started.",
+    PHONE_ALREADY_REGISTERED: "This phone number already has an account. Log in to continue.",
+    ACCOUNT_ROLE_CONFLICT: "Your account needs review. Please contact support for help signing in.",
+    ACCOUNT_UNAVAILABLE: "Your account is currently unavailable. Please contact support for help.",
+    AUTH_RATE_LIMITED: "Too many sign-in attempts. Please wait and try again.",
     OTP_INVALID: "That verification code is incorrect. Check the code and try again.",
     OTP_EXPIRED: "This verification code has expired. Request a new code.",
     INVALID_OTP: "The code is invalid or expired. Request a new code.",

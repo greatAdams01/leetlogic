@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LocalizedText as Text } from "../localization";
 import { useApp } from "../state";
 import { Icon, Notice, colors } from "../components/ui";
+import { Button } from "../components/ui";
 import { api, API_URL, deviceId, saveSession, sessionVersion } from "../lib/api";
 import {
   maskedPhone,
@@ -117,6 +118,7 @@ export function Phone() {
   const [phone, setPhone] = useState(() => phoneDigits((a.route.id || "").replace(/^\+234/, "")));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
   const submitting = useRef(false);
   const policy = async (path: "terms" | "privacy") => {
     const configured =
@@ -131,11 +133,13 @@ export function Phone() {
     try {
       await Linking.openURL(url);
     } catch (e) {
+      const failure = e as { code?: string; retryAfterSeconds?: number };
+      setErrorCode(failure?.code || "");
       setError(a.error(e));
     }
   };
   const submit = async () => {
-    if (submitting.current) return;
+    if (submitting.current || errorCode === "ACCOUNT_NOT_FOUND") return;
     const validationError = phoneInputError(phone);
     if (validationError) {
       setError(a.ui(validationError));
@@ -144,6 +148,7 @@ export function Phone() {
     submitting.current = true;
     setBusy(true);
     setError("");
+    setErrorCode("");
     try {
       const value = normalizeNigerianPhone(phone);
       await api("/auth/otp/request", {
@@ -152,6 +157,8 @@ export function Phone() {
       });
       a.go("otp", value);
     } catch (e) {
+      const failure = e as { code?: string; retryAfterSeconds?: number };
+      setErrorCode(failure?.code || "");
       setError(a.error(e));
     } finally {
       submitting.current = false;
@@ -187,6 +194,7 @@ export function Phone() {
               value={phone}
               onChangeText={(value) => {
                 setPhone(phoneDigits(value));
+                setErrorCode("");
                 setError("");
               }}
               editable={!busy}
@@ -226,12 +234,25 @@ export function Phone() {
             .
           </Text>
         </View>
-        {error && (
-          <View style={{ marginBottom: 16 }}>
-            <Notice text={error} error />
-          </View>
-        )}
-        <ContinueButton busy={busy} onPress={() => void submit()} />
+        <View style={v.phoneActions}>
+          {!!error && (
+            <View style={v.phoneFeedback}>
+              {errorCode === "ACCOUNT_NOT_FOUND" && (
+                <Text accessibilityRole="header" style={v.phoneLabel}>No account found</Text>
+              )}
+              <Notice text={error} error />
+            </View>
+          )}
+          {errorCode === "ACCOUNT_NOT_FOUND" ? (
+            <Button
+              title="Create Account"
+              onPress={() => a.startRegistration(normalizeNigerianPhone(phone))}
+            />
+          ) : (
+            <ContinueButton busy={busy} onPress={() => void submit()} />
+          )}
+          {errorCode === "PHONE_ALREADY_REGISTERED" && <Button title="Log In" onPress={a.startLogin} />}
+        </View>
       </ScrollView>
     </VerificationLayout>
   );
@@ -244,6 +265,7 @@ export function Otp() {
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
   const input = useRef<TextInput>(null);
   const deadline = useRef(Date.now() + 60_000);
   const submitting = useRef(false);
@@ -263,6 +285,7 @@ export function Otp() {
     submitting.current = true;
     setBusy(true);
     setError("");
+    setErrorCode("");
     try {
       const initialVersion = sessionVersion();
       const result = await api("/auth/otp/verify", {
@@ -278,6 +301,16 @@ export function Otp() {
       if (sessionVersion() !== verifiedVersion) return;
       await a.finishSignIn(user);
     } catch (e) {
+      const failure = e as { code?: string; retryAfterSeconds?: number };
+      if (["OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED"].includes(failure?.code || "")) {
+        deadline.current = Date.now();
+        setSeconds(0);
+        setCode("");
+      } else if (failure?.retryAfterSeconds && failure.retryAfterSeconds > 0) {
+        deadline.current = Date.now() + failure.retryAfterSeconds * 1000;
+        setSeconds(Math.ceil(failure.retryAfterSeconds));
+      }
+      setErrorCode(failure?.code || "");
       setError(a.error(e));
     } finally {
       submitting.current = false;
@@ -290,6 +323,7 @@ export function Otp() {
     setBusy(true);
     setResending(true);
     setError("");
+    setErrorCode("");
     try {
       await api("/auth/otp/request", {
         method: "POST",
@@ -299,6 +333,16 @@ export function Otp() {
       setSeconds(60);
       setCode("");
     } catch (e) {
+      const failure = e as { code?: string; retryAfterSeconds?: number };
+      if (["OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED"].includes(failure?.code || "")) {
+        deadline.current = Date.now();
+        setSeconds(0);
+        setCode("");
+      } else if (failure?.retryAfterSeconds && failure.retryAfterSeconds > 0) {
+        deadline.current = Date.now() + failure.retryAfterSeconds * 1000;
+        setSeconds(Math.ceil(failure.retryAfterSeconds));
+      }
+      setErrorCode(failure?.code || "");
       setError(a.error(e));
     } finally {
       submitting.current = false;
@@ -381,6 +425,8 @@ export function Otp() {
             </Text>
           </Pressable>
           {error && <Notice text={error} error />}
+          {errorCode === "ACCOUNT_NOT_FOUND" && <Button title="Create Account" onPress={() => a.startRegistration(a.route.id || "")} />}
+          {errorCode === "PHONE_ALREADY_REGISTERED" && <Button title="Log In" onPress={a.startLogin} />}
         </View>
         <SafeAreaView edges={["bottom"]} style={v.otpFooter}>
           <ContinueButton
@@ -440,6 +486,8 @@ const v = StyleSheet.create({
     color: "white",
     textTransform: "uppercase",
   },
+  phoneActions: { gap: 16, alignSelf: "stretch", flexShrink: 0 },
+  phoneFeedback: { gap: 8, flexShrink: 0 },
   phoneBody: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 24 },
   otpBody: {
     flexGrow: 1,

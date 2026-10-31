@@ -14,6 +14,7 @@ import { createSession, revokeAll, revokeSession, rotateSession } from "../servi
 import { requireAuth } from "../middleware/auth.js";
 
 import { AppError } from "../lib/errors.js";
+import { limitAuthAttempts } from "../services/auth-attempts.js";
 import { accountRole } from "../services/account-role.js";
 
 async function checkAccount(phone: string, intent: string, role?: string) {
@@ -32,6 +33,7 @@ export const authRouter = Router();
 authRouter.post("/otp/request", async (req, res) => {
   const body = requestOtpSchema.parse(req.body);
   const phone = normalizeNigerianPhone(body.phone);
+  await limitAuthAttempts(phone, req.ip, "request");
   await checkAccount(phone, body.intent, body.role);
   await requestOtp({
     purpose: "CUSTOMER_LOGIN",
@@ -49,6 +51,7 @@ authRouter.post("/otp/request", async (req, res) => {
 authRouter.post("/otp/verify", async (req, res) => {
   const body = verifyOtpSchema.parse(req.body);
   const phone = normalizeNigerianPhone(body.phone);
+  await limitAuthAttempts(phone, req.ip, "verify");
   await verifyOtp({
     purpose: "CUSTOMER_LOGIN",
     phone,

@@ -310,3 +310,13 @@ it.each([true, false])(
     expect(current.user).toEqual(farmer);
   },
 );
+
+it("preserves the entered phone and language when switching directly from login to registration", async () => {
+  await act(async () => { tree = create(<AppProvider><Probe /></AppProvider>); });
+  await act(async () => current.changeLocale("ha"));
+  await act(async () => current.startRegistration("+2348012345678"));
+  expect(current.route).toEqual({ name: "role", id: "+2348012345678", query: "register" });
+  await act(async () => current.selectRole("SELLER"));
+  expect(current.route).toEqual({ name: "phone", id: "+2348012345678" });
+  expect(current.authIntent).toBe("REGISTER"); expect(current.locale).toBe("ha");
+});

@@ -352,7 +352,7 @@ export function Intro() {
 }
 export function Role() {
   const a = useApp();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(a.route.query === "register");
   const { width, height } = useWindowDimensions();
   const logoSize = Math.min(176, Math.max(104, height * 0.21), width * 0.42);
   return (

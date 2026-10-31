@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import {ui} from "../../mobile/src/lib/localization";
+import {ui, localizedError} from "../../mobile/src/lib/localization";
 import Link from "next/link";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
@@ -14,6 +14,7 @@ export function CustomerAccount() {
   const [intent, setIntent] = useState<"LOGIN" | "REGISTER">("LOGIN");
   const [role, setRole] = useState<"BUYER" | "SELLER">("BUYER");
   const [sent, setSent] = useState(false);
+  const [errorCode, setErrorCode] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const load = () =>
@@ -35,6 +36,7 @@ export function CustomerAccount() {
     e.preventDefault();
     setBusy(true);
     setNotice("");
+    setErrorCode("");
     try {
       if (!sent) {
         await customerApi("auth/otp/request", { phone, intent, ...(intent === "REGISTER" ? { role } : {}) });
@@ -46,7 +48,25 @@ export function CustomerAccount() {
         await load();
       }
     } catch (e) {
-      setNotice((e as Error).message);
+      const failure = e as { code?: string };
+      setErrorCode(failure?.code || "");
+      setNotice(localizedError(locale, e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function resendCode() {
+    setBusy(true);
+    setNotice("");
+    setErrorCode("");
+    try {
+      await customerApi("auth/otp/request", { phone, intent, ...(intent === "REGISTER" ? { role } : {}) });
+      setCode("");
+      setSent(true);
+      setNotice(t("auth.sent"));
+    } catch (error) {
+      setErrorCode((error as { code?: string })?.code || "");
+      setNotice(localizedError(locale, error));
     } finally {
       setBusy(false);
     }
@@ -73,7 +93,7 @@ export function CustomerAccount() {
               autoComplete="tel"
               required
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => { setPhone(e.target.value); setErrorCode(""); setNotice(""); }}
               disabled={sent}
               placeholder="+234…"
             />
@@ -148,7 +168,11 @@ export function CustomerAccount() {
           )}
         </>
       )}
-      <p role="status">{notice}</p>
+      {["OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED"].includes(errorCode) && <button type="button" disabled={busy} onClick={() => void resendCode()}>{ui(locale, "Resend code")}</button>}
+      {errorCode === "ACCOUNT_NOT_FOUND" && <h2>{ui(locale, "No account found")}</h2>}
+      <p role={errorCode ? "alert" : "status"}>{notice}</p>
+      {errorCode === "ACCOUNT_NOT_FOUND" && <button type="button" onClick={() => { setIntent("REGISTER"); setSent(false); setCode(""); setNotice(""); setErrorCode(""); }}>{ui(locale, "Create Account")}</button>}
+      {errorCode === "PHONE_ALREADY_REGISTERED" && <button type="button" onClick={() => { setIntent("LOGIN"); setSent(false); setCode(""); setNotice(""); setErrorCode(""); }}>{ui(locale, "Log In")}</button>}
     </section>
   );
 }

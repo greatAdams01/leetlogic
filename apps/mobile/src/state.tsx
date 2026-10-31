@@ -155,7 +155,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     roleIntent.current = selected;
     setAuthIntent("REGISTER");
     setRole(selected);
-    reset("phone");
+    setStack([{ name: "phone", ...(route.id ? { id: route.id } : {}) }]);
   };
   const finishSignIn = async (account: Customer) => {
     const version = sessionVersion();
@@ -238,6 +238,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           signOut,
           selectRole,
           authIntent,
+          startRegistration: (phone: string) => {
+            recoverAccount.current = null;
+            roleIntent.current = null;
+            setAuthIntent("REGISTER");
+            setStack([{ name: "role", id: phone, query: "register" }]);
+          },
           startLogin: () => {
             roleIntent.current = null;
             setAuthIntent("LOGIN");
@@ -313,6 +319,7 @@ export function useApp() {
     ready: boolean;
     authIntent: "LOGIN" | "REGISTER";
     startLogin: () => void;
+    startRegistration: (phone: string) => void;
     role: "BUYER" | "SELLER";
     setRole: (r: "BUYER" | "SELLER") => void;
     signOut: () => Promise<void>;

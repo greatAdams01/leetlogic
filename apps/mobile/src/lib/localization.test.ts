@@ -223,3 +223,14 @@ describe("complete mobile interface localization", () => {
     expect(localizedStatus("yo", "UNKNOWN_PROVIDER_STATUS")).toBe(catalogue.Update!.yo);
   });
 });
+
+it("localizes authentication guidance and never displays raw server diagnostics", () => {
+  for (const locale of localeOrder) {
+    for (const code of ["ACCOUNT_NOT_FOUND", "PHONE_ALREADY_REGISTERED", "OTP_INVALID", "OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED", "NETWORK_ERROR", "INTERNAL_ERROR", "AUTH_RATE_LIMITED"]) {
+      const message = localizedError(locale, { code, message: "SECRET stack trace", retryAfterSeconds: 42 });
+      expect(message).not.toContain("SECRET");
+      expect(message).not.toBe(ui(locale, "Request failed. Please try again."));
+    }
+    expect(localizedError(locale, { code: "AUTH_RATE_LIMITED", retryAfterSeconds: 42 })).toContain("42");
+  }
+});
