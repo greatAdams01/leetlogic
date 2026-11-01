@@ -95,3 +95,4 @@ export {
   type SalePackaging,
 } from "./sale-packaging.js";
 export { formatMoney, groupAmount, editAmount } from "./money.js";
+export { paymentIsConfirmed, paymentNeedsConfirmation } from "./payment-state.js";

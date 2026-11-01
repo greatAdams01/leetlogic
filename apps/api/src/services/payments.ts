@@ -311,7 +311,7 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
   const checkout = await bachs.checkoutState(attempt.checkoutId);
   if (
     checkout.checkout_id !== attempt.checkoutId ||
-    (checkout.reference && checkout.reference !== attempt.id) ||
+    checkout.reference !== attempt.id ||
     (checkout.metadata?.attempt_id && checkout.metadata.attempt_id !== attempt.id) ||
     (checkout.metadata?.order_id && checkout.metadata.order_id !== attempt.orderId)
   )
@@ -349,7 +349,12 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
     if (
       extra.payment_id !== chargeId ||
       extra.checkout_id !== attempt.checkoutId ||
-      extra.currency !== "NGN"
+       extra.currency !== "NGN" ||
+       (extra.reference && extra.reference !== attempt.id) ||
+       (extra.meta?.attempt_id && extra.meta.attempt_id !== attempt.id) ||
+       (extra.meta?.order_id && extra.meta.order_id !== attempt.orderId) ||
+       (extra.metadata?.attempt_id && extra.metadata.attempt_id !== attempt.id) ||
+       (extra.metadata?.order_id && extra.metadata.order_id !== attempt.orderId)
     )
       throw new Error("PAYMENT_CHARGE_MISMATCH");
     const { fee: extraFee, received: paid, success: extraConfirmed } = receiptAmounts(extra, attempt.amountMinor);
@@ -400,7 +405,9 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
     payment.currency !== "NGN" ||
      (payment.reference && payment.reference !== attempt.id) ||
      (payment.meta?.attempt_id && payment.meta.attempt_id !== attempt.id) ||
-     (payment.meta?.order_id && payment.meta.order_id !== attempt.orderId)
+      (payment.meta?.order_id && payment.meta.order_id !== attempt.orderId) ||
+      (payment.metadata?.attempt_id && payment.metadata.attempt_id !== attempt.id) ||
+      (payment.metadata?.order_id && payment.metadata.order_id !== attempt.orderId)
   )
     throw new Error("PAYMENT_CHARGE_MISMATCH");
   const { fee, received, success, declined } = receiptAmounts(payment, attempt.amountMinor);
@@ -485,7 +492,8 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
         action: "payment.provider.confirmed", entityType: "payment", entityId: current.id,
         after: { orderId: order.id, provider: "bachs", currency: "NGN", principalMinor: received.toString(), feeMinor: fee.toString(), completedAt: confirmationAt.toISOString() },
       }, tx);
-      if (order.delivery) await deliveryEvent(tx, order.delivery.id, "PAYMENT_CONFIRMED", "bachs", `${order.delivery.id}:payment-confirmed:${current.id}`);
+      // Cancelled/unallocated receipts belong in the buyer's payment history, not in a
+      // farmer's new-order inbox. Only funded orders create fulfilment notifications.
     }
     if (exception) {
       await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
@@ -543,12 +551,15 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
         data: {
           paidMinor: { increment: current.shippingMinor },
           paymentRef: order.delivery.paymentRef || chargeId,
-          status: order.delivery.status === "PICKUP_PENDING" ? "PICKUP_READY" : "PAID",
+          status: order.delivery.status === "PICKUP_PENDING" ? "PICKUP_PREPARING" : "PAID",
           nextSyncAt: new Date(),
         },
       });
-    if (current.kind === "ORDER" && order.delivery)
-      await deliveryEvent(tx, order.delivery.id, "PREPARING_FOR_PICKUP", "system", `${order.delivery.id}:preparing`);
+    if (order.delivery) {
+      await deliveryEvent(tx, order.delivery.id, "PAYMENT_CONFIRMED", "bachs", `${order.delivery.id}:payment-confirmed:${current.id}`);
+      if (current.kind === "ORDER")
+        await deliveryEvent(tx, order.delivery.id, "PREPARING_FOR_PICKUP", "system", `${order.delivery.id}:preparing`);
+    }
     await audit(
       systemRequest(),
       {
@@ -561,7 +572,9 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
     );
   });
   // The persisted PAID state is also picked up by delivery jobs after a crash here.
-  await queuePaidDelivery(attempt.orderId);
+  await queuePaidDelivery(attempt.orderId).catch(() => {
+    logger.warn({ orderId: attempt.orderId }, "Paid delivery will be queued by the delivery worker");
+  });
 }
 export async function assertRelease(tx: Prisma.TransactionClient, orderId: string) {
   const order = await tx.tradeOrder.findUniqueOrThrow({

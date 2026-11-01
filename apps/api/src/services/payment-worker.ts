@@ -15,6 +15,7 @@ import {
   refreshAccount,
   assertRelease,
   reconcilePayment,
+  paymentCheckReason,
   systemRequest,
   createOperation,
 } from "./payments.js";
@@ -742,36 +743,41 @@ async function processWebhook(event: any) {
     });
     if (!payment && event.eventType.startsWith("checkout.")) {
       const remote = await bachs.checkoutState(id);
-      if (typeof remote.reference === "string") {
+      if (remote.checkout_id !== id) throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+      if (typeof remote.reference === "string" && /^[a-f0-9-]{36}$/i.test(remote.reference)) {
         const existing = await prisma.paymentAttempt.findFirst({
           where: { id: remote.reference, mode: mode() },
         });
         if (existing) {
-          await prisma.paymentAttempt.update({
-            where: { id: existing.id },
-            data: { checkoutId: id },
+          if (existing.checkoutId && existing.checkoutId !== id) throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+          const matched = await prisma.paymentAttempt.updateMany({
+            where: { id: existing.id, OR: [{ checkoutId: null }, { checkoutId: id }] }, data: { checkoutId: id },
           });
-          payment = existing;
+          if (!matched.count) throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+          payment = { ...existing, checkoutId: id };
         }
       }
     }
     if (!payment && event.eventType.startsWith("collection.")) {
       const remote = await bachs.payment(id);
+      if (remote.payment_id !== id || remote.currency !== "NGN") throw new Error("PAYMENT_CHARGE_MISMATCH");
       if (remote.checkout_id) {
         payment = await prisma.paymentAttempt.findFirst({
           where: { checkoutId: remote.checkout_id, mode: mode() },
         });
         if (!payment) {
           const checkout = await bachs.checkoutState(remote.checkout_id);
-          if (typeof checkout.reference === "string") {
+          if (checkout.checkout_id !== remote.checkout_id) throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+          if (typeof checkout.reference === "string" && /^[a-f0-9-]{36}$/i.test(checkout.reference)) {
             const owned = await prisma.paymentAttempt.findFirst({
               where: { id: checkout.reference, mode: mode() },
             });
             if (owned) {
-              await prisma.paymentAttempt.update({
-                where: { id: owned.id },
-                data: { checkoutId: remote.checkout_id },
+              if (owned.checkoutId && owned.checkoutId !== remote.checkout_id) throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+              const matched = await prisma.paymentAttempt.updateMany({
+                where: { id: owned.id, OR: [{ checkoutId: null }, { checkoutId: remote.checkout_id }] }, data: { checkoutId: remote.checkout_id },
               });
+              if (!matched.count) throw new Error("PAYMENT_CHECKOUT_MISMATCH");
               payment = { ...owned, checkoutId: remote.checkout_id };
             }
           }
@@ -847,7 +853,7 @@ async function expireOrders() {
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${item.id}::uuid FOR UPDATE`;
       const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: item.id } });
-      if (order.status !== "AWAITING_PAYMENT" || order.financialHold) return;
+      if (order.status !== "AWAITING_PAYMENT" || order.financialHold || !order.reservationExpiresAt || order.reservationExpiresAt >= new Date()) return;
       await tx.$queryRaw`SELECT id FROM listings WHERE id=${order.listingId}::uuid FOR UPDATE`;
       await tx.listing.update({
         where: { id: order.listingId },
@@ -863,6 +869,8 @@ async function expireOrders() {
         },
       });
       await tx.tradeOrder.update({ where: { id: order.id }, data: { status: "CANCELLED" } });
+      await audit(systemRequest(), { action: "payment.order.expired", entityType: "order", entityId: order.id,
+        after: { reason: "RESERVATION_EXPIRED", inventoryReleased: true } }, tx);
       await tx.paymentAttempt.updateMany({
         where: { orderId: order.id, status: "OPEN" },
         data: { status: "EXPIRED" },
@@ -888,45 +896,48 @@ export async function runPaymentJobs() {
     orderBy: { createdAt: "asc" },
   });
   for (const operation of operations) await runMoneyOperation(operation.id);
+  await prisma.moneyWebhook.updateMany({
+    where: { mode: mode(), status: "PROCESSING", nextRunAt: { lt: new Date() } },
+    data: { status: "RETRY" },
+  });
   const events = await prisma.moneyWebhook.findMany({
     where: { mode: mode(), status: { in: ["QUEUED", "RETRY"] }, nextRunAt: { lte: new Date() } },
     take: 20,
+    orderBy: { nextRunAt: "asc" },
   });
   for (const event of events) {
     const claim = await prisma.moneyWebhook.updateMany({
       where: { id: event.id, status: { in: ["QUEUED", "RETRY"] } },
-      data: { status: "PROCESSING", nextRunAt: new Date(Date.now() + 120000) },
+      data: { status: "PROCESSING", attempts: { increment: 1 }, nextRunAt: new Date(Date.now() + 120000) },
     });
     if (!claim.count) continue;
     try {
       await processWebhook(event);
       await prisma.moneyWebhook.update({
         where: { id: event.id },
-        data: { status: "PROCESSED", failureCode: null },
+        data: { status: "PROCESSED", failureCode: null, processedAt: new Date() },
       });
-    } catch {
+    } catch (error) {
       await prisma.moneyWebhook.update({
         where: { id: event.id },
         data: {
           status: "RETRY",
-          failureCode: "EVENT_RECONCILIATION_REQUIRED",
-          nextRunAt: new Date(Date.now() + 60000),
+          failureCode: paymentCheckReason(error),
+          nextRunAt: new Date(Date.now() + Math.min(15 * 60000, 60000 * 2 ** Math.min(event.attempts, 4))),
         },
       });
     }
   }
-  await prisma.moneyWebhook.updateMany({
-    where: { mode: mode(), status: "PROCESSING", nextRunAt: { lt: new Date() } },
-    data: { status: "RETRY" },
-  });
   const pending = await prisma.paymentAttempt.findMany({
     where: {
       mode: mode(),
-      status: { in: ["OPEN", "UNKNOWN", "EXCEPTION"] },
+      status: { in: ["QUEUED", "PROCESSING", "OPEN", "UNKNOWN", "BLOCKED", "EXPIRED", "FAILED", "EXCEPTION"] },
+      confirmedAt: null,
       checkoutId: { not: null },
-      updatedAt: { lt: new Date(Date.now() - 60000) },
+      nextCheckAt: { lte: new Date() },
     },
     take: 10,
+    orderBy: { nextCheckAt: "asc" },
   });
   for (const payment of pending) await reconcilePayment(payment.id).catch(() => {});
   await expireOrders();

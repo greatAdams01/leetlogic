@@ -257,6 +257,7 @@ export async function assertNoActiveCheckout(tx: Prisma.TransactionClient, order
   if (await tx.paymentAttempt.count({ where: { orderId, OR: [
     { status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
     { status: "BLOCKED", checkoutId: { not: null } },
+    { checkoutId: { not: null }, confirmedAt: null, checkErrorCode: { not: null } },
   ] } })) throw new AppError(409, "CHECKOUT_ACTIVE", "Finish the current payment before changing delivery details.");
 }
 
@@ -276,7 +277,7 @@ export function checkoutSummary(order: CheckoutOrder) {
       payableMinor: null,
       // A funded order may show its recorded price, but it is never a payable amount.
       totalWithDeliveryMinor: order.status !== "AWAITING_PAYMENT" && order.delivery &&
-        (order.delivery.selectedQuoteId || ["PICKUP_READY", "DELIVERED"].includes(order.delivery.status))
+        (order.delivery.selectedQuoteId || ["PICKUP_PREPARING", "PICKUP_READY", "DELIVERED"].includes(order.delivery.status))
         ? order.totalMinor + order.delivery.shippingMinor : null,
       quoteExpiresAt: null,
       checkoutErrorCode: error instanceof AppError ? error.code : "STALE_DELIVERY_QUOTE",
