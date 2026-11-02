@@ -27,7 +27,7 @@ export function Finance() {
   const [destination, setDestination] = useState(""),
     [amount, setAmount] = useState("");
   const running = useRef(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const sectionY = useRef({ setup: 0, withdraw: 0 });
   const withdrawalKey = useRef({ input: "", key: "" });
   const run = async (

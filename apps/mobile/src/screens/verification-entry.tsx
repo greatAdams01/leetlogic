@@ -275,7 +275,7 @@ export function Otp() {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState(resuming ? a.error({ code: "PROFILE_UNAVAILABLE" }) : "");
   const [errorCode, setErrorCode] = useState(resuming ? "PROFILE_UNAVAILABLE" : "");
-  const input = useRef<TextInput>(null);
+  const input = useRef<React.ComponentRef<typeof TextInput>>(null);
   const deadline = useRef(Date.now() + 60_000);
   const submitting = useRef(false);
   useEffect(() => {

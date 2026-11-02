@@ -23,7 +23,7 @@ vi.mock("expo-file-system", () => ({
     size = 6;
     exists = true;
     create = h.create;
-    write = h.write;
+    writeSync = h.write;
     delete = h.remove;
     bytes = h.bytes;
   },

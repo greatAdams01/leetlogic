@@ -16,7 +16,7 @@ export function FarmerSecurity() {
   const [step, setStep] = useState(a.security === "unlock" ? "unlock" : "create");
   const [pin, setPin] = useState("");
   const first = useRef("");
-  const input = useRef<TextInput>(null);
+  const input = useRef<React.ComponentRef<typeof TextInput>>(null);
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

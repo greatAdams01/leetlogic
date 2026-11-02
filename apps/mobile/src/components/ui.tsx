@@ -157,7 +157,7 @@ export function Field({
   hideLabel = false,
   inputRef,
   ...props
-}: TextInputProps & { label: string; hideLabel?: boolean; inputRef?: React.Ref<TextInput> }) {
+}: TextInputProps & { label: string; hideLabel?: boolean; inputRef?: React.Ref<React.ComponentRef<typeof TextInput>> }) {
   const tr = useUI();
   return (
     <View style={{ gap: 8 }}>
@@ -254,7 +254,7 @@ export function Page({
   header?: React.ReactNode;
   contentKey?: string;
   contentStyle?: ViewStyle;
-  scrollRef?: React.Ref<ScrollView>;
+  scrollRef?: React.Ref<React.ComponentRef<typeof ScrollView>>;
   green?: boolean;
   loading?: boolean;
   brand?: boolean;

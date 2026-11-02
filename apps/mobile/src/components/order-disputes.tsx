@@ -31,7 +31,7 @@ function EvidencePhoto({ path }: { path: string }) {
           `dispute-${randomUUID()}.${result.mime === "image/png" ? "png" : "jpg"}`,
         );
         file.create();
-        file.write(result.bytes);
+        file.writeSync(result.bytes);
         setUri(file.uri);
       })
       .catch((e) => {

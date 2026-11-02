@@ -14,7 +14,7 @@ export function BuyerSearch({
   onSearch: (query: string) => void;
 }) {
   const a = useApp();
-  const input = useRef<TextInput>(null);
+  const input = useRef<React.ComponentRef<typeof TextInput>>(null);
   const [open, setOpen] = useState(false),
     [draft, setDraft] = useState(value);
   const close = () => {

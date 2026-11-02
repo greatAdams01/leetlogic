@@ -62,7 +62,7 @@ If connection fails:
 
 To override detection, copy `apps/mobile/.env.example` to `apps/mobile/.env` and set `EXPO_PUBLIC_API_URL` to the desired API origin. Only the API origin belongs in an Expo public variable; provider keys remain on the server. Release builds require HTTPS. Console OTP is for local development only: read the actual code from the API terminal. No fixed test OTP or authentication bypass is included.
 
-SDK 57 uses the compatible Expo Go build installed by Expo CLI. See [Expo simulator setup](https://docs.expo.dev/workflow/ios-simulator/) and [version compatibility](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/). A device build will need the normal app signing and permission checks before distribution.
+The mobile app targets SDK 58 and requires Expo Go for SDK 58. After upgrading dependencies, stop the previous Metro server and restart with `pnpm --filter @leetlogic/mobile start --go --lan --clear --port 8082`, then scan the new QR code. Custom development clients must be rebuilt for SDK 58. Expo tooling requires Node.js 22.13+ (22.x), 24.3+ (24.x), or 26+. See [Expo simulator setup](https://docs.expo.dev/workflow/ios-simulator/) and [version compatibility](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/). A device build will need the normal app signing and permission checks before distribution.
 
 If Android stays offline with hardware graphics, close that emulator and retry without wiping it:
 

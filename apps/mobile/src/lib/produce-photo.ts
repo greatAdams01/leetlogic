@@ -35,7 +35,7 @@ export async function choosePhoto(camera = false) {
   const file = new File(Paths.cache, `produce-${randomUUID()}.jpg`);
   try {
     file.create();
-    file.write(photo.base64, { encoding: "base64" });
+    file.writeSync(photo.base64, { encoding: "base64" });
     if (!file.size || file.size > limit) throw new Error("Choose a photo smaller than 10 MB.");
   } catch (error) {
     if (file.exists) file.delete();

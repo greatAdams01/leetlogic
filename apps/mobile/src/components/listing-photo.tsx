@@ -48,7 +48,7 @@ export function ListingPhoto({
             `listing-preview-${randomUUID()}.${result.mime === "image/png" ? "png" : "jpg"}`,
           );
           file.create();
-          file.write(result.bytes);
+          file.writeSync(result.bytes);
           if (!cancelled) setUri(file.uri);
         } catch (error) {
           if (!cancelled) {

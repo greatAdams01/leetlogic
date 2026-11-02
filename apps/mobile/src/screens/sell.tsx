@@ -52,7 +52,7 @@ export function Sell() {
     [error, setError] = useState("");
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [guided, setGuided] = useState(false);
-  const descriptionInput = useRef<TextInput>(null);
+  const descriptionInput = useRef<React.ComponentRef<typeof TextInput>>(null);
   const voiceActive = useRef(false);
   const voiceActivity = (active: boolean) => {
     voiceActive.current = active;

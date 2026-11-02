@@ -151,7 +151,7 @@ const slides = [
 export function Intro() {
   const a = useApp();
   const { width } = useWindowDimensions();
-  const pager = useRef<ScrollView>(null);
+  const pager = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [step, setStep] = useState(() => {
     const index = Number(a.route.id || 0);
     return Number.isFinite(index) ? Math.max(0, Math.min(2, index)) : 0;

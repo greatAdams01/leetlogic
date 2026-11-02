@@ -14,7 +14,7 @@ vi.mock("expo-file-system", () => ({
     uri = "file:///cache/preview.jpg";
     exists = true;
     create = vi.fn();
-    write = h.write;
+    writeSync = h.write;
     delete = h.remove;
   },
 }));
