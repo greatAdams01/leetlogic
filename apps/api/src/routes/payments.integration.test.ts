@@ -1881,6 +1881,43 @@ suite("provider-backed payment safeguards", () => {
     expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUNDED");
     expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
   });
+  it("returns the full automatic bank-refund principal and expenses the payout fee", async () => {
+    const f = await recoverable();
+    Object.assign(getConfig(), { BACHS_BANK_REFUNDS_VERIFIED: true, BACHS_NGN_PAYOUT_FEE_MINOR: "100" });
+    await prisma.paymentAttempt.update({ where: { id: f.a.id }, data: { method: "NGN_BANK_TRANSFER" } });
+    const account = await prisma.financialAccount.upsert({ where: { userId_mode: { userId: buyer, mode: "sandbox" } }, create: { userId: buyer, mode: "sandbox", providerAccountId: `acct_${buyer}`, status: "READY", capabilities: ["transfers", "payouts"] }, update: {} });
+    const bank = await prisma.bankDestination.create({ data: { userId: buyer, mode: "sandbox", providerId: `bank_${randomUUID()}`, bankCode: "001", bankName: "Test bank", accountName: "Buyer", accountLastFour: "7890", fingerprint: randomUUID(), usable: true } });
+    await prisma.fulfillmentDeadline.update({ where: { orderId: f.o.id }, data: { refundDueAt: new Date(Date.now() - 1) } });
+    await processDeadline(f.o.id);
+    const op = await prisma.moneyOperation.findFirstOrThrow({ where: { paymentId: f.a.id, kind: "REFUND_TRANSFER" } });
+    expect((await logisticsFinance(f.o.id)).summary.refundProcessingMinor).toBe(11000n);
+    vi.spyOn(bachs, "account").mockResolvedValue({ id: account.providerAccountId, parent_organization_id: "org_fixture", enabled_capabilities: ["transfers", "payouts"] });
+    vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "100000.00" }]);
+    vi.spyOn(bachs, "payment").mockResolvedValue({ payment_id: `ch_${f.a.id}`, checkout_id: f.a.checkoutId, currency: "NGN", payment_method_details: { bank_transfer: { sender_account_number: "1234567890", sender_bank_code: "001" } } });
+    vi.spyOn(bachs, "destination").mockResolvedValue({ id: bank.providerId, currency: "NGN", is_usable: true, account_number: "1234567890", bank_code: "001" });
+    vi.spyOn(bachs, "call").mockImplementation(async (path, body: any) => {
+      if (path === "/transfers") {
+        expect(body.amount).toBe("111.00");
+        return { id: `tr_${op.id}`, status: "paid", currency: "NGN", amount: body.amount, destination: account.providerAccountId };
+      }
+      if (path === "/payouts") {
+        expect(body.amount).toBe("110.00");
+        return { id: `po_${op.id}`, status: "completed", currency: "NGN", amount: body.amount, fee: "1.00", total_debited: "111.00", reference: body.reference, destination: body.destination };
+      }
+      throw new Error("Unexpected provider call");
+    });
+    await runMoneyOperation(op.id);
+    const payout = await prisma.moneyOperation.findFirstOrThrow({ where: { paymentId: f.a.id, kind: "REFUND_PAYOUT" } });
+    expect(payout.amountMinor).toBe(11000n);
+    await runMoneyOperation(payout.id);
+    expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: payout.id } })).toMatchObject({ status: "SUCCEEDED", failureCode: null });
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } })).status).toBe("REFUNDED");
+    const fee = await prisma.moneyJournalLine.aggregate({ where: { account: "refund_fee_expense", journal: { orderId: f.o.id } }, _sum: { amountMinor: true } });
+    expect(fee._sum.amountMinor).toBe(100n);
+    expect((await logisticsFinance(f.o.id)).summary.refundCompletedMinor).toBe(11000n);
+    expect((await logisticsFinance(f.o.id)).summary.refundProcessingMinor).toBe(0n);
+    getConfig().BACHS_BANK_REFUNDS_VERIFIED = false;
+  });
   it("does not let staff approval race past an expired deadline",async()=>{
     const f=await preparedRecovery();await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{refundDueAt:new Date(Date.now()-1)}});
     await Promise.allSettled([approveRecovery(f.r.id,f.proposal.version,randomUUID(),staffReq()),processDeadline(f.o.id)]);

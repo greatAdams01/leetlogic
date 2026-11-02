@@ -1615,6 +1615,25 @@
   background: #2d6b43;
   color: white;
 }
+.live-sidebar nav { min-height: 0; padding-bottom: 16px; }
+.live-sidebar nav a { display: block; text-decoration: none; }
+.live-nav-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 11px 13px; border: 0; border-radius: 7px;
+  background: transparent; color: #dfece2; text-align: left;
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.live-nav-toggle:hover, .live-nav-toggle[data-active] { background: #1e6038; color: white; }
+.live-nav-toggle svg { flex-shrink: 0; transition: transform 150ms ease; }
+.live-nav-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.live-nav-submenu { list-style: none; margin: 3px 0 8px 15px; padding: 0 0 0 8px; border-left: 1px solid #548866; }
+.live-nav-submenu[hidden] { display: none; }
+.live-sidebar .live-nav-submenu a { padding: 9px 11px; line-height: 1.4; }
+.live-sidebar nav a[aria-current="page"] { font-weight: 600; }
+.live-sidebar nav a:focus-visible, .live-nav-toggle:focus-visible {
+  outline: 2px solid #c7f2d2; outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) { .live-nav-toggle svg { transition: none; } }
 .live-staff {
   border-top: 1px solid #4b7858;
   padding-top: 18px;

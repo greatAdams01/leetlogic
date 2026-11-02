@@ -414,7 +414,9 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
     throw new Error("PAYMENT_CHARGE_MISMATCH");
   const { fee, received, success, declined } = receiptAmounts(payment, attempt.amountMinor);
   const completed = payment.completed_at || checkout.completed_at;
-  const confirmationAt = success && completed ? new Date(completed) : new Date();
+  // Missing provider timestamps must never restart the two-hour clock on discovery.
+  // Checkout creation is a conservative lower bound until provider evidence is available.
+  const confirmationAt = success && completed ? new Date(completed) : attempt.createdAt;
   if (success && (!Number.isFinite(confirmationAt.getTime()) || confirmationAt.getTime() > Date.now() + 300000 ||
     confirmationAt.getTime() < attempt.createdAt.getTime() - 300000))
     throw new Error("PAYMENT_COMPLETION_TIME_INVALID");

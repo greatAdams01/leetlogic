@@ -1,6 +1,7 @@
 "use client";
 import { formatMoney } from "../../../../packages/contracts/src/money";
 import { Categories } from "./categories";
+import { SidebarNavigation } from "./sidebar-navigation";
 import { ListingQueue, ListingReview } from "./listing-review";
 import { VerificationReview, verificationLabel } from "./verification-review";
 import { MoneyOperations } from "./money-operations";
@@ -19,28 +20,6 @@ type Field = {
   type?: string;
   value?: string | number;
 };
-const pages = [
-  ["dashboard", "Dashboard", "orders.read"],
-  ["verification", "Verification queue", "verification.read"],
-  ["listings", "Listings queue", "catalog.manage"],
-  ["categories", "Listing categories", "catalog.manage"],
-  ["orders", "Orders & escrow", "orders.read"],
-  ["logistics", "Logistics & dispatch", "orders.read"],
-  ["reconciliation", "Reconciliation", "payments.read"],
-  ["withdrawals", "Withdrawals", "payments.read"],
-  ["disputes", "Dispute queue", "disputes.manage"],
-  ["users", "Users", "users.read"],
-  ["support", "Support tickets", "support.manage"],
-  ["faq", "FAQ admin", "content.manage"],
-  ["risk", "Fraud & risk", "risk.manage"],
-  ["compliance", "Export compliance", "compliance.manage"],
-  ["reports", "Reports & analytics", "payments.read"],
-  ["roles", "Roles & permissions", "admin.manage"],
-  ["settings", "Marketplace settings", "settings.manage"],
-  ["translations", "Translations", "content.manage"],
-  ["audit", "Audit log", "audit.read"],
-  ["system", "System status", "system.manage"],
-];
 let refreshInFlight: Promise<Response> | undefined;
 async function api(path: string, method = "GET", body?: Row, retry = true): Promise<Row> {
   const response = await fetch(`/api/admin/${path}`, {
@@ -573,7 +552,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
   }
   return (
     <div className="live-admin">
-      <aside className={menu ? "live-sidebar open" : "live-sidebar"}>
+      <aside id="admin-sidebar" className={menu ? "live-sidebar open" : "live-sidebar"}>
         <Link href="/admin" className="live-brand">
           LeetLogic <small>Admin console</small>
         </Link>
@@ -584,20 +563,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
         >
           ×
         </button>
-        <nav aria-label="Staff workspaces">
-          {pages
-            .filter(([, , permission]) => can(permission!))
-            .map(([path, label]) => (
-              <Link
-                key={path}
-                href={`/admin/${path}`}
-                aria-current={resource === path ? "page" : undefined}
-                onClick={() => setMenu(false)}
-              >
-                {label}
-              </Link>
-            ))}
-        </nav>
+        <SidebarNavigation route={route} permissions={staff?.permissions ?? []} onNavigate={() => setMenu(false)} />
         <div className="live-staff">
           <strong>{staff?.fullName || "Staff account"}</strong>
           <small>{staff?.email}</small>
@@ -620,6 +586,8 @@ function Workspace({ route, title }: { route: string; title: string }) {
           <button
             className="live-menu"
             aria-label="Toggle navigation"
+            aria-controls="admin-sidebar"
+            aria-expanded={menu}
             onClick={() => setMenu(!menu)}
           >
             ☰

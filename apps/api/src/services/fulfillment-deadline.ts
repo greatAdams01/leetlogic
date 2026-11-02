@@ -32,6 +32,7 @@ export async function markFulfillmentSecured(tx: Prisma.TransactionClient, order
   if (!d) return;
   if (deadlinesEnabled() && (d.state !== "ACTIVE" || overdue(d.refundDueAt))) return;
   await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "SECURED", securedAt: new Date() } });
+  await tx.financeAlert.updateMany({ where: { orderId, resolvedAt: null }, data: { resolvedAt: new Date() } });
   await tx.paymentRecovery.updateMany({ where: { orderId, allocatedAt: { not: null } }, data: { state: "FULFILLMENT_STARTED" } });
 }
 export async function readFulfillment(orderId: string) {

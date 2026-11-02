@@ -65,3 +65,19 @@ Existing booking claims, leases and saved provider references prevent blind dupl
 Provider calls in automated integration tests are mocked. No new card charge, courier purchase, physical pickup, individual rider contact, device push display, real multi-parcel delivery, live settlement or refund was performed. These remain pilot checks. The historical cancelled-order receipt requires staff resolution through existing controls.
 
 Provider references: [Bachs webhook verification](https://docs.bachs.io/guides/webhooks/overview), [Bachs endpoint redelivery](https://docs.bachs.io/api-reference/webhooks/resend-an-event-to-an-endpoint), [Shipbubble official API schema](https://github.com/Shipbubble/node-sdk/blob/main/openapi.yaml).
+
+## 8. Recovery, deadline refunds and logistics finance implementation
+
+The connected recovery/finance extension is documented in [payment-recovery-and-finance.md](payment-recovery-and-finance.md). It adds durable consent/proposal/reservation records, deadline claims, staged refund execution, and manual shipping-wallet funding reconciliation to the existing services and admin/customer interfaces.
+
+Continuation validation on 2 November 2026:
+
+- Payment integration: 61 passed, including recovery allocation/booking, shipping increase/decrease, proposal invalidation, unattended refund, the full-principal automatic bank return with a business-paid fee, deadline races, uncertain bookings, access control, funding verification and warning/reservation idempotency.
+- Delivery/address integration: 77 passed.
+- API unit suite: 173 passed; 179 integration cases skipped in that unit command and exercised separately where listed above.
+- Mobile: 389 passed. Web: 83 passed. Workspace type checking passed.
+- Additive recovery/finance migration applied to the local database; Prisma regenerated. Automation flags remain disabled. No existing customer refund or courier purchase was triggered.
+
+Additional safeguards in the continuation prevent refund/top-up operations claiming the same remaining shipping liability, retain unknown wallet requirements, isolate finance shipment rows by payment environment, count bank transfer/payout stages as one principal obligation, and fairly rotate bounded deadline scans. Completed fulfillment/refunds resolve their active alerts. Missing provider completion timestamps conservatively use checkout creation rather than extending the deadline at discovery.
+
+The remaining operational gates are actual provider sandbox refund completion, external heartbeat alert routing, funded refund routes, and live logistics/physical delivery pilots. Unknown refund writes lacking a provider reference require audited staff lookup through existing recovery controls before any retry. The implementation does not claim those external actions occurred.

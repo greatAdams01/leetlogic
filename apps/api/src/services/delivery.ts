@@ -379,7 +379,7 @@ export async function runDeliveryJobs() {
       AND: [
         { OR: [
           { status: { notIn: ["BOOKING_UNCERTAIN", "BOOKING_BLOCKED"] } },
-          { cancelRequestedAt: { not: null }, providerShipmentId: { startsWith: "split:" } },
+          { cancelRequestedAt: { not: null }, providerShipmentId: { not: null } },
         ] },
         { OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }] },
       ],

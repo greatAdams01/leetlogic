@@ -66,6 +66,7 @@ export function paymentReady(kind = "CHECKOUT") {
     !c.BACHS_ORGANIZATION_ID ||
     !c.BACHS_WEBHOOK_SECRET ||
     !enabled ||
+    (kind === "CHECKOUT" && c.PAYMENT_AUTO_REFUNDS_ENABLED && !c.PAYMENTS_REFUNDS_ENABLED) ||
     (kind.startsWith("REFUND") && !c.PAYMENTS_REFUNDS_ENABLED) ||
     (c.NODE_ENV === "production" && c.BACHS_MODE !== "live")
   )
@@ -231,7 +232,7 @@ export class Bachs {
             customer_bears_fee: true,
             reference: input.id,
             metadata: { order_id: input.orderId, attempt_id: input.id },
-            payment_method_types: c.BACHS_BANK_REFUNDS_VERIFIED
+            payment_method_types: c.BACHS_BANK_REFUNDS_VERIFIED && (!c.PAYMENT_AUTO_REFUNDS_ENABLED || (c.PAYMENTS_TRANSFERS_ENABLED && c.PAYMENTS_PAYOUTS_ENABLED && c.BACHS_NGN_PAYOUT_FEE_MINOR !== undefined))
               ? ["NGN_CARD", "NGN_BANK_TRANSFER"]
               : ["NGN_CARD"],
             ...redirects,

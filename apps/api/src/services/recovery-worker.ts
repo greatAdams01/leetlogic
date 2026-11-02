@@ -36,7 +36,7 @@ export async function scanFulfillmentDeadlines() {
     const current = await tx.paymentRecovery.findUniqueOrThrow({ where: { id: r.id } });
     if (current.reservationUntil && current.reservationUntil <= new Date()) await releaseRecoveryStock(tx, r.id);
   });
-  const rows = await prisma.fulfillmentDeadline.findMany({ where: { mode: mode(), state: { notIn: terminal }, nextRunAt: { lte: new Date() } }, orderBy: { refundDueAt: "asc" }, take: 100 });
+  const rows = await prisma.fulfillmentDeadline.findMany({ where: { mode: mode(), state: { notIn: terminal }, nextRunAt: { lte: new Date() } }, orderBy: [{ nextRunAt: "asc" }, { refundDueAt: "asc" }], take: 100 });
   for (const row of rows) {
     try { await processDeadline(row.orderId); }
     catch (error) {
@@ -57,6 +57,7 @@ export async function processDeadline(orderId: string) {
     if (terminal.includes(deadline.state)) return;
     const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId }, include: { delivery: { include: { parcels: true } } } });
     const d = order.delivery;
+    await tx.fulfillmentDeadline.update({ where: { orderId }, data: { nextRunAt: new Date(Date.now() + 15000) } });
     const payments = await tx.paymentAttempt.findMany({ where: { orderId, mode: mode(), confirmedAt: { not: null }, paidMinor: { gt: 0n } } });
     await ensureRecovery(tx, deadline.paymentId);
     const recovery = await tx.paymentRecovery.findFirst({ where: { orderId, mode: mode() } });
@@ -79,6 +80,7 @@ export async function processDeadline(orderId: string) {
     if (payments.length && payments.every(p => p.status === "REFUNDED")) {
       await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "REFUNDED", failureCode: null } });
       await tx.paymentRecovery.updateMany({ where: { orderId }, data: { state: "REFUNDED" } });
+      await tx.financeAlert.updateMany({ where: { orderId, resolvedAt: null }, data: { resolvedAt: new Date() } });
       await notify(tx, orderId, "REFUND_COMPLETED"); return;
     }
     await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "REFUND_DUE", failureCode: null, nextRunAt: new Date(Date.now() + 15000) } });
@@ -99,6 +101,15 @@ export async function processDeadline(orderId: string) {
     const c = getConfig();
     if (!c.PAYMENTS_REFUNDS_ENABLED || (mode() === "live" && (!c.PAYMENTS_LIVE_MONEY || !c.BACHS_PLATFORM_APPROVED))) throw new AppError(503, "REFUNDS_DISABLED", "Refund processing is disabled.");
     // Active sessions can produce late receipts. They remain reconcilable; overdue guards prevent new writes.
+    const shippingBalance = await tx.moneyJournalLine.aggregate({ where: { account: `held_shipping:${orderId}`, journal: { mode: mode() } }, _sum: { amountMinor: true } });
+    // Pending refunds have reserved part of the liability even before their journals post.
+    const pendingRefunds = await tx.moneyOperation.findMany({ where: { orderId, kind: { in: ["REFUND", "REFUND_TRANSFER"] }, status: { in: ["QUEUED", "PROCESSING", "PROVIDER_PENDING", "UNKNOWN", "BLOCKED"] } } });
+    let shippingBudget = -(shippingBalance._sum.amountMinor ?? 0n);
+    for (const operation of pendingRefunds) {
+      const payload = operation.payload as any;
+      if (payload?.automaticDeadline && !payload.exception) shippingBudget -= BigInt(payload.shippingMinor || "0") - BigInt(payload.shippingFromBusinessMinor || "0");
+    }
+    if (shippingBudget < 0n) shippingBudget = 0n;
     for (const p of payments) {
       if (p.status === "REFUNDED") continue;
       const previous = await tx.moneyOperation.findFirst({ where: { paymentId: p.id, kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] }, status: { not: "FAILED" } } });
@@ -120,9 +131,8 @@ export async function processDeadline(orderId: string) {
         destinationId = bankDestination.id;
       }
       const failed = await tx.moneyOperation.count({ where: { paymentId: p.id, kind: { in: ["REFUND", "REFUND_TRANSFER"] }, status: "FAILED" } });
-      const balance = allocated ? await tx.moneyJournalLine.aggregate({ where: { account: `held_shipping:${orderId}`, journal: { mode: mode() } }, _sum: { amountMinor: true } }) : null;
-      const heldShipping = -(balance?._sum.amountMinor ?? 0n);
-      const shippingCovered = allocated ? (heldShipping > p.shippingMinor ? p.shippingMinor : heldShipping > 0n ? heldShipping : 0n) : 0n;
+      const shippingCovered = allocated ? (shippingBudget > p.shippingMinor ? p.shippingMinor : shippingBudget) : 0n;
+      shippingBudget -= shippingCovered;
       await createOperation(tx, { ownerId: p.buyerId, orderId, paymentId: p.id, kind: bank ? "REFUND_TRANSFER" : "REFUND", key: `automatic:${p.id}:${failed}`, amountMinor: p.paidMinor,
         payload: { automaticDeadline: true, exception: !allocated, produceMinor: allocated ? p.produceMinor.toString() : "0", shippingMinor: allocated ? p.shippingMinor.toString() : "0", shippingFromBusinessMinor: allocated ? (p.shippingMinor - shippingCovered).toString() : "0", destinationId: destinationId ?? null, reason: "Fulfillment not secured within two hours" } });
     }
