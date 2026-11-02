@@ -20,7 +20,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
   const privateMedia =
     route.startsWith("verifications/documents/") ||
     route.startsWith("produce-photos/") ||
-    route.startsWith("dispute-evidence/");
+    route.startsWith("dispute-evidence/") || /^money\/funding\/[a-f0-9-]+\/evidence$/.test(route);
   const requestId = randomUUID();
   // The API's private download can take 60s; allow it to return its precise error.
   const deadline = AbortSignal.timeout(privateMedia ? 75000 : 15000);

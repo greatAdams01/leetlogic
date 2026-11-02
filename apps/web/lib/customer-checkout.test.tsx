@@ -276,6 +276,7 @@ describe("web payment synchronization", () => {
       orderStatus: "FUNDED", heldMinor: "10000", items: [{ ...pending(), status: "SUCCEEDED" }],
     }));
     await mountPayment();
+    h.changed.mockClear();
     await act(async () => { fireEvent(window, new Event("focus")); });
     expect(h.refresh).toHaveBeenCalledOnce();
     expect(h.changed).toHaveBeenCalledOnce();
@@ -563,5 +564,20 @@ describe("web saved-address checkout", () => {
     expect(screen.queryByText("Add or verify a delivery address")).toBeNull();
     expect(screen.queryByLabelText("Saved delivery address")).toBeNull();
     expect(h.saveAddress).not.toHaveBeenCalled();
+  });
+});
+
+describe("automatic payment recovery", () => {
+  it("checks pending payment on order entry without a browser focus event", async () => {
+    h.payment.items = [pending()];
+    h.refresh.mockImplementation(async () => {
+      h.payment.items = [{ ...pending(), status: "SUCCEEDED" }];
+      h.payment.orderStatus = "FUNDED";
+      h.payment.heldMinor = "10000";
+    });
+    await mountPayment();
+    expect(h.refresh).toHaveBeenCalledOnce();
+    expect(h.changed).toHaveBeenCalledOnce();
+    expect(button("Check Payment")).toBeNull();
   });
 });

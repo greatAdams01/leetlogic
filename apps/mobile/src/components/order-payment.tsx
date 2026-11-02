@@ -1,3 +1,4 @@
+import { fulfillmentLabel } from "../../../../packages/contracts/src/fulfillment-status";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Linking, View } from "react-native";
 import {
@@ -46,6 +47,8 @@ export function OrderPayment({
         const pending = latest.items?.find((payment: any) =>
           pendingPaymentStatuses.includes(payment.status) || (latest.checkoutActive && payment.status === "BLOCKED"),
         );
+        setData(latest);
+        const previousStatus = latest.orderStatus;
         if (reconcile && isBuyer && pending) {
           await api(`/orders/${orderId}/payments/${pending.id}/refresh`, {
             method: "POST",
@@ -55,6 +58,7 @@ export function OrderPayment({
         }
         if (version !== requestVersion.current) return null;
         setData(latest);
+        if (reconcile && previousStatus !== latest.orderStatus) await callbacks.current.onChanged();
         return latest;
       } catch (error) {
         if (version !== requestVersion.current) return null;
@@ -69,8 +73,16 @@ export function OrderPayment({
     let active = true;
     setData(null);
     setError("");
-    void load().catch((e) => { if (active) setError(callbacks.current.error(e)); });
+    void load(true).catch((e) => { if (active) setError(callbacks.current.error(e)); });
     const timer = setInterval(() => setNow(Date.now()), 1000);
+    let polling = false;
+    const confirmationTimer = setInterval(() => {
+      if (polling || running.current) return;
+      polling = true;
+      void load(true)
+        .catch((e) => { if (active) setError(callbacks.current.error(e)); })
+        .finally(() => { polling = false; });
+    }, 30000);
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active" && !running.current) {
         void load(true)
@@ -82,6 +94,7 @@ export function OrderPayment({
       active = false;
       sub.remove();
       clearInterval(timer);
+      clearInterval(confirmationTimer);
       requestVersion.current++;
     };
   }, [load]);
@@ -135,6 +148,7 @@ export function OrderPayment({
   const content = (
     <>
       {!compact && <Heading>Payment</Heading>}
+      {data?.fulfillment && data.fulfillment.state !== "SECURED" && <Label>{a.ui(fulfillmentLabel(data.fulfillment.state))}</Label>}
       {!compact && (
         <Label>
           Payment-processing fees are shown before you pay. Non-returnable fees are deducted from
@@ -173,7 +187,7 @@ export function OrderPayment({
             loading={busy}
             onPress={() => void act("REFRESH")}
           />
-          <Label muted>After paying, return to this order and check your payment.</Label>
+          <Label muted>Confirming your payment. Please don’t pay again. We check automatically; you can also check now.</Label>
           {actions.canResume && (
             <Button
               title="Continue payment"

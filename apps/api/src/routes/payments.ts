@@ -1,3 +1,5 @@
+import { installRecoveryRoutes } from "./payment-recovery.js";
+import { readFulfillment } from "../services/fulfillment-deadline.js";
 import { bankName } from "../services/bank-names.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { createHash } from "node:crypto";
@@ -50,6 +52,7 @@ export const paymentsRouter = Router(),
 paymentsRouter.use(requireAuth("customer"));
 financialRouter.use(requireAuth("customer"));
 moneyAdminRouter.use(requireAuth("admin"), requirePermission("payments.read"));
+installRecoveryRoutes(paymentsRouter, moneyAdminRouter);
 const safeOperation = (op: any) => ({
   id: op.id,
   kind: op.kind,
@@ -65,6 +68,9 @@ const safePayment = (item: any) => ({
   kind: item.kind,
   status: item.status,
   exceptionCode: item.exceptionCode,
+  confirmedAt: item.confirmedAt,
+  paymentConfirmed: !!item.confirmedAt || ["SUCCEEDED", "REFUNDED"].includes(item.status),
+  confirmationPending: !item.confirmedAt && ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN", "BLOCKED"].includes(item.status),
   amountMinor: item.amountMinor,
   produceMinor: item.produceMinor,
   shippingMinor: item.shippingMinor,
@@ -110,6 +116,7 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
       checkoutActive: items.some((item) => ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(item.status) ||
         (item.status === "BLOCKED" && !!item.checkoutId)),
       items: items.map((item) => safeOrderPayment(order, item, order.buyerId === req.auth!.sub)),
+      fulfillment: await readFulfillment(order.id),
       orderStatus: order.status,
       financialHold: order.financialHold,
       heldMinor: order.heldMinor,

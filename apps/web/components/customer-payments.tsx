@@ -1,4 +1,5 @@
 "use client";
+import { fulfillmentLabel } from "../../../packages/contracts/src/fulfillment-status";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { MoneyInput } from "./money-input";
 import Link from "next/link";
@@ -54,12 +55,15 @@ export function CustomerPayment({
         const pending = latest.items?.find((item: any) =>
           pendingPaymentStatuses.includes(item.status) || (latest.checkoutActive && item.status === "BLOCKED"),
         );
+        setData(latest);
+        const previousStatus = latest.orderStatus;
         if (reconcile && isBuyer && pending) {
           await customerApi(`orders/${orderId}/payments/${pending.id}/refresh`, {});
           latest = await customerApi(`orders/${orderId}/payments`);
         }
         if (version !== requestVersion.current) return null;
         setData(latest);
+        if (reconcile && previousStatus !== latest.orderStatus) await callbacks.current.onChanged();
         return latest;
       } catch (error) {
         if (version !== requestVersion.current) return null;
@@ -72,8 +76,16 @@ export function CustomerPayment({
     let active = true;
     setData(null);
     setNotice("");
-    void load().catch((e) => { if (active) setNotice(callbacks.current.error(e)); });
+    void load(true).catch((e) => { if (active) setNotice(callbacks.current.error(e)); });
     const timer = setInterval(() => setNow(Date.now()), 1000);
+    let polling = false;
+    const confirmationTimer = setInterval(() => {
+      if (polling || running.current || document.visibilityState !== "visible") return;
+      polling = true;
+      void load(true)
+        .catch((e) => { if (active) setNotice(callbacks.current.error(e)); })
+        .finally(() => { polling = false; });
+    }, 30000);
     const focus = () => {
       if (!running.current)
         void load(true)
@@ -85,6 +97,7 @@ export function CustomerPayment({
       active = false;
       window.removeEventListener("focus", focus);
       clearInterval(timer);
+      clearInterval(confirmationTimer);
       requestVersion.current++;
     };
   }, [load]);
@@ -135,6 +148,7 @@ export function CustomerPayment({
   return (
     <section>
       <h2>{say("Payment")}</h2>
+      {data?.fulfillment && data.fulfillment.state !== "SECURED" && <p role="status">{say(fulfillmentLabel(data.fulfillment.state))}</p>}
       <p>
         {say(
           "Payment-processing fees are shown before you pay. Non-returnable fees are deducted from refunds.",
@@ -167,7 +181,7 @@ export function CustomerPayment({
           <button disabled={busy} onClick={() => void act("refresh")}>
             {say("Check Payment")}
           </button>
-          <p>{say("After paying, return to this order and check your payment.")}</p>
+          <p>{say("Confirming your payment. Please don’t pay again. We check automatically; you can also check now.")}</p>
           {actions.canResume && (
             <button disabled={busy || disabled} onClick={() => void act("resume")}>
               {say("Continue payment")}

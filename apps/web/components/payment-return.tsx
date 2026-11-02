@@ -11,13 +11,30 @@ export function PaymentReturn() {
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("attempt");
     if (!id || !/^[a-f0-9-]{36}$/i.test(id)) return;
-    void customerApi(`financial/payments/${id}`)
-      .then(async (p) => {
+    let active = true, running = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
+      if (!active || running) return;
+      running = true;
+      let retry = true;
+      try {
+        const p = await customerApi(`financial/payments/${id}`);
+        if (!active) return;
         setPayment(p);
-        const updated = await customerApi(`orders/${p.orderId}/payments/${p.id}/refresh`, {});
+        const updated = p.paymentConfirmed ? p : await customerApi(`orders/${p.orderId}/payments/${p.id}/refresh`, {});
+        if (!active) return;
         setPayment(updated);
-      })
-      .catch((e) => setNotice(localizedError(locale, e)));
+        retry = !updated.paymentConfirmed && !["EXCEPTION", "REFUNDED"].includes(updated.status);
+        setNotice(retry ? ui(locale, "Confirming your payment. Please don’t pay again.") : "");
+      } catch (e) {
+        if (active) setNotice(localizedError(locale, e));
+      } finally {
+        running = false;
+        if (active && retry) timer = setTimeout(() => void check(), 30000);
+      }
+    };
+    void check();
+    return () => { active = false; clearTimeout(timer); };
   }, [locale]);
   return (
     <section className="customer-panel">

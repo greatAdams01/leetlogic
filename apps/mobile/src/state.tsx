@@ -353,13 +353,13 @@ export function useApp() {
     alert: (title: string, text: string, buttons?: AlertButton[]) => void;
   };
 }
-export function useResource<T>(path: string, enabled = true) {
+export function useResource<T>(path: string, enabled = true, refreshMs = 0) {
   const { locale } = useApp();
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
   const request = useRef(0);
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (background = false) => {
     const current = ++request.current;
     if (!enabled) {
       setData(null);
@@ -367,7 +367,7 @@ export function useResource<T>(path: string, enabled = true) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!background) setLoading(true);
     setError("");
     try {
       const result = await api<T>(path);
@@ -380,9 +380,19 @@ export function useResource<T>(path: string, enabled = true) {
   }, [path, locale, enabled]);
   useEffect(() => {
     void reload();
+    let refreshing = false;
+    const refresh = () => {
+      if (refreshing || !enabled || AppState.currentState === "background" || AppState.currentState === "inactive") return;
+      refreshing = true;
+      void reload(true).finally(() => { refreshing = false; });
+    };
+    const timer = refreshMs > 0 ? setInterval(refresh, refreshMs) : null;
+    const subscription = refreshMs > 0 ? AppState.addEventListener("change", (state) => { if (state === "active") refresh(); }) : null;
     return () => {
+      if (timer) clearInterval(timer);
+      subscription?.remove();
       request.current++;
     };
-  }, [reload]);
+  }, [reload, enabled, refreshMs]);
   return { data, error, loading, reload };
 }

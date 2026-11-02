@@ -1,3 +1,4 @@
+import { assertFulfillmentOpen, markFulfillmentSecured } from "./fulfillment-deadline.js";
 import { bookSplitDelivery, recordedSplitBooking, trackSplitDelivery } from "./split-delivery.js";
 import { prisma, type Delivery, type DeliveryQuote, type Prisma, type TradeOrder } from "@leetlogic/database";
 import { createHash } from "node:crypto";
@@ -67,6 +68,7 @@ export async function queueBooking(orderId: string) {
     const d = order.delivery;
     if (!d) throw new AppError(409, "QUOTE_REQUIRED", "Choose delivery first");
     await assertNoDeliverySettlement(tx, orderId);
+    await assertFulfillmentOpen(tx, orderId);
     if (["BOOKING_QUEUED", "BOOKING", "BOOKING_UNCERTAIN", "BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"].includes(d.status)) return;
     const quote = d.selectedQuoteId ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } }) : null;
     if (order.status !== "FUNDED" || order.financialHold || d.providerShipmentId || d.bookingStartedAt || d.cancelRequestedAt || !quote || d.paidMinor < quote.amountMinor)
@@ -142,6 +144,7 @@ export async function finalizeDeliveryBooking(
       ["shipping_wallet_asset", -cost],
     ], order.id);
   }
+  if (!review) await markFulfillmentSecured(tx, order.id);
   if (review) await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
   await deliveryEvent(tx, delivery.id, "BOOKED", source, `${delivery.id}:booked`, actorId);
   await deliveryEvent(tx, delivery.id, "COURIER_ASSIGNED", source, `${delivery.id}:courier-assigned`, actorId);
@@ -330,6 +333,7 @@ export async function runDeliveryJobs() {
         if (current.status !== "FUNDED" || current.financialHold || !current.delivery || current.delivery.status !== "BOOKING" || current.delivery.cancelRequestedAt || current.delivery.paidMinor < quote.amountMinor)
           throw new AppError(409, "BOOKING_NOT_READY", "Order changed before booking.");
         await assertNoDeliverySettlement(tx, d.orderId);
+        await assertFulfillmentOpen(tx, d.orderId);
         assertCurrentDeliveryQuote(current, current.delivery, quote, { booking: true });
       };
       await prisma.$transaction(async (tx) => {

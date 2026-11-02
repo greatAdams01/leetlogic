@@ -1,4 +1,5 @@
 "use client";
+import { FinanceOperations } from "./finance-operations";
 import { useCallback, useEffect, useState } from "react";
 import { formatMoney as money } from "../../../../packages/contracts/src/money";
 async function call(path = "", body?: unknown) {
@@ -266,6 +267,7 @@ export function MoneyOperations({
           Exceptions {r.exceptionCount}
         </p>
       ))}
+      <FinanceOperations orderId={orderId} manage={manage} ready={!busy && code.length === 6 && reason.length >= 10} reason={reason} action={action} />
       <p role="status">{error}</p>
     </section>
   );

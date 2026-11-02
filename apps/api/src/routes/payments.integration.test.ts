@@ -1,3 +1,7 @@
+import { approveRecovery, confirmRecoveryFarmer, quoteRecovery, acceptRecovery } from "../services/payment-recovery.js";
+import { processDeadline, scanFulfillmentDeadlines } from "../services/recovery-worker.js";
+import { logisticsFinance, verifyFunding } from "../services/logistics-finance.js";
+import { assertFulfillmentOpen, refundDeadline } from "../services/fulfillment-deadline.js";
 import { AppError } from "../lib/errors.js";
 import * as mediaStorage from "../services/storage/private-media.js";
 import { randomUUID, createHmac } from "node:crypto";
@@ -91,7 +95,7 @@ suite("provider-backed payment safeguards", () => {
     const role = await prisma.adminRole.create({
       data: { code: `PAYMENTS_${randomUUID()}`, name: "Payment integration" },
     });
-    for (const code of ["orders.read", "orders.manage", "payments.manage"]) {
+    for (const code of ["orders.read", "orders.manage", "payments.manage", "payments.read"]) {
       const permission = await prisma.permission.upsert({
         where: { code }, create: { code, description: code }, update: {},
       });
@@ -169,6 +173,7 @@ suite("provider-backed payment safeguards", () => {
     ).id;
   });
   beforeEach(() => {
+    Object.assign(getConfig(), { PAYMENT_RECOVERY_ENABLED: false, PAYMENT_AUTO_REFUNDS_ENABLED: false, SHIPPING_FUNDING_ENABLED: false });
     // Workers scan the schema. No test may accidentally call either real provider.
     vi.spyOn(bachs, "call").mockRejectedValue(new Error("Unexpected payment provider call"));
     vi.spyOn(shippingProvider, "quotes").mockRejectedValue(new Error("Unexpected rate request"));
@@ -333,9 +338,16 @@ suite("provider-backed payment safeguards", () => {
     ).toBe(409);
     mockReceipt(a, { amount: "100.00", amount_paid: "101.00" });
     await reconcilePayment(a.id);
-    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe(
-      "PICKUP_READY",
-    );
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("PICKUP_PREPARING");
+    const readyPath = `/v1/orders/${o.id}/delivery/ready`;
+    expect((await request(app).post(readyPath).set("Authorization", `Bearer ${token}`).send({})).status).toBe(403);
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({})).status).toBe(409);
+    const sellerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+    for (let repeat = 0; repeat < 2; repeat++)
+      expect((await request(app).post(readyPath).set("Authorization", `Bearer ${sellerToken}`).send({})).status).toBe(200);
+    expect(await prisma.deliveryEvent.count({ where: { deliveryId: d.id, status: "READY_FOR_PICKUP" } })).toBe(1);
+    expect(await prisma.deliveryNotification.count({ where: { event: { deliveryId: d.id, status: "READY_FOR_PICKUP" } } })).toBe(2);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("PICKUP_READY");
     expect(
       (
         await request(app)
@@ -355,6 +367,26 @@ suite("provider-backed payment safeguards", () => {
     expect(
       (await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).deliveryConfirmedAt,
     ).not.toBeNull();
+  });
+  it("records farmer readiness without replacing courier tracking or paid status", async () => {
+    const { o, d } = await order();
+    const sellerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+    const path = `/v1/orders/${o.id}/delivery/ready`;
+    const auth = { Authorization: `Bearer ${sellerToken}` };
+    // An unpaid order is neither visible nor actionable for the farmer.
+    expect((await request(app).post(path).set(auth).send({})).status).toBe(404);
+    const a = await checkout(o.id);
+    mockReceipt(a);
+    await reconcilePayment(a.id);
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "BOOKED", providerShipmentId: `fixture-${d.id}` } });
+    for (let duplicate = 0; duplicate < 2; duplicate++)
+      expect((await request(app).post(path).set(auth).send({})).status).toBe(200);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("BOOKED");
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).status).toBe("FUNDED");
+    expect(await prisma.deliveryEvent.count({ where: { deliveryId: d.id, status: "READY_FOR_PICKUP" } })).toBe(1);
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "IN_TRANSIT" } });
+    expect((await request(app).post(path).set(auth).send({})).status).toBe(200);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("IN_TRANSIT");
   });
   it("ranks courier quotes, initializes one checkout, checks pending payment and funds escrow exactly once", async () => {
     const { o, d, q } = await order();
@@ -1788,4 +1820,110 @@ suite("provider-backed payment safeguards", () => {
       "DELIVERED",
     );
   });
+  const staffReq = () => ({ ...systemRequest(), auth: { sub: verifyAccessToken(staff,"admin").sub, subject:"admin" }, body: { reason:"Reviewed recovery integration evidence" } }) as any;
+  const buyerReq = () => ({ ...systemRequest(), auth: { sub: buyer, subject:"customer" } }) as any;
+  async function recoverable() {
+    Object.assign(getConfig(), { PAYMENT_RECOVERY_ENABLED:true, PAYMENT_AUTO_REFUNDS_ENABLED:true, SHIPPING_FUNDING_ENABLED:true });
+    getConfig().DELIVERY_ALLOWED_CATEGORIES = (await prisma.listing.findUniqueOrThrow({where:{id:listing}})).categoryId;
+    const fixture=await order();const a=await checkout(fixture.o.id);
+    await prisma.tradeOrder.update({where:{id:fixture.o.id},data:{status:"CANCELLED"}});
+    mockReceipt(a);await reconcilePayment(a.id);
+    const r=await prisma.paymentRecovery.findUniqueOrThrow({where:{paymentId:a.id}});
+    return {...fixture,a,r};
+  }
+  async function preparedRecovery(price=1000n) {
+    const f=await recoverable();
+    await confirmRecoveryFarmer(f.r.id,{pickupDate:new Date(Date.now()+86400000).toISOString().slice(0,10),preparationMinutes:30,notes:"Farmer confirmed stock on phone",phoneConfirmation:true},staffReq());
+    vi.spyOn(shippingProvider,"quotes").mockResolvedValue([{requestToken:`recovery-${f.o.id}`,serviceCode:"pickup",courierId:"courier",courier:"Fixture courier",amountMinor:price,walletMinor:price}]);
+    const proposal=await quoteRecovery(f.r.id,staffReq());const snapshot=proposal.snapshot as any;
+    await acceptRecovery(f.r.id,proposal.version,snapshot.options[0].id,true,buyerReq());
+    return {...f,proposal};
+  }
+  it("restores an exception receipt once after farmer and buyer consent and secures booking",async()=>{
+    const f=await preparedRecovery();const key=randomUUID();
+    await Promise.all([approveRecovery(f.r.id,f.proposal.version,key,staffReq()),approveRecovery(f.r.id,f.proposal.version,key,staffReq())]);
+    expect(await prisma.escrowEntry.count({where:{orderId:f.o.id,kind:"FUND"}})).toBe(1);
+    expect(await prisma.paidOrderNotification.count({where:{orderId:f.o.id}})).toBe(1);
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).quoteId).toBe(f.a.quoteId);
+    vi.spyOn(shippingProvider,"book").mockImplementation(async()=>({id:`book-${f.o.id}`,status:"pending",courier:"Fixture courier",shippingMinor:1000n}));
+    await runDeliveryJobs();
+    expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("SECURED");
+    expect((await prisma.paymentRecovery.findUniqueOrThrow({where:{id:f.r.id}})).state).toBe("FULFILLMENT_STARTED");
+  });
+  it("keeps higher quotes awaiting verified top-up and lower quotes as refundable surplus",async()=>{
+    const higher=await preparedRecovery(1500n);await approveRecovery(higher.r.id,higher.proposal.version,randomUUID(),staffReq());
+    expect((await prisma.delivery.findUniqueOrThrow({where:{id:higher.d.id}})).status).toBe("TOPUP_REQUIRED");
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:higher.a.id}})).shippingMinor).toBe(1000n);
+    const lower=await preparedRecovery(800n);await approveRecovery(lower.r.id,lower.proposal.version,randomUUID(),staffReq());
+    const finance=await logisticsFinance(lower.o.id);
+    expect(finance.shipments[0]!.refundableShippingSurplusMinor).toBe(200n);
+    expect(finance.summary.earnedCommissionMinor).toBe(0n);
+  });
+  it("invalidates old buyer consent when a proposal is requoted",async()=>{
+    const f=await preparedRecovery();await quoteRecovery(f.r.id,staffReq());
+    await expect(approveRecovery(f.r.id,f.proposal.version,randomUUID(),staffReq())).rejects.toThrow();
+    expect(await prisma.escrowEntry.count({where:{orderId:f.o.id,kind:"FUND"}})).toBe(0);
+  });
+  it("returns an unattended verified payment through one durable refund operation",async()=>{
+    const f=await recoverable();
+    const due=new Date(Date.now()-1000);await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{confirmedAt:new Date(due.getTime()-7200000),refundDueAt:due}});
+    await Promise.all([processDeadline(f.o.id),processDeadline(f.o.id)]);
+    const ops=await prisma.moneyOperation.findMany({where:{paymentId:f.a.id,kind:"REFUND"}});expect(ops).toHaveLength(1);expect(ops[0]!.amountMinor).toBe(11000n);
+    await expect(prisma.$transaction(tx=>assertFulfillmentOpen(tx,f.o.id))).rejects.toThrow();
+    vi.spyOn(bachs,"balances").mockResolvedValue({balances:[{currency:"NGN",available_balance:"100000.00"}]});
+    vi.spyOn(bachs,"payment").mockResolvedValue({payment_id:`ch_${f.a.id}`,checkout_id:f.a.checkoutId,currency:"NGN",is_refundable:true});
+    vi.spyOn(bachs,"call").mockImplementation(async(path,body:any)=>{
+      if(path!=="/refunds")throw Error("Unexpected external call");
+      expect(body.amount).toBe("110.00");expect(body.fee_bearer).toBe("org");
+      return {refund_id:`refund-${f.a.id}`,charge_id:`ch_${f.a.id}`,reference:body.reference,status:"success",requested_amount:body.amount};
+    });
+    await runMoneyOperation(ops[0]!.id);await processDeadline(f.o.id);
+    expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUNDED");
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
+  });
+  it("does not let staff approval race past an expired deadline",async()=>{
+    const f=await preparedRecovery();await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{refundDueAt:new Date(Date.now()-1)}});
+    await Promise.allSettled([approveRecovery(f.r.id,f.proposal.version,randomUUID(),staffReq()),processDeadline(f.o.id)]);
+    expect(await prisma.escrowEntry.count({where:{orderId:f.o.id,kind:"FUND"}})).toBe(0);
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
+    expect((await prisma.paymentRecovery.findUniqueOrThrow({where:{id:f.r.id}})).reservationActive).toBe(false);
+  });
+  it("retains uncertainty instead of refunding a possibly purchased label",async()=>{
+    const f=await preparedRecovery();await approveRecovery(f.r.id,f.proposal.version,randomUUID(),staffReq());
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"BOOKING_UNCERTAIN",bookingStartedAt:new Date()}});
+    await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{refundDueAt:new Date(Date.now()-1)}});
+    await processDeadline(f.o.id);
+    expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUND_RECONCILIATION");
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(0);
+    expect((await logisticsFinance(f.o.id)).funding.fundingShortfallMinor).toBeNull();
+  });
+  it("requires owner confirmation and denies foreign recovery reads",async()=>{
+    const f=await recoverable();
+    expect((await request(app).get(`/v1/orders/recoveries/${f.r.id}`).set("Authorization",`Bearer ${outsider}`)).status).toBe(404);
+    const response=await request(app).post(`/v1/orders/recoveries/${f.r.id}/farmer`).set("Authorization",`Bearer ${token}`).send({pickupDate:new Date().toISOString().slice(0,10),preparationMinutes:30,notes:"Not the farmer"});
+    expect(response.status).toBe(403);
+    const view=await request(app).get(`/v1/orders/recoveries/${f.r.id}`).set("Authorization",`Bearer ${token}`);
+    expect(view.status).toBe(200);expect(view.body.payment.paymentConfirmed).toBe(true);expect(view.body.payment.chargeId).toBeUndefined();
+  });
+  it("records wallet transfers without pretending funds moved and verifies exactly one journal",async()=>{
+    const f=await preparedRecovery();await approveRecovery(f.r.id,f.proposal.version,randomUUID(),staffReq());
+    const staffId=verifyAccessToken(staff,"admin").sub;
+    const batch=await prisma.shippingFundingBatch.create({data:{mode:"sandbox",amountMinor:5000n,sourceLabel:"Business bank",destination:"Shipbubble account",shipmentIds:[f.d.id],initiatedBy:staffId,state:"TRANSFER_RECORDED",transferReference:randomUUID(),evidence:{statementReference:"Bank statement transaction 123"}}});
+    expect(await prisma.moneyJournal.count({where:{reference:`shipping-funding:${batch.id}`}})).toBe(0);
+    const before=await logisticsFinance(f.o.id);expect(before.funding.recordedUnverifiedTransfersMinor).toBe(5000n);
+    await Promise.all([verifyFunding(batch.id,staffReq(),"Reconciled account statement in full","statement-entry-123"),verifyFunding(batch.id,staffReq(),"Reconciled account statement in full","statement-entry-123")]);
+    expect(await prisma.moneyJournal.count({where:{reference:`shipping-funding:${batch.id}`}})).toBe(1);
+    const after=await logisticsFinance();expect(after.funding.verifiedIncomingFundingMinor).toBe(0n);
+    expect(after.summary.earnedCommissionMinor).toBeGreaterThanOrEqual(0n);
+  });
+  it("releases expired recovery stock once and persists warning alerts without duplicates",async()=>{
+    const f=await recoverable();await confirmRecoveryFarmer(f.r.id,{pickupDate:new Date().toISOString().slice(0,10),preparationMinutes:20,notes:"Stock confirmed",phoneConfirmation:true},staffReq());
+    const before=await prisma.listing.findUniqueOrThrow({where:{id:listing}});
+    await prisma.paymentRecovery.update({where:{id:f.r.id},data:{reservationUntil:new Date(Date.now()-1)}});
+    const confirmedAt=new Date(Date.now()-95*60000);await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{confirmedAt,refundDueAt:refundDeadline(confirmedAt)}});
+    await scanFulfillmentDeadlines();await scanFulfillmentDeadlines();
+    const after=await prisma.listing.findUniqueOrThrow({where:{id:listing}});expect(before.reservedQuantity.minus(after.reservedQuantity).toString()).toBe("1");
+    expect(await prisma.financeAlert.count({where:{orderId:f.o.id,code:"RECOVERY_DEADLINE_90"}})).toBe(1);
+  });
+
 });

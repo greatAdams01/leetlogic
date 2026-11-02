@@ -126,6 +126,7 @@ export function localizedError(locale: Locale, value: unknown): string {
       "We couldn’t complete this payment action. Please try again or contact support.",
     PAYMENTS_RETURN_URL_INVALID: "Payment setup is incomplete. Please try again later.",
     PAYMENTS_UNAVAILABLE: "Payments are not available right now. Please try again later.",
+    PAYMENT_CONFIRMATION_PENDING: "Confirming your payment. Please don’t pay again.",
     PAYMENT_RESULT_UNKNOWN: "We’re checking the result. Please don’t start another payment.",
     QUOTE_EXPIRED: "Refresh your delivery quote before paying.",
     STALE_DELIVERY_QUOTE: "Delivery details changed. Review a fresh delivery quote before paying.",
@@ -134,6 +135,8 @@ export function localizedError(locale: Locale, value: unknown): string {
     PAYOUT_FEE_UNAVAILABLE: "Withdrawal fees are being updated. Please try again later.",
     PAYOUT_BLOCKED: "Withdrawals are paused while an order is being reviewed.",
     INSUFFICIENT_BALANCE: "Your available earnings do not cover this withdrawal and its fee.",
+    PAYMENT_ORDER_CHANGED: "Your payment is being reviewed. Please contact support for help.",
+    PAYMENT_AMOUNT_REVIEW: "Your payment is being reviewed. Please contact support for help.",
     PAYMENT_REVIEW_REQUIRED: "Your payment is being reviewed. Please contact support for help.",
     PACKING_REQUIRED: "The farmer must complete shipping measurements before delivery is available. You can choose pickup instead.",
     DELIVERY_UNSUPPORTED: "No automated delivery is available for this shipment or route. Choose pickup or contact support for a suitable transport arrangement.",
@@ -227,6 +230,8 @@ export function dateLabel(locale: Locale, value: string) {
 
 export function localizedStatus(locale: Locale, code: string) {
   const financial: Record<string, string> = {
+    PICKUP_PREPARING: "Preparing for pickup",
+    PICKUP_READY: "Ready for pickup",
     ACCOUNT: "Payment setup",
     DESTINATION: "Bank account",
     CHECKOUT: "Payment",

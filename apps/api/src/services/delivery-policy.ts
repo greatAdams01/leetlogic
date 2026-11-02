@@ -68,6 +68,6 @@ export function deliveryRefundReady(delivery: (ParcelDelivery & { bookingStarted
     if (!delivery.parcels.length) return !requiresParcelPlan(delivery);
     return completeParcelPlan(delivery) && delivery.parcels.every((parcel) => ["CANCELLED", "RETURNED"].includes(parcel.status));
   }
-  return ["MANUAL_REVIEW", "QUOTE_REQUIRED", "PAYMENT_PENDING", "PAID", "BOOKING_BLOCKED", "PICKUP_READY"].includes(delivery.status) &&
+  return ["MANUAL_REVIEW", "QUOTE_REQUIRED", "PAYMENT_PENDING", "PAID", "BOOKING_BLOCKED", "BOOKING_QUEUED", "BOOKING", "TOPUP_REQUIRED", "PICKUP_PREPARING", "PICKUP_READY"].includes(delivery.status) &&
     !delivery.bookingStartedAt && !delivery.providerShipmentId && !delivery.parcels.length;
 }

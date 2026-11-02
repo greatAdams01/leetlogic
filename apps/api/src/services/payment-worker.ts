@@ -1,3 +1,5 @@
+import { startRecoveryWorker } from "./recovery-worker.js";
+import { assertFulfillmentOpen, financeEnabled } from "./fulfillment-deadline.js";
 import { bankName } from "./bank-names.js";
 import { prisma, type MoneyOperation } from "@leetlogic/database";
 import { getConfig } from "../config.js";
@@ -56,12 +58,22 @@ async function checkFunds(amount: bigint, account?: string) {
     );
 }
 async function checkRefundOrder(op: MoneyOperation) {
-  if ((op.payload as any).exception) return;
+  if ((op.payload as any).exception && !(op.payload as any).automaticDeadline) return;
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${op.orderId!}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: op.orderId! }, include: { delivery: { include: { parcels: true } } },
     });
+    const automatic = (op.payload as any).automaticDeadline;
+    if (automatic) {
+      const deadline = await tx.fulfillmentDeadline.findUnique({ where: { orderId: order.id } });
+      if (!deadline || !["REFUND_DUE", "REFUND_PROCESSING", "REFUND_BLOCKED", "REFUND_RECONCILIATION"].includes(deadline.state) ||
+        order.releasedMinor > 0n || await tx.moneyOperation.count({ where: { orderId: order.id, kind: { in: ["RELEASE", "DISPUTE"] }, status: { notIn: ["FAILED", "RESOLVED"] } } }) ||
+        await tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } }) ||
+        !(op.payload as any).exception && order.financialHold || !deliveryRefundReady(order.delivery))
+        throw new AppError(409, "REFUND_REVIEW_REQUIRED", "Reconcile fulfillment and financial holds before refunding.");
+      return;
+    }
     if (order.financialHold || !["FUNDED", "DELIVERED"].includes(order.status) ||
       (await tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } })))
       throw new AppError(409, "REFUND_BLOCKED", "Resolve the order review before requesting a refund.");
@@ -234,17 +246,20 @@ async function complete(op: MoneyOperation, result: any) {
       });
     } else if (op.kind === "REFUND" || op.kind === "REFUND_PAYOUT") {
       const fullAmount = op.amountMinor + (op.kind === "REFUND_PAYOUT" ? op.feeMinor : 0n);
+      const businessFee = payload.automaticDeadline && op.kind === "REFUND_PAYOUT" ? op.feeMinor : 0n;
       const source = payload.exception
         ? `unallocated:${op.paymentId}`
         : `held_produce:${op.orderId}`;
       const produce = BigInt(payload.produceMinor || "0"),
         shipping = BigInt(payload.shippingMinor || "0");
       const lines: Array<[string, bigint]> = payload.exception
-        ? [[source, fullAmount]]
+        ? [[source, fullAmount - businessFee]]
         : [
             [source, produce],
-            [`held_shipping:${op.orderId}`, shipping],
+            [`held_shipping:${op.orderId}`, shipping - BigInt(payload.shippingFromBusinessMinor || "0")],
+            ["shipping_refund_expense", BigInt(payload.shippingFromBusinessMinor || "0")],
           ];
+      if (businessFee > 0n) lines.push(["refund_fee_expense", businessFee]);
       lines.push([
         op.kind === "REFUND_PAYOUT" ? `buyer_refund_cash:${op.ownerId}` : "platform_cash",
         -fullAmount,
@@ -272,8 +287,8 @@ async function complete(op: MoneyOperation, result: any) {
               amountMinor: produce,
               externalRef: providerId(result),
               mutationKey: `bachs:${op.id}`,
-              actorId: op.actorId!,
-              reason: "Provider-confirmed customer refund",
+              actorId: op.actorId || payment.buyerId,
+              reason: payload.automaticDeadline ? "Automatic fulfillment-deadline refund" : "Provider-confirmed customer refund",
             },
           });
           await tx.listing.update({
@@ -346,6 +361,7 @@ export async function runMoneyOperation(id: string) {
         await prisma.$transaction(async (tx) => {
           await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${payment.orderId}::uuid FOR UPDATE`;
           await assertNoDeliverySettlement(tx, payment.orderId);
+          await assertFulfillmentOpen(tx, payment.orderId);
           const current = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } });
           const order = await tx.tradeOrder.findUniqueOrThrow({
             where: { id: payment.orderId }, include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
@@ -627,7 +643,7 @@ export async function runMoneyOperation(id: string) {
             amount: decimal(op.amountMinor),
             reference: op.id,
             reason: "Order cancellation",
-            fee_bearer: "customer",
+            fee_bearer: payload.automaticDeadline ? "org" : "customer",
           },
           op.id,
         );
@@ -678,13 +694,17 @@ export async function runMoneyOperation(id: string) {
             "REFUND_FEE_EXCEEDS_AMOUNT",
             "This refund needs a support review.",
           );
-        await prisma.moneyOperation.update({ where: { id }, data: { feeMinor: fee } });
+        const principal = BigInt(payload.originalPrincipalMinor || op.amountMinor.toString());
+        const transferAmount = payload.automaticDeadline ? principal + fee : principal;
+        const refundPayload = payload.automaticDeadline ? { ...payload, originalPrincipalMinor: principal.toString() } : payload;
+        await prisma.moneyOperation.update({ where: { id }, data: { feeMinor: fee, amountMinor: transferAmount, payload: refundPayload } });
+        await checkFunds(transferAmount);
         await checkRefundOrder(op);
         const result = await bachs.call(
           "/transfers",
           {
             destination: account.providerAccountId,
-            amount: decimal(op.amountMinor),
+            amount: decimal(transferAmount),
             currency: "NGN",
             transfer_group: op.orderId,
             description: `LeetLogic ${op.id}`,
@@ -695,7 +715,7 @@ export async function runMoneyOperation(id: string) {
           where: { id },
           data: { providerRef: providerId(result) },
         });
-        await complete({ ...op, feeMinor: fee }, result);
+        await complete({ ...op, amountMinor: transferAmount, feeMinor: fee, payload: refundPayload }, result);
       }
     }
   } catch (error) {
@@ -723,6 +743,10 @@ export async function runMoneyOperation(id: string) {
         nextRunAt: new Date(Date.now() + 60000),
       },
     });
+    if (payload.automaticDeadline && financeEnabled() && op.orderId) {
+      await prisma.fulfillmentDeadline.updateMany({ where: { orderId: op.orderId, state: { notIn: ["REFUNDED", "SECURED"] } }, data: { state: "REFUND_BLOCKED", failureCode: code } });
+      await (await import("./fulfillment-deadline.js")).financeAlert(prisma, `${op.orderId}:refund:${code}`, mode(), code, op.orderId);
+    }
     if (op.kind === "CHECKOUT")
       await prisma.paymentAttempt.updateMany({
         where: { id: op.paymentId!, status: { notIn: ["SUCCEEDED", "REFUNDED", "EXCEPTION"] } },
@@ -980,7 +1004,8 @@ export async function reconcileBalances() {
   });
 }
 export function startPaymentWorker() {
-  return startPaymentSchedule({
+  const stopRecovery = startRecoveryWorker();
+  const stopPayments = startPaymentSchedule({
     enabled: () => getConfig().PAYMENTS_ENABLED,
     jobs: runPaymentJobs,
     reconcile: reconcileBalances,
@@ -1004,4 +1029,5 @@ export function startPaymentWorker() {
       );
     },
   });
+  return () => { stopRecovery(); stopPayments(); };
 }

@@ -1,3 +1,4 @@
+import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -30,7 +31,7 @@ import { ListingPhoto } from "./market";
 export function SellerHome() {
   const a = useApp();
   const listings = useResource<{ items: Listing[] }>("/marketplace/my-listings");
-  const orders = useResource<{ items: Order[] }>("/orders?view=seller");
+  const orders = useResource<{ items: Order[] }>("/orders?view=seller", true, 30000);
   const drafts = useResource<{ items: SavedListingDraft[] }>("/listing-drafts");
   const financial = useResource<FinancialSummary>("/financial");
   const verification = useResource<{ verification: { identityPassed?: boolean } }>(
@@ -206,6 +207,7 @@ export function SellerHome() {
             </View>
             {financial.error && <Notice text={financial.error} error />}
           </Card>
+          <PaymentRecovery />
           <View style={styles.stats}>
             <Pressable
               accessibilityRole="button"

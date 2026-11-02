@@ -1,3 +1,6 @@
+import { financeEnabled } from "./services/fulfillment-deadline.js";
+import { getConfig } from "./config.js";
+import { AppError } from "./lib/errors.js";
 import { listingSpeechRouter } from "./routes/listing-speech.js";
 import { shoppingRouter } from "./routes/shopping.js";
 import {
@@ -90,6 +93,13 @@ export function createApp(requestLogger: Logger = logger): Express {
   app.get("/health/live", (_req, res) => res.json({ status: "ok" }));
   app.get("/health/ready", async (_req, res) => {
     await Promise.all([prisma.$queryRaw`SELECT 1`, redis().ping()]);
+    if (financeEnabled()) {
+      const heartbeat = await prisma.financeHeartbeat.findUnique({ where: { id: `payment:${getConfig().BACHS_MODE}` } });
+      // An independent HTTP probe exposes migration or worker failures; it never starts the worker itself.
+      if (getConfig().PAYMENT_AUTO_REFUNDS_ENABLED && (!heartbeat || Date.now() - heartbeat.checkedAt.getTime() > 60000))
+        throw new AppError(503, "PAYMENT_WORKER_STALE", "Payment recovery worker is not ready.");
+      await prisma.fulfillmentDeadline.count();
+    }
     res.json({ status: "ready" });
   });
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));

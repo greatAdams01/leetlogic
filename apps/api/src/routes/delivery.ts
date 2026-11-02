@@ -1,3 +1,4 @@
+import { recoveryEnabled, financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
 import { rankDeliveryQuotes, courierQuality } from "../services/delivery-ranking.js";
 import { deliveryQuoteConfiguration } from "../services/delivery-configuration.js";
 import { packageSuggestion, orderShipping } from "../services/packaging.js";
@@ -24,7 +25,7 @@ import { getConfig } from "../config.js";
 import { canAdvanceDelivery, deliveryReceiptReady } from "../services/delivery-policy.js";
 import { audit } from "../services/audit.js";
 import { contactSchema } from "../providers/shipping/shipbubble.js";
-import { assertNoDeliverySettlement, deliveryEvent, finalizeDeliveryBooking, hasDeliverySettlement, hashInput, serialize, shippingProvider } from "../services/delivery.js";
+import { assertNoDeliverySettlement, queueBooking, deliveryEvent, finalizeDeliveryBooking, hasDeliverySettlement, hashInput, serialize, shippingProvider } from "../services/delivery.js";
 import { recordedSplitBooking, splitPlanMatches } from "../services/split-delivery.js";
 import { splitParts, type TrackedShipment } from "../providers/shipping/shipbubble.js";
 const uuid = z.string().uuid();
@@ -117,6 +118,7 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
       "ROLE_FORBIDDEN",
       "This dashboard is not available for your account role.",
     );
+  const recoveryOrders = recoveryEnabled() && view === "seller" ? await prisma.paymentRecovery.findMany({ where: { mode: getConfig().BACHS_MODE }, select: { orderId: true } }) : [];
   const items = await prisma.deliveryNotification.findMany({
     where: {
       userId: req.auth!.sub,
@@ -126,8 +128,10 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
             view === "seller"
               ? {
                   farmerProfile: { userId: req.auth!.sub },
-                  ledger: { some: { kind: "FUND" } },
-                  status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+                  OR: [
+                    { ledger: { some: { kind: "FUND" } }, status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] } },
+                    { id: { in: recoveryOrders.map(r => r.orderId) } },
+                  ],
                 }
               : { buyerId: req.auth!.sub },
         },
@@ -342,6 +346,33 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
   });
   res.json({ saved: true });
 });
+// Readiness is an order-scoped milestone, separate from provider shipment status.
+customerDeliveryRouter.post("/:id/delivery/ready", async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.farmerProfile.userId !== req.auth!.sub)
+    throw new AppError(403, "FARMER_REQUIRED", "Only the farmer can confirm produce readiness.");
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
+    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true } });
+    await assertFulfillmentOpen(tx, order.id);
+    const d = current.delivery;
+    const key = `${d?.id}:ready`;
+    if (d && await tx.deliveryEvent.findUnique({ where: { dedupeKey: key } })) return;
+    if (current.status !== "FUNDED" || current.financialHold || !d ||
+      !["PICKUP_PREPARING", "PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "BOOKED"].includes(d.status))
+      throw new AppError(409, "DELIVERY_NOT_READY", "This order cannot be marked ready for pickup.");
+    if (d.status === "PICKUP_PREPARING")
+      await tx.delivery.update({ where: { id: d.id }, data: { status: "PICKUP_READY" } });
+    if (d.status === "PICKUP_PREPARING" && financeEnabled()) {
+      const deadline = await tx.fulfillmentDeadline.findUnique({ where: { orderId: order.id } });
+      if (deadline?.collectionBuyerAt) await markFulfillmentSecured(tx, order.id);
+    }
+    await deliveryEvent(tx, d.id, "READY_FOR_PICKUP", "farmer", key, req.auth!.sub);
+    await audit(req, { action: "delivery.produce.ready", entityType: "order", entityId: order.id }, tx);
+  });
+  res.json({ ready: true });
+});
+
 for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
   router.get("/:id/delivery", async (req, res) => {
     const order = await orderAccess(req);
@@ -363,6 +394,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     }) || [];
     res.json(
       serialize({
+        fulfillment: await readFulfillment(order.id),
         order: {
           id: order.id,
           reference: order.reference,

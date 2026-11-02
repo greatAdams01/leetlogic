@@ -109,6 +109,7 @@ it("reconciles pending payment on return and removes payment actions after confi
     h.data.orderStatus = "FUNDED";
   });
   await render();
+  h.changed.mockClear();
   await act(async () => h.active("active"));
   expect(h.api).toHaveBeenCalledWith("/orders/order/payments/payment/refresh", {
     method: "POST",
@@ -126,6 +127,7 @@ it("keeps unknown initialization on check payment without starting another check
   await render();
   expect(button("Make Payment")).toBeUndefined();
   expect(button("Continue payment")).toBeUndefined();
+  h.refresh.mockClear();
   await act(async () => button("Check Payment").props.onPress());
   expect(h.refresh).toHaveBeenCalledOnce();
   expect(h.init).not.toHaveBeenCalled();
@@ -298,4 +300,29 @@ it("does not let a failed recovery read clear a newer order's payment state", as
   await act(async () => rejectRecovery(new Error("Old read failed")));
   expect(button("Make Payment")).toBeDefined();
   expect(h.changed).not.toHaveBeenCalled();
+});
+
+ it("reconciles automatically when reopening an order after a missed webhook", async () => {
+  h.data.items = [pending()];
+  h.refresh.mockImplementation(async () => {
+    h.data.items = [{ ...pending(), status: "SUCCEEDED" }];
+    h.data.orderStatus = "FUNDED";
+    h.data.heldMinor = "10000";
+  });
+  await render();
+  expect(h.refresh).toHaveBeenCalledOnce();
+  expect(h.changed).toHaveBeenCalledOnce();
+  expect(button("Check Payment")).toBeUndefined();
+});
+ it("retries a delayed confirmation while the order remains open", async () => {
+  vi.useFakeTimers();
+  h.data.items = [pending()];
+  await render();
+  h.refresh.mockImplementation(async () => {
+    h.data.items = [{ ...pending(), status: "SUCCEEDED" }];
+    h.data.orderStatus = "FUNDED";
+  });
+  await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+  expect(h.refresh).toHaveBeenCalledTimes(2);
+  expect(button("Check Payment")).toBeUndefined();
 });

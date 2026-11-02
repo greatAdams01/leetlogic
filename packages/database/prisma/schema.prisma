@@ -1186,3 +1186,91 @@ model DeliveryParcel {
   @@unique([deliveryId, parcelIndex])
   @@map("delivery_parcels")
 }
+
+// Recovery and deadlines are separate from provider payment and shipment states.
+model PaymentRecovery {
+  id String @id @default(uuid()) @db.Uuid
+  paymentId String @unique @db.Uuid
+  orderId String @db.Uuid
+  mode String @db.VarChar(10)
+  state String @default("WAITING_FARMER") @db.VarChar(40)
+  version Int @default(0)
+  farmerConfirmation Json?
+  farmerConfirmedAt DateTime? @db.Timestamptz(6)
+  reservationUntil DateTime? @db.Timestamptz(6)
+  reservationActive Boolean @default(false)
+  allocatedAt DateTime? @db.Timestamptz(6)
+  approvalKey String? @unique @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@index([mode, state, orderId])
+  @@map("payment_recoveries")
+}
+model RecoveryProposal {
+  id String @id @default(uuid()) @db.Uuid
+  recoveryId String @db.Uuid
+  version Int
+  quoteId String? @db.Uuid
+  snapshot Json
+  expiresAt DateTime @db.Timestamptz(6)
+  buyerAcceptedAt DateTime? @db.Timestamptz(6)
+  buyerRejectedAt DateTime? @db.Timestamptz(6)
+  createdBy String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([recoveryId, version])
+  @@map("recovery_proposals")
+}
+model FulfillmentDeadline {
+  orderId String @id @db.Uuid
+  paymentId String @unique @db.Uuid
+  mode String @db.VarChar(10)
+  confirmedAt DateTime @db.Timestamptz(6)
+  refundDueAt DateTime @db.Timestamptz(6)
+  state String @default("ACTIVE") @db.VarChar(40)
+  securedAt DateTime? @db.Timestamptz(6)
+  collectionBuyerAt DateTime? @db.Timestamptz(6)
+  failureCode String? @db.VarChar(80)
+  nextRunAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@index([mode, state, nextRunAt])
+  @@map("fulfillment_deadlines")
+}
+model ShippingFundingBatch {
+  id String @id @default(uuid()) @db.Uuid
+  mode String @db.VarChar(10)
+  state String @default("PLANNED") @db.VarChar(30)
+  amountMinor BigInt
+  sourceLabel String @db.VarChar(120)
+  destination String @db.VarChar(240)
+  transferReference String? @db.VarChar(160)
+  transferKey String? @unique @db.VarChar(180)
+  evidence Json?
+  shipmentIds Json
+  initiatedBy String @db.Uuid
+  verifiedBy String? @db.Uuid
+  verificationReason String? @db.VarChar(500)
+  verifiedAt DateTime? @db.Timestamptz(6)
+  observedWalletMinor BigInt?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  @@index([mode, state])
+  @@map("shipping_funding_batches")
+}
+model FinanceAlert {
+  key String @id @db.VarChar(200)
+  mode String @db.VarChar(10)
+  orderId String? @db.Uuid
+  code String @db.VarChar(80)
+  resolvedAt DateTime? @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([mode, resolvedAt, createdAt])
+  @@map("finance_alerts")
+}
+model FinanceHeartbeat {
+  id String @id @db.VarChar(40)
+  checkedAt DateTime @default(now()) @db.Timestamptz(6)
+  walletCheckedAt DateTime? @db.Timestamptz(6)
+  walletMinor BigInt?
+  walletError String? @db.VarChar(80)
+  @@map("finance_heartbeats")
+}

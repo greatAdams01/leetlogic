@@ -1,4 +1,5 @@
 "use client";
+import { CustomerRecovery } from "./customer-recovery";
 import { useEffect, useRef, useState } from "react";
 import {ui, localizedError} from "../../mobile/src/lib/localization";
 import { needsSignIn, profileFailureCode } from "../../mobile/src/lib/auth-errors";
@@ -88,6 +89,20 @@ export function CustomerAccount() {
     void load();
     return () => { loadVersion.current++; };
   }, []);
+  const accountRefresh = useRef(load);
+  accountRefresh.current = load;
+  useEffect(() => {
+    if (!user) return;
+    let refreshing = false;
+    const refresh = () => {
+      if (refreshing || submitting.current || document.visibilityState !== "visible") return;
+      refreshing = true;
+      void accountRefresh.current().finally(() => { refreshing = false; });
+    };
+    const timer = setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, [user?.id]);
   async function retryProfile() {
     if (submitting.current) return;
     submitting.current = true;
@@ -166,6 +181,7 @@ export function CustomerAccount() {
   return (
     <section className="customer-panel">
       <h1>{user ? (user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "Seller Dashboard" : "Buyer Dashboard") : t("auth.title")}</h1>
+      {user && <CustomerRecovery />}
       {!user && checkingProfile && <p role="status">{ui(locale, "Loading your account…")}</p>}
       {profilePending && !checkingProfile && <div>
         <button type="button" disabled={busy} onClick={() => void retryProfile()}>{t("common.retry")}</button>

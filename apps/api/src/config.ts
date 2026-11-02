@@ -22,6 +22,9 @@ const schema = z.object({
   BACHS_API_KEY: z.string().optional(),
   BACHS_WEBHOOK_SECRET: z.string().optional(),
   BACHS_ORGANIZATION_ID: z.string().default(""),
+  PAYMENT_RECOVERY_ENABLED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  PAYMENT_AUTO_REFUNDS_ENABLED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  SHIPPING_FUNDING_ENABLED: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
   PAYMENTS_RETURN_ORIGIN: z.string().url().default("http://localhost:3001"),
   BACHS_NGN_PAYOUT_FEE_MINOR: z.preprocess(
     (value) => (value === "" ? undefined : value),

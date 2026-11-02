@@ -1,4 +1,5 @@
 "use client";
+import { CustomerRecovery } from "./customer-recovery";
 import { CustomerPayment } from "./customer-payments";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -78,7 +79,15 @@ export function CustomerDelivery({
     setNotice("");
     void load().catch((e) => setNotice(copy.current.error(e)));
     const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => { requestVersion.current++; clearInterval(timer); };
+    let refreshing = false;
+    const refresh = () => {
+      if (refreshing || running.current || document.visibilityState !== "visible") return;
+      refreshing = true;
+      void load().catch((e) => setNotice(copy.current.error(e))).finally(() => { refreshing = false; });
+    };
+    const updates = setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => { requestVersion.current++; clearInterval(timer); clearInterval(updates); window.removeEventListener("focus", refresh); };
   }, [load]);
   useEffect(() => {
     let active = true;
@@ -187,6 +196,7 @@ export function CustomerDelivery({
           ? money(data.order.totalWithDeliveryMinor) : say("Not available")}</dd>
       </dl>
       <p>{t("delivery.payment")}</p>
+      {!staff && <CustomerRecovery orderId={id} />}
       {!staff && (
         <CustomerPayment
           orderId={id}
@@ -215,6 +225,14 @@ export function CustomerDelivery({
               )}
             </article>
           ))}
+          {!staff && data.order.isBuyer && data.fulfillment?.state === "ACTIVE" && ["PICKUP_PREPARING", "PICKUP_READY"].includes(d.status) && !data.fulfillment.collectionBuyerAt && <button disabled={busy} onClick={() => action("/collection-confirmation", {})}>{say("Confirm pickup arrangement")}</button>}
+          {d.courier && <p>{d.courier}</p>}
+          {d.package?.pickupDate && <p>{t("delivery.date")}: {d.package.pickupDate}</p>}
+          {!staff && !data.order.isBuyer && ["PICKUP_PREPARING", "PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "BOOKED"].includes(d.status) &&
+            !d.events.some((event: any) => event.status === "READY_FOR_PICKUP") && (
+            <button disabled={busy} onClick={() => action("/ready", {})}>{say("Produce ready for pickup")}</button>
+          )}
+          {d.providerShipmentId && <p>{say("The courier receives your saved pickup contact and directions. Use shipment tracking for courier updates; contact support if pickup coordination fails.")}</p>}
           <ol>
             {d.events.map((event: any) => (
               <li key={event.id}>

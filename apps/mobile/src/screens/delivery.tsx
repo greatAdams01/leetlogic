@@ -1,3 +1,4 @@
+import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { checkoutAddress } from "../lib/checkout-address";
 import { postcodeStatus } from "../../../../packages/contracts/src/addresses";
@@ -472,7 +473,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
 }
 export function Delivery() {
   const a = useApp(),
-    r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`),
+    r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`, true, 30000),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [changePickup, setChangePickup] = useState(false),
@@ -536,6 +537,7 @@ export function Delivery() {
               Produce and shipping are accounted for separately.
             </Label>
           </Card>
+          {data.order.isBuyer && data.fulfillment?.state === "ACTIVE" && !data.fulfillment.collectionBuyerAt && d && ["PICKUP_PREPARING", "PICKUP_READY"].includes(d.status) && <Button title="Confirm pickup arrangement" disabled={busy} onPress={() => void run("collection-confirmation")} />}
           {data.order.isBuyer && d?.status === "PICKUP_READY" && (
             <Card>
               <Heading>Pickup</Heading>
@@ -568,6 +570,13 @@ export function Delivery() {
               />
             </Card>
           )}
+          {!data.order.isBuyer && d && ["PICKUP_PREPARING", "PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "BOOKED"].includes(d.status) &&
+            !d.events.some((event) => event.status === "READY_FOR_PICKUP") && (
+            <Button title="Produce ready for pickup" disabled={busy} onPress={() => void run("ready")} />
+          )}
+          {d?.courier && <Label>{d.courier}</Label>}
+          {d?.providerShipmentId && <Notice text="The courier receives your saved pickup contact and directions. Use shipment tracking for courier updates; contact support if pickup coordination fails." />}
+          <PaymentRecovery orderId={a.route.id!} />
           {data.order.isBuyer && <OrderDisputes orderId={a.route.id!} />}
           <Card>
             <Heading>Pickup location</Heading>
@@ -650,6 +659,7 @@ export function Delivery() {
           {d?.package && (
             <Card>
               <Heading>Package details</Heading>
+              <Label>{a.t("delivery.date")}: {d.package.pickupDate}</Label>
               <Label>
                 {a.ui("Final parcel count")}: {d.package.packageCount || 1}
               </Label>

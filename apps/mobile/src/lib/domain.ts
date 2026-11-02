@@ -103,6 +103,7 @@ export type Contact = {
   longitude?: number;
 };
 export type DeliveryData = {
+  fulfillment?: { state: string; collectionBuyerAt: string | null } | null;
   order: {
     id: string;
     reference: string;

@@ -1,3 +1,4 @@
+import { assertFulfillmentOpen, trackVerifiedPayment } from "./fulfillment-deadline.js";
 import { createHash, randomUUID } from "node:crypto";
 import { prisma, type Prisma, type MoneyOperation, type PaymentAttempt } from "@leetlogic/database";
 import { getConfig } from "../config.js";
@@ -179,6 +180,7 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
     if (!order || order.buyerId !== buyerId)
       throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
     await assertNoDeliverySettlement(tx, orderId);
+    await assertFulfillmentOpen(tx, orderId);
     if (
       order.financialHold ||
       (kind === "ORDER"
@@ -307,7 +309,7 @@ export async function reconcilePayment(paymentId: string, hintedCharge?: string)
 /** Never trusts webhook amounts/status; all receipt fields come from account-bound provider reads. */
 async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
   if (!attempt.checkoutId) return;
-  if (["SUCCEEDED", "REFUNDED"].includes(attempt.status) && (!hintedCharge || hintedCharge === attempt.chargeId)) return;
+  if ((attempt.status === "REFUNDED" || attempt.status === "SUCCEEDED" && attempt.confirmedAt) && (!hintedCharge || hintedCharge === attempt.chargeId)) return;
   const checkout = await bachs.checkoutState(attempt.checkoutId);
   if (
     checkout.checkout_id !== attempt.checkoutId ||
@@ -423,7 +425,13 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
       where: { id: attempt.orderId },
       include: { ...shippingOrderInclude, delivery: { include: { quotes: true } } },
     });
-    if (["SUCCEEDED", "REFUNDED"].includes(current.status)) return;
+    if (["SUCCEEDED", "REFUNDED"].includes(current.status)) {
+      if (current.status === "SUCCEEDED" && !current.confirmedAt && success) {
+        await tx.paymentAttempt.update({ where: { id: current.id }, data: { confirmedAt: confirmationAt } });
+        await trackVerifiedPayment(tx, current, confirmationAt);
+      }
+      return;
+    }
     if (
       current.chargeId &&
       current.chargeId !== chargeId &&
@@ -495,8 +503,10 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
       // Cancelled/unallocated receipts belong in the buyer's payment history, not in a
       // farmer's new-order inbox. Only funded orders create fulfilment notifications.
     }
+    if (success) await trackVerifiedPayment(tx, current, confirmationAt);
     if (exception) {
       await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
+      await (await import("./payment-recovery.js")).ensureRecovery(tx, current.id);
       return;
     }
     if (!success) return;
@@ -508,6 +518,15 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
       });
       return;
     }
+    await allocateVerifiedReceipt(tx, current, order, chargeId, fee);
+  });
+  // The persisted PAID state is also picked up by delivery jobs after a crash here.
+  await queuePaidDelivery(attempt.orderId).catch(() => {
+    logger.warn({ orderId: attempt.orderId }, "Paid delivery will be queued by the delivery worker");
+  });
+}
+/** Funding transaction shared by normal verification and explicitly approved recovery. */
+export async function allocateVerifiedReceipt(tx: Prisma.TransactionClient, current: PaymentAttempt, order: any, chargeId: string, fee: bigint) {
     await journal(
       tx,
       `funded:${current.id}`,
@@ -570,11 +589,6 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
       },
       tx,
     );
-  });
-  // The persisted PAID state is also picked up by delivery jobs after a crash here.
-  await queuePaidDelivery(attempt.orderId).catch(() => {
-    logger.warn({ orderId: attempt.orderId }, "Paid delivery will be queued by the delivery worker");
-  });
 }
 export async function assertRelease(tx: Prisma.TransactionClient, orderId: string) {
   const order = await tx.tradeOrder.findUniqueOrThrow({
