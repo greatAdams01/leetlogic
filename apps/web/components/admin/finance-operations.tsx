@@ -1,64 +1,857 @@
 "use client";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatMoney as money } from "../../../../packages/contracts/src/money";
-async function read(path: string) {
-  const r = await fetch(`/api/admin/money/${path}`, { cache: "no-store" });
-  const data = await r.json(); if (!r.ok) throw new Error(data.error?.message || "Finance records unavailable"); return data;
+import {
+  FinanceDrawer,
+  FinanceEmpty,
+  FinanceSecurity,
+  FinanceStatus,
+  financeDate,
+  financeLabel,
+  financeRequest,
+  useFinanceMutation,
+} from "./finance-ui";
+type Row = Record<string, any>;
+export function FinanceOperations({
+  orderId,
+  manage,
+  view,
+  orderLink,
+}: {
+  orderId?: string;
+  manage: boolean;
+  view: "recovery" | "funding";
+  orderLink: (id: string) => string;
+}) {
+  const [data, setData] = useState<Row>(),
+    [cases, setCases] = useState<Row[]>([]),
+    [error, setError] = useState(""),
+    [selected, setSelected] = useState<{ type: string; id: string }>(),
+    [checked, setChecked] = useState<string[]>([]);
+  const params = useSearchParams(),
+    router = useRouter(),
+    pathname = usePathname();
+  const query = params.get("finSearch") || "",
+    status = params.get("finStatus") || "ALL",
+    page = Math.max(1, Number(params.get("finPage")) || 1);
+  const [draft, setDraft] = useState(query);
+  useEffect(() => setDraft(query), [query]);
+  const load = useCallback(async () => {
+    const suffix = orderId ? `?orderId=${orderId}` : "";
+    const [f, r] = await Promise.all([
+      financeRequest(`money/finance${suffix}`),
+      financeRequest(`money/recoveries${suffix}`),
+    ]);
+    setData(f);
+    setCases(r.items || []);
+    setError("");
+  }, [orderId]);
+  useEffect(() => {
+    let running = false,
+      alive = true;
+    const update = () => {
+      if (running || document.visibilityState === "hidden") return;
+      running = true;
+      void load()
+        .catch((e) => {
+          if (alive) setError(e.message);
+        })
+        .finally(() => {
+          running = false;
+        });
+    };
+    update();
+    const timer = setInterval(update, 30000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [load]);
+  const update = (changes: Record<string, string>) => {
+    const q = new URLSearchParams(params.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) q.set(key, value);
+      else q.delete(key);
+    }
+    router.push(`${pathname}?${q}`, { scroll: false });
+  };
+  if (error && !data)
+    return (
+      <p role="alert" className="live-error">
+        {error}
+      </p>
+    );
+  if (!data)
+    return (
+      <p role="status">Loading {view === "funding" ? "logistics funding" : "recovery"} records…</p>
+    );
+  if (!data.enabled)
+    return (
+      <div className="finance-callout">
+        <h2>{view === "funding" ? "Logistics funding" : "Recovery & refunds"} is not enabled</h2>
+        <p>
+          The rollout switch is off for this environment. Payment history and money operations
+          remain available in their respective views.
+        </p>
+      </div>
+    );
+  const term = query.trim().toLowerCase();
+  const rows = (view === "recovery" ? cases : data.shipments).filter(
+    (r: Row) =>
+      (status === "ALL" ||
+        (view === "recovery"
+          ? r.state === status
+          : status === "READY"
+            ? r.bookingReady
+            : status === "UNCERTAIN"
+              ? r.uncertain
+              : r.state === status)) &&
+      (!term ||
+        [r.reference, r.title, r.orderId, r.courier, r.state]
+          .join(" ")
+          .toLowerCase()
+          .includes(term)),
+  );
+  const selectedShipments = data.shipments.filter(
+    (s: Row) => checked.includes(s.deliveryId) && s.bookingReady,
+  );
+  const selectedTotal = selectedShipments.reduce(
+    (n: bigint, s: Row) => n + BigInt(s.courierCostMinor || "0"),
+    0n,
+  );
+  const item =
+    selected?.type === "case"
+      ? cases.find((r) => r.id === selected.id)
+      : data.batches.find((r: Row) => r.id === selected?.id);
+  return (
+    <div className="finance-operations">
+      {error && (
+        <p role="alert" className="live-error">
+          {error}
+        </p>
+      )}
+      {data.heartbeat.stale && (
+        <div className="finance-callout danger" role="alert">
+          <strong>Payment worker needs attention</strong>
+          <p>Its heartbeat is stale. Review overdue refunds and restore the worker.</p>
+        </div>
+      )}
+      {view === "funding" ? (
+        <>
+          <div className="finance-metrics">
+            <section className="finance-metric">
+              <p>Immediate funding shortfall</p>
+              <strong>
+                {data.funding.verified ? money(data.funding.fundingShortfallMinor) : "Unverified"}
+              </strong>
+              <small>
+                {data.funding.verified
+                  ? "For booking-ready shipments"
+                  : "Refresh the balance and reconcile uncertain purchases"}
+              </small>
+            </section>
+            <section className="finance-metric">
+              <p>Booking-ready courier costs</p>
+              <strong>{money(data.funding.bookingReadyMinor)}</strong>
+              <small>Current provider wallet costs</small>
+            </section>
+            <section className="finance-metric">
+              <p>Usable wallet balance</p>
+              <strong>
+                {data.funding.usableWalletMinor === null
+                  ? "Unverified"
+                  : money(data.funding.usableWalletMinor)}
+              </strong>
+              <small>After local booking commitments</small>
+            </section>
+            <section className="finance-metric">
+              <p>Transfers awaiting verification</p>
+              <strong>{money(data.funding.recordedUnverifiedTransfersMinor)}</strong>
+              <small>Excluded from usable funds</small>
+            </section>
+          </div>
+          <section className="finance-panel">
+            <div className="finance-section-heading">
+              <div>
+                <h2>Shipbubble wallet</h2>
+                <p>
+                  Observed {financeDate(data.funding.checkedAt)} · {data.mode}
+                </p>
+              </div>
+              {manage && (
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    void financeRequest("money/finance/refresh", {})
+                      .then(load)
+                      .catch((e) => setError(e.message))
+                  }
+                >
+                  Refresh wallet balance
+                </button>
+              )}
+            </div>
+            <dl className="finance-facts">
+              <div>
+                <dt>Provider balance</dt>
+                <dd>
+                  {data.funding.walletMinor === null
+                    ? "Unavailable"
+                    : money(data.funding.walletMinor)}
+                </dd>
+              </div>
+              <div>
+                <dt>Existing booking commitments</dt>
+                <dd>{money(data.funding.committedMinor)}</dd>
+              </div>
+            </dl>
+            <p className="finance-muted">
+              Record manual bank transfers here. Funds become usable only after verification.
+              Confirmed deposits are already included in the observed wallet balance.
+            </p>
+          </section>
+        </>
+      ) : (
+        <div className="finance-metrics">
+          {[
+            ["Refunds due", data.summary.refundDueMinor],
+            ["Refunds processing", data.summary.refundProcessingMinor],
+            ["Refunds blocked", data.summary.refundBlockedMinor],
+            ["Refunds completed", data.summary.refundCompletedMinor],
+          ].map(([label, value]) => (
+            <section key={label} className="finance-metric">
+              <p>{label}</p>
+              <strong>{money(value)}</strong>
+              <small>Refundable produce and shipping principal</small>
+            </section>
+          ))}
+        </div>
+      )}
+      <section className="finance-panel">
+        <div className="finance-section-heading">
+          <div>
+            <h2>
+              {view === "funding" ? "Shipment funding queue" : "Recent payment recovery cases"}
+            </h2>
+            <p>
+              {view === "funding"
+                ? "Select booking-ready shipments to plan a funding batch. Conditional recovery shipments are excluded."
+                : "Latest 100 cases. Confirm stock and consent before allocating payment. Staff acknowledgement does not extend the deadline."}
+            </p>
+          </div>
+          {view === "funding" && manage && data.flags.funding && (
+            <button
+              disabled={!selectedShipments.length}
+              onClick={() => setSelected({ type: "new", id: "new" })}
+            >
+              Plan funding ({selectedShipments.length})
+            </button>
+          )}
+        </div>
+        <form
+          className="finance-filters"
+          onSubmit={(e) => {
+            e.preventDefault();
+            update({ finSearch: draft, finPage: "1" });
+          }}
+        >
+          <label>
+            Search orders
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Order reference, produce or courier"
+            />
+          </label>
+          <label>
+            Status
+            <select
+              value={status}
+              onChange={(e) => update({ finStatus: e.target.value, finPage: "1" })}
+            >
+              <option value="ALL">All statuses</option>
+              {(view === "funding"
+                ? ["READY", "UNCERTAIN", "BOOKED", "TOPUP_REQUIRED"]
+                : [...new Set(cases.map((r) => r.state))]
+              ).map((s) => (
+                <option key={s} value={s}>
+                  {financeLabel(s)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button>Search</button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => update({ finSearch: "", finStatus: "ALL", finPage: "1" })}
+          >
+            Clear
+          </button>
+        </form>
+        {rows.length ? (
+          <>
+            <div className="finance-table-scroll">
+              <table className="finance-table">
+                <thead>
+                  <tr>
+                    {view === "funding" && <th>Select</th>}
+                    <th>Order</th>
+                    <th>{view === "funding" ? "Collected / courier cost" : "Payment / consent"}</th>
+                    <th>Status</th>
+                    <th>Refund deadline</th>
+                    <th>Review</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.slice((page - 1) * 20, page * 20).map((r: Row) => (
+                    <tr key={r.id || r.deliveryId}>
+                      {view === "funding" && (
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`Fund ${r.reference}`}
+                            checked={checked.includes(r.deliveryId)}
+                            disabled={!r.bookingReady}
+                            onChange={(e) =>
+                              setChecked((current) =>
+                                e.target.checked
+                                  ? [...current, r.deliveryId]
+                                  : current.filter((id) => id !== r.deliveryId),
+                              )
+                            }
+                          />
+                        </td>
+                      )}
+                      <td>
+                        <strong>{r.reference}</strong>
+                        <small>{r.title || r.courier || "Courier not selected"}</small>
+                      </td>
+                      <td>
+                        {view === "funding" ? (
+                          <>
+                            {money(r.shippingCollectedMinor)}
+                            <small>
+                              Cost{" "}
+                              {r.courierCostMinor === null ? "Unquoted" : money(r.courierCostMinor)}{" "}
+                              · Surplus {money(r.refundableShippingSurplusMinor)}
+                            </small>
+                          </>
+                        ) : (
+                          <>
+                            {money(r.payment.amountMinor)}
+                            <small>
+                              Farmer {r.farmerConfirmedAt ? "confirmed" : "pending"} · Buyer{" "}
+                              {r.proposal?.buyerAcceptedAt ? "accepted" : "pending"}
+                            </small>
+                          </>
+                        )}
+                      </td>
+                      <td>
+                        <FinanceStatus value={r.state} />
+                        {r.conditionalRecovery && <small>Conditional recovery</small>}
+                      </td>
+                      <td>{financeDate(r.deadline?.refundDueAt)}</td>
+                      <td>
+                        {view === "recovery" ? (
+                          <button
+                            className="secondary"
+                            onClick={() => setSelected({ type: "case", id: r.id })}
+                          >
+                            Review case →
+                          </button>
+                        ) : (
+                          <Link href={orderLink(r.orderId)}>Order finance →</Link>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="finance-pagination">
+              <span>
+                {rows.length} matching records · Page {page}
+              </span>
+              <div>
+                <button
+                  className="secondary"
+                  disabled={page <= 1}
+                  onClick={() => update({ finPage: String(page - 1) })}
+                >
+                  Previous
+                </button>
+                <button
+                  className="secondary"
+                  disabled={page * 20 >= rows.length}
+                  onClick={() => update({ finPage: String(page + 1) })}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <FinanceEmpty>
+            {query || status !== "ALL"
+              ? "Clear the filters to see more records."
+              : view === "funding"
+                ? "No shipments currently need funding."
+                : "No payment recovery cases in this environment."}
+          </FinanceEmpty>
+        )}
+      </section>
+      {view === "recovery" && (
+        <section className="finance-panel">
+          <h2>Deadline & incident queue</h2>
+          <p>
+            Refund initiation is due after two hours without secured fulfillment. Provider credit
+            may take longer.
+          </p>
+          {data.deadlines.filter((d: Row) => !["SECURED", "REFUNDED"].includes(d.state)).length ? (
+            <div className="finance-table-scroll">
+              <table className="finance-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Refund state</th>
+                    <th>Due</th>
+                    <th>Next action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.deadlines
+                    .filter((d: Row) => !["SECURED", "REFUNDED"].includes(d.state))
+                    .map((d: Row) => (
+                      <tr key={d.orderId}>
+                        <td>
+                          <Link href={orderLink(d.orderId)}>
+                            {data.shipments.find((s: Row) => s.orderId === d.orderId)?.reference ||
+                              d.orderId}
+                          </Link>
+                        </td>
+                        <td>
+                          <FinanceStatus value={d.state} />
+                        </td>
+                        <td>{financeDate(d.refundDueAt)}</td>
+                        <td>{financeLabel(d.failureCode) || "Monitor provider confirmation"}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p>No unresolved deadlines.</p>
+          )}
+          {data.alerts.length > 0 && (
+            <details>
+              <summary>{data.alerts.length} active operational alerts</summary>
+              <ul>
+                {data.alerts.map((a: Row) => (
+                  <li key={a.key}>
+                    {financeLabel(a.code)} · {a.orderId || "Provider account"}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+      )}
+      {view === "funding" && (
+        <section className="finance-panel">
+          <h2>Manual funding batches</h2>
+          <p>Latest 100 batches. Planning and recording a transfer does not move money.</p>
+          {data.batches.length ? (
+            <div className="finance-table-scroll">
+              <table className="finance-table">
+                <thead>
+                  <tr>
+                    <th>Batch / source</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Review</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.batches.map((b: Row) => (
+                    <tr key={b.id}>
+                      <td>
+                        <strong>{b.sourceLabel}</strong>
+                        <small>{b.transferReference || b.id}</small>
+                      </td>
+                      <td>{money(b.amountMinor)}</td>
+                      <td>
+                        <FinanceStatus value={b.state} />
+                      </td>
+                      <td>{financeDate(b.createdAt)}</td>
+                      <td>
+                        <button
+                          className="secondary"
+                          onClick={() => setSelected({ type: "batch", id: b.id })}
+                        >
+                          Review transfer →
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <FinanceEmpty>Select booking-ready shipments to create a funding plan.</FinanceEmpty>
+          )}
+        </section>
+      )}
+      {selected?.type === "case" && item && (
+        <FinanceDrawer
+          key={item.id}
+          title={`Recovery · ${item.reference}`}
+          onClose={() => setSelected(undefined)}
+        >
+          <RecoveryReview item={item} manage={manage} refresh={load} orderLink={orderLink} />
+        </FinanceDrawer>
+      )}
+      {selected?.type === "batch" && item && (
+        <FinanceDrawer
+          key={item.id}
+          title="Funding transfer"
+          onClose={() => setSelected(undefined)}
+        >
+          <FundingReview item={item} manage={manage} refresh={load} />
+        </FinanceDrawer>
+      )}
+      {selected?.type === "new" && (
+        <FinanceDrawer
+          title="Plan a shipping-wallet transfer"
+          onClose={() => setSelected(undefined)}
+        >
+          <NewFunding
+            shipments={selectedShipments}
+            total={selectedTotal}
+            refresh={load}
+            done={() => setSelected(undefined)}
+          />
+        </FinanceDrawer>
+      )}
+    </div>
+  );
 }
-export function FinanceOperations({ orderId, manage, ready, reason, action }: { orderId?: string; manage: boolean; ready: boolean; reason: string; action: (path: string, body: any, step?: boolean) => Promise<void> }) {
-  const [data,setData]=useState<any>(null),[cases,setCases]=useState<any[]>([]),[error,setError]=useState("");
-  const [pickupDate,setPickupDate]=useState(new Date().toISOString().slice(0,10)),[minutes,setMinutes]=useState("60"),[notes,setNotes]=useState("");
-  const [source,setSource]=useState(""),[destination,setDestination]=useState(""),[amount,setAmount]=useState(""),[reference,setReference]=useState(""),[statement,setStatement]=useState("");
-  const [selected,setSelected]=useState<string[]>([]); const keys=useRef<Record<string,string>>({});
-  const load=useCallback(async()=>{const suffix=orderId?`?orderId=${orderId}`:"";const [f,r]=await Promise.all([read(`finance${suffix}`),read(`recoveries${suffix}`)]);setData(f);setCases(r.items||[]);},[orderId]);
-  useEffect(()=>{let active=true;let running=false;const update=()=>{if(running||document.visibilityState!=="visible")return;running=true;void load().catch(e=>{if(active)setError(e.message);}).finally(()=>{running=false;});};update();const timer=setInterval(update,30000);return()=>{active=false;clearInterval(timer);};},[load]);
-  const run=async(path:string,body:any,step=true)=>{await action(path,body,step);await load().catch(e=>setError(e.message));};
-  if(!data?.enabled)return error?<p role="alert">{error}</p>:null;
-  const metrics:Record<string,string>={verifiedCollectionsMinor:"Verified customer collections",processingFeesMinor:"Provider processing fees",unallocatedMinor:"Unallocated verified payments",farmerAwaitingReleaseMinor:"Farmer funds awaiting release",farmerAvailableMinor:"Farmer available earnings",shippingCollectedMinor:"Shipping collected",courierCommitmentsMinor:"Courier commitments",courierChargesMinor:"Confirmed courier charges",earnedCommissionMinor:"Earned platform commission",platformExpensesMinor:"Business-borne expenses",refundDueMinor:"Refunds due",refundProcessingMinor:"Refunds processing",refundBlockedMinor:"Refunds blocked",refundCompletedMinor:"Refunds completed"};
-  return <section>
-    <h2>Collections, recovery and logistics funding</h2>
-    <p>Collections are not platform income. Held ledger balances do not represent a separate escrow bank account. External business-bank balance: unavailable.</p>
-    {data.heartbeat.stale&&<p role="alert">Payment recovery worker heartbeat is stale. Overdue refunds require immediate attention.</p>}
-    <dl>{Object.entries(metrics).map(([key,label])=><div key={key}><dt>{label}</dt><dd>{money(data.summary[key])}</dd></div>)}</dl>
-    <h3>Amount to fund Shipbubble</h3>
-    <p>Booking-ready costs: {money(data.funding.bookingReadyMinor)} · Existing commitments: {money(data.funding.committedMinor)}</p>
-    <p>Observed wallet: {data.funding.walletMinor===null?"Unavailable":money(data.funding.walletMinor)} · Checked {data.funding.checkedAt?new Date(data.funding.checkedAt).toLocaleString():"never"}</p>
-    <p>Usable wallet: {data.funding.usableWalletMinor===null?"Unverified":money(data.funding.usableWalletMinor)} · Required transfer: <strong>{data.funding.verified?money(data.funding.fundingShortfallMinor):"Unverified — reconcile wallet and uncertain purchases"}</strong></p>
-    <p>Recorded, unverified transfers: {money(data.funding.recordedUnverifiedTransfersMinor)}. These do not fund bookings. Verified transfers are already included in the observed wallet; they are not subtracted twice.</p>
-    {manage&&<button onClick={()=>void run("finance/refresh",{},false)}>Refresh provider wallet balance</button>}
-    <table><thead><tr><th>Fund</th><th>Order / courier</th><th>Produce / top-up</th><th>Shipping collected / cost / surplus</th><th>Status / refund deadline</th></tr></thead><tbody>{data.shipments.map((s:any)=><tr key={s.deliveryId}>
-      <td><input type="checkbox" aria-label={`Fund ${s.reference}`} checked={selected.includes(s.deliveryId)} disabled={!s.bookingReady} onChange={e=>setSelected(current=>e.target.checked?[...current,s.deliveryId]:current.filter(id=>id!==s.deliveryId))}/></td>
-      <td>{s.reference}<br/>{s.courier||"Not selected"}</td><td>{money(s.produceMinor)} / {money(s.topupsMinor)}</td>
-      <td>{money(s.shippingCollectedMinor)} / {s.courierCostMinor===null?"Unquoted":money(s.courierCostMinor)} / {money(s.refundableShippingSurplusMinor)}</td>
-      <td>{s.state}{s.conditionalRecovery?" · Conditional recovery — excluded from funding":""}<br/>{s.deadline?.state} {s.deadline?.refundDueAt&&new Date(s.deadline.refundDueAt).toLocaleString()}<br/>{s.failureCode}</td>
-    </tr>)}</tbody></table>
-    <h3>Recovery and refund queue</h3>
-    <p>Refund the produce and shipping principal if fulfillment is not secured within two hours. Bank credit can take longer. Staff acknowledgement does not extend the deadline.</p>
-    {data.deadlines.filter((d:any)=>d.state!=="SECURED").map((d:any)=><p key={d.orderId}>{d.orderId} · {d.state} · Due {new Date(d.refundDueAt).toLocaleString()} · {d.failureCode}</p>)}
-    {data.alerts.map((a:any)=><p role="alert" key={a.key}>{a.code} · {a.orderId||"Provider account"}</p>)}
-    {manage&&<><label>Confirmed pickup date<input type="date" value={pickupDate} onChange={e=>setPickupDate(e.target.value)}/></label><label>Farmer preparation time (minutes)<input type="number" min="0" max="1440" value={minutes} onChange={e=>setMinutes(e.target.value)}/></label><label>Completed farmer call details<textarea value={notes} onChange={e=>setNotes(e.target.value)} maxLength={700}/></label></>}
-    {cases.map(r=><article key={r.id}><h4>{r.reference} — {r.title}</h4><p>{r.state} · Payment {money(r.payment.amountMinor)} · Farmer {r.farmerConfirmedAt?"confirmed":"confirmation required"} · Proposal {r.version}</p>
-      {r.proposal&&<p>Buyer {r.proposal.buyerAcceptedAt?"accepted":"has not accepted"} · Expires {new Date(r.proposal.expiresAt).toLocaleString()}</p>}
-      {manage&&!r.allocatedAt&&!["REFUND_REQUIRED","REFUNDED"].includes(r.state)&&<>
-        <button disabled={!ready||!pickupDate||!notes} onClick={()=>void run(`recoveries/${r.id}/farmer`,{reason,pickupDate,preparationMinutes:Number(minutes),notes,phoneConfirmation:true})}>Record completed farmer confirmation</button>
-        <button disabled={!ready||!r.farmerConfirmedAt} onClick={()=>void run(`recoveries/${r.id}/proposal`,{reason})}>Prepare fresh recovery proposal</button>
-        <button disabled={!ready||r.state!=="READY_FOR_APPROVAL"} onClick={()=>{keys.current[r.id] ||= crypto.randomUUID();void run(`recoveries/${r.id}/approve`,{reason,version:r.version,idempotencyKey:keys.current[r.id]});}}>Approve verified payment allocation</button>
-        <button disabled={!ready} onClick={()=>void run(`recoveries/${r.id}/decline`,{reason})}>Resolve by refund</button>
-      </>}
-    </article>)}
-    {manage&&data.flags.funding&&<><h3>Manual wallet funding</h3><p>Transfer through your approved banking process. This portal records and reconciles transfers; it does not send money.</p>
-      <label>Transfer amount (kobo)<input inputMode="numeric" value={amount} onChange={e=>setAmount(e.target.value.replace(/\D/g,""))}/></label>
-      <label>Source business account label<input value={source} onChange={e=>setSource(e.target.value)}/></label><label>Verified Shipbubble funding destination<input value={destination} onChange={e=>setDestination(e.target.value)}/></label>
-      <button disabled={!ready||!selected.length||!amount||!source||!destination} onClick={()=>void run("funding",{amountMinor:amount,sourceLabel:source,destination,shipmentIds:selected,reason})}>Create funding batch for selected shipments</button>
-      <label>Bank transfer reference<input value={reference} onChange={e=>setReference(e.target.value)}/></label><label>Statement reconciliation evidence / transaction reference<textarea value={statement} onChange={e=>setStatement(e.target.value)} minLength={10} maxLength={500}/></label>
-      {data.batches.map((b:any)=><article key={b.id}><h4>{money(b.amountMinor)} — {b.state}</h4><p>{b.sourceLabel} → {b.destination} · {b.transferReference}</p>
-        {b.state==="PLANNED"&&<button disabled={!ready||!reference||statement.length<10} onClick={()=>void run(`funding/${b.id}/record`,{transferReference:reference,statementReference:statement,reason})}>Record completed transfer</button>}
-        {["PLANNED","TRANSFER_RECORDED"].includes(b.state)&&<label>Private evidence (PDF/JPEG/PNG, 500 KB)<input type="file" accept="application/pdf,image/png,image/jpeg" disabled={!ready} onChange={e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>512000){setError("Evidence must be at most 500 KB.");return;}const reader=new FileReader();reader.onload=()=>void run(`funding/${b.id}/evidence`,{base64:String(reader.result).split(",")[1],mime:file.type});reader.readAsDataURL(file);}}/></label>}
-        {b.state==="TRANSFER_RECORDED"&&<button disabled={!ready||statement.length<10} onClick={()=>void run(`funding/${b.id}/verify`,{reason,statementReference:statement,reconciledStatement:true})}>Confirm statement reconciled and verify funding</button>}
-        <a href={`/api/admin/money/funding/${b.id}/evidence`} target="_blank" rel="noreferrer">View private evidence</a>
-        {["PLANNED","TRANSFER_RECORDED"].includes(b.state)&&<><button disabled={!ready} onClick={()=>void run(`funding/${b.id}/close`,{reason,state:"FAILED"})}>Mark failed transfer</button><button disabled={!ready} onClick={()=>void run(`funding/${b.id}/close`,{reason,state:"CANCELLED"})}>Cancel batch</button></>}
-      </article>)}
-    </>}
-    <p role="alert">{error}</p>
-  </section>;
+function RecoveryReview({
+  item: r,
+  manage,
+  refresh,
+  orderLink,
+}: {
+  item: Row;
+  manage: boolean;
+  refresh: () => Promise<void>;
+  orderLink: (id: string) => string;
+}) {
+  const mutation = useFinanceMutation(refresh),
+    key = useRef("");
+  const [pickupDate, setPickupDate] = useState(new Date().toISOString().slice(0, 10)),
+    [minutes, setMinutes] = useState("60"),
+    [notes, setNotes] = useState("");
+  const run = (path: string, body: Row) =>
+    void mutation
+      .action(`recoveries/${r.id}/${path}`, { reason: mutation.reason, ...body })
+      .catch(() => {});
+  return (
+    <>
+      <div className="finance-record-heading">
+        <FinanceStatus value={r.state} />
+        <strong>{money(r.payment.amountMinor)}</strong>
+      </div>
+      <dl className="finance-facts">
+        {[
+          ["Produce", r.title],
+          [
+            "Farmer confirmation",
+            r.farmerConfirmedAt ? financeDate(r.farmerConfirmedAt) : "Required",
+          ],
+          ["Stock reserved until", financeDate(r.reservationUntil)],
+          [
+            "Buyer proposal",
+            r.proposal?.buyerAcceptedAt
+              ? `Accepted version ${r.version}`
+              : `Awaiting acceptance · version ${r.version}`,
+          ],
+          ["Proposal expiry", financeDate(r.proposal?.expiresAt)],
+          ["Refund due", financeDate(r.deadline?.refundDueAt)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <Link className="finance-detail-link" href={orderLink(r.orderId)}>
+        Open complete order finance →
+      </Link>
+      {manage && !r.allocatedAt && !["REFUND_REQUIRED", "REFUNDED"].includes(r.state) && (
+        <>
+          <FinanceSecurity mutation={mutation} />
+          <section className="finance-panel">
+            <h3>Confirm the farmer’s availability</h3>
+            <p>
+              Record a completed phone confirmation of original stock, packing and pickup details.
+            </p>
+            <label>
+              Confirmed pickup date
+              <input
+                type="date"
+                value={pickupDate}
+                onChange={(e) => setPickupDate(e.target.value)}
+              />
+            </label>
+            <label>
+              Preparation time (minutes)
+              <input
+                type="number"
+                min="0"
+                max="1440"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+              />
+            </label>
+            <label>
+              Completed call details
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={700} />
+            </label>
+            <button
+              disabled={!mutation.ready || !pickupDate || !notes}
+              onClick={() =>
+                run("farmer", {
+                  pickupDate,
+                  preparationMinutes: Number(minutes),
+                  notes,
+                  phoneConfirmation: true,
+                })
+              }
+            >
+              Record farmer confirmation
+            </button>
+          </section>
+          <div className="finance-review-actions">
+            <button
+              className="secondary"
+              disabled={!mutation.ready || !r.farmerConfirmedAt}
+              onClick={() => run("proposal", {})}
+            >
+              Prepare fresh proposal
+            </button>
+            <button
+              disabled={!mutation.ready || r.state !== "READY_FOR_APPROVAL"}
+              onClick={() => {
+                key.current ||= crypto.randomUUID();
+                run("approve", { version: r.version, idempotencyKey: key.current });
+              }}
+            >
+              Approve payment allocation
+            </button>
+            <button
+              className="finance-danger-button"
+              disabled={!mutation.ready}
+              onClick={() => run("decline", {})}
+            >
+              Resolve by refund
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+function NewFunding({
+  shipments,
+  total,
+  refresh,
+  done,
+}: {
+  shipments: Row[];
+  total: bigint;
+  refresh: () => Promise<void>;
+  done: () => void;
+}) {
+  const mutation = useFinanceMutation(refresh),
+    [amount, setAmount] = useState(total.toString()),
+    [source, setSource] = useState(""),
+    [destination, setDestination] = useState("");
+  return (
+    <>
+      <p>
+        {shipments.length} booking-ready shipments · Provider cost{" "}
+        <strong>{money(total.toString())}</strong>
+      </p>
+      <ul>
+        {shipments.map((s) => (
+          <li key={s.deliveryId}>
+            {s.reference} · {money(s.courierCostMinor)}
+          </li>
+        ))}
+      </ul>
+      <label>
+        Transfer amount (kobo)
+        <input
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
+        />
+      </label>
+      <label>
+        Source business account label
+        <input value={source} onChange={(e) => setSource(e.target.value)} />
+      </label>
+      <label>
+        Verified Shipbubble destination
+        <input value={destination} onChange={(e) => setDestination(e.target.value)} />
+      </label>
+      <FinanceSecurity mutation={mutation} />
+      <button
+        disabled={!mutation.ready || !shipments.length || !amount || !source || !destination}
+        onClick={() =>
+          void mutation
+            .action("funding", {
+              amountMinor: amount,
+              sourceLabel: source,
+              destination,
+              shipmentIds: shipments.map((s) => s.deliveryId),
+              reason: mutation.reason,
+            })
+            .then(done)
+            .catch(() => {})
+        }
+      >
+        Create funding plan
+      </button>
+    </>
+  );
+}
+function FundingReview({
+  item: b,
+  manage,
+  refresh,
+}: {
+  item: Row;
+  manage: boolean;
+  refresh: () => Promise<void>;
+}) {
+  const mutation = useFinanceMutation(refresh),
+    [reference, setReference] = useState(""),
+    [statement, setStatement] = useState(""),
+    [fileError, setFileError] = useState("");
+  const run = (suffix: string, body: Row) =>
+    void mutation
+      .action(`funding/${b.id}/${suffix}`, { reason: mutation.reason, ...body })
+      .catch(() => {});
+  return (
+    <>
+      <div className="finance-record-heading">
+        <FinanceStatus value={b.state} />
+        <strong>{money(b.amountMinor)}</strong>
+      </div>
+      <dl className="finance-facts">
+        {[
+          ["Source", b.sourceLabel],
+          ["Destination", b.destination],
+          ["Transfer reference", b.transferReference || "Not recorded"],
+          ["Created", financeDate(b.createdAt)],
+          ["Verified", financeDate(b.verifiedAt)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <a
+        className="finance-detail-link"
+        href={`/api/admin/money/funding/${b.id}/evidence`}
+        target="_blank"
+        rel="noreferrer"
+      >
+        View private evidence ↗
+      </a>
+      {manage && ["PLANNED", "TRANSFER_RECORDED"].includes(b.state) && (
+        <>
+          <FinanceSecurity mutation={mutation} />
+          <label>
+            Bank transfer reference
+            <input value={reference} onChange={(e) => setReference(e.target.value)} />
+          </label>
+          <label>
+            Statement reconciliation evidence / reference
+            <textarea
+              value={statement}
+              onChange={(e) => setStatement(e.target.value)}
+              minLength={10}
+              maxLength={500}
+            />
+          </label>
+          {b.state === "PLANNED" && (
+            <button
+              disabled={!mutation.ready || !reference || statement.length < 10}
+              onClick={() =>
+                run("record", { transferReference: reference, statementReference: statement })
+              }
+            >
+              Record completed transfer
+            </button>
+          )}
+          <label>
+            Private evidence (PDF/JPEG/PNG, up to 500 KB)
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg"
+              disabled={!mutation.ready}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 512000) {
+                  setFileError("Evidence must be at most 500 KB.");
+                  return;
+                }
+                setFileError("");
+                const reader = new FileReader();
+                reader.onload = () =>
+                  run("evidence", { base64: String(reader.result).split(",")[1], mime: file.type });
+                reader.onerror = () => setFileError("The file could not be read. Try again.");
+                reader.readAsDataURL(file);
+              }}
+            />
+          </label>
+          {fileError && <p role="alert">{fileError}</p>}
+          {b.state === "TRANSFER_RECORDED" && (
+            <button
+              disabled={!mutation.ready || statement.length < 10}
+              onClick={() =>
+                run("verify", { statementReference: statement, reconciledStatement: true })
+              }
+            >
+              Verify reconciled funding
+            </button>
+          )}
+          <div className="finance-review-actions">
+            <button
+              className="finance-danger-button"
+              disabled={!mutation.ready}
+              onClick={() => run("close", { state: "FAILED" })}
+            >
+              Mark transfer failed
+            </button>
+            <button
+              className="secondary"
+              disabled={!mutation.ready}
+              onClick={() => run("close", { state: "CANCELLED" })}
+            >
+              Cancel batch
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
 }

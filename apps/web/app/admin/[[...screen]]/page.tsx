@@ -14,10 +14,20 @@ export async function generateMetadata({ params }: Props) {
 export default async function AdminPage({ params }: Props) {
   const route = (await params).screen?.join("/") || "dashboard";
   const screen = adminScreens[route as keyof typeof adminScreens];
-  if (!screen && !["setup", "forgot-password", "categories"].includes(route)) notFound();
+  const financeDetail =
+    /^reconciliation\/orders\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      route,
+    );
+  if (!screen && !financeDetail && !["setup", "forgot-password", "categories"].includes(route))
+    notFound();
   return (
     <Suspense fallback={<p>Loading staff workspace…</p>}>
-      <LiveAdmin route={route} title={titles[route] || screen?.title || "Staff account setup"} />
+      <LiveAdmin
+        route={route}
+        title={
+          financeDetail ? "Order finance" : titles[route] || screen?.title || "Staff account setup"
+        }
+      />
     </Suspense>
   );
 }
@@ -33,7 +43,7 @@ const titles: Record<string, string> = {
   withdrawals: "Withdrawal authorization",
   reports: "Reports & analytics",
   "listings/review": "Listing review",
-  reconciliation: "Escrow reconciliation",
+  reconciliation: "Payments & reconciliation",
   orders: "Orders & escrow",
   roles: "Roles & permissions",
   faq: "FAQ admin",

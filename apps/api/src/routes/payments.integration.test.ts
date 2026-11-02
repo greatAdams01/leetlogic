@@ -1963,4 +1963,30 @@ suite("provider-backed payment safeguards", () => {
     expect(await prisma.financeAlert.count({where:{orderId:f.o.id,code:"RECOVERY_DEADLINE_90"}})).toBe(1);
   });
 
+  it("paginates finance history, preserves exact money and redacts provider operation payloads", async () => {
+    const {o}=await order();
+    await prisma.moneyOperation.createMany({data:Array.from({length:21},(_,i)=>({ownerId:buyer,orderId:o.id,mode:"sandbox",kind:"PAYOUT",status:"BLOCKED",amountMinor:125051n,feeMinor:100n,mutationKey:randomUUID(),requestHash:randomUUID(),payload:{privateEvidence:"never expose"},encryptedPayload:"secret"}))});
+    await prisma.moneyOperation.create({data:{ownerId:buyer,orderId:o.id,mode:"live",kind:"PAYOUT",status:"BLOCKED",amountMinor:999n,mutationKey:randomUUID(),requestHash:randomUUID(),payload:{}}});
+    const path=`/v1/admin/money/records?type=operations&orderId=${o.id}&kind=PAYOUT&status=BLOCKED&search=${o.reference}`;
+    const first=await request(app).get(path).set("Authorization",`Bearer ${staff}`);
+    expect(first.status).toBe(200);expect(first.body.total).toBe(21);expect(first.body.items).toHaveLength(20);
+    expect(first.body.items[0].amountMinor).toBe("125051");expect(first.body.items[0].orderReference).toBe(o.reference);
+    expect(JSON.stringify(first.body)).not.toContain("never expose");expect(first.body.items[0].encryptedPayload).toBeUndefined();
+    const second=await request(app).get(`${path}&page=2`).set("Authorization",`Bearer ${staff}`);
+    expect(second.body.items).toHaveLength(1);expect(first.body.items.map((r:any)=>r.id)).not.toContain(second.body.items[0].id);
+    const detail=await request(app).get(`/v1/admin/money/records/operations/${first.body.items[0].id}`).set("Authorization",`Bearer ${staff}`);
+    expect(detail.body.orderReference).toBe(o.reference);expect(detail.body.payload).toBeUndefined();
+    expect((await request(app).get(path).set("Authorization",`Bearer ${token}`)).status).toBe(401);
+    expect((await request(app).get(`${path}&from=2026-11-03&to=2026-11-01`).set("Authorization",`Bearer ${staff}`)).status).toBe(422);
+  });
+  it("reports verified collections separately from earned commission and scopes an order overview",async()=>{
+    const {o}=await order();const a=await checkout(o.id);mockReceipt(a);await reconcilePayment(a.id);
+    const result=await request(app).get(`/v1/admin/money/summary?orderId=${o.id}`).set("Authorization",`Bearer ${staff}`);
+    expect(result.status).toBe(200);expect(result.body.mode).toBe("sandbox");expect(result.body.collectionsMinor).toBe("11000");expect(result.body.commissionMinor).toBe("0");expect(result.body.farmerHeldMinor).toBe("10000");
+    expect(result.body.daily.reduce((n:bigint,r:any)=>n+BigInt(r.amountMinor),0n)).toBe(11000n);
+    const ledger=await request(app).get(`/v1/admin/money/ledger?orderId=${o.id}`).set("Authorization",`Bearer ${staff}`);
+    expect(ledger.status).toBe(200);expect(ledger.body.items).toHaveLength(1);expect(ledger.body.items[0].balanced).toBe(true);expect(ledger.body.items[0].fundedMinor).toBe("10000");
+    expect(result.body.orderStates[0]._sum.heldMinor).toBe("10000");
+  });
+
 });

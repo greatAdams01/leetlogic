@@ -1,3 +1,4 @@
+import { installFinanceReadRoutes } from "./finance-read.js";
 import { installRecoveryRoutes } from "./payment-recovery.js";
 import { readFulfillment } from "../services/fulfillment-deadline.js";
 import { bankName } from "../services/bank-names.js";
@@ -53,6 +54,7 @@ paymentsRouter.use(requireAuth("customer"));
 financialRouter.use(requireAuth("customer"));
 moneyAdminRouter.use(requireAuth("admin"), requirePermission("payments.read"));
 installRecoveryRoutes(paymentsRouter, moneyAdminRouter);
+installFinanceReadRoutes(moneyAdminRouter);
 const safeOperation = (op: any) => ({
   id: op.id,
   kind: op.kind,
@@ -372,15 +374,18 @@ financialRouter.post("/withdrawals", async (req, res) => {
   );
   res.status(202).json(serialize(safeOperation(op)));
 });
-moneyAdminRouter.get("/", async (_req, res) => {
+moneyAdminRouter.get("/", async (req, res) => {
+  const orderId = req.query.orderId ? uuid.parse(req.query.orderId) : undefined;
+  const operationId = req.query.operationId ? uuid.parse(req.query.operationId) : undefined;
+  const paymentId = req.query.paymentId ? uuid.parse(req.query.paymentId) : undefined;
   const [operations, payments, webhooks, reconciliations] = await Promise.all([
     prisma.moneyOperation.findMany({
-      where: { mode: mode() },
+      where: { mode: mode(), ...(orderId ? { orderId } : {}), ...(operationId ? { id: operationId } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
     prisma.paymentAttempt.findMany({
-      where: { mode: mode() },
+      where: { mode: mode(), ...(orderId ? { orderId } : {}), ...(paymentId ? { id: paymentId } : {}) },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),

@@ -4,6 +4,7 @@ import { Categories } from "./categories";
 import { SidebarNavigation } from "./sidebar-navigation";
 import { ListingQueue, ListingReview } from "./listing-review";
 import { VerificationReview, verificationLabel } from "./verification-review";
+import { FinanceDrawer, financeDate } from "./finance-ui";
 import { MoneyOperations } from "./money-operations";
 import { CustomerDelivery } from "../customer-delivery";
 import Link from "next/link";
@@ -347,6 +348,13 @@ function Workspace({ route, title }: { route: string; title: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const resource = route === "verification/buyer" ? "users" : route.split("/")[0]!;
+  const financePage = ["withdrawals", "reconciliation", "reports"].includes(resource);
+  const legacyFinance = resource === "withdrawals" && searchParams.get("finTab") === "legacy";
+  const financeOrderId =
+    resource === "reconciliation" && route.split("/")[1] === "orders"
+      ? route.split("/")[2]
+      : undefined;
+  const ReviewShell = financePage ? FinanceDrawer : InlineReview;
   const endpoint =
     resource === "audit" ? "audit-logs" : resource === "verification" ? "verifications" : resource;
   const [staff, setStaff] = useState<Staff>();
@@ -355,9 +363,20 @@ function Workspace({ route, title }: { route: string; title: string }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("ALL");
-  const [page, setPage] = useState(1);
+  const [queryState, setQuery] = useState("");
+  const [statusState, setStatus] = useState("ALL");
+  const [pageState, setPage] = useState(1);
+  const query = legacyFinance ? searchParams.get("legacySearch") || "" : queryState;
+  const status = legacyFinance ? searchParams.get("legacyStatus") || "ALL" : statusState;
+  const page = legacyFinance ? Math.max(1, Number(searchParams.get("legacyPage")) || 1) : pageState;
+  useEffect(() => {
+    if (legacyFinance) setSearch(query);
+  }, [legacyFinance, query]);
+  const legacyFilters = (changes: Record<string, string>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(changes)) params.set(key, value);
+    router.push(`/admin/withdrawals?${params}`, { scroll: false });
+  };
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [selected, setSelected] = useState<Row>();
   const [menu, setMenu] = useState(false);
@@ -385,6 +404,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
     try {
       const me = await api("me");
       setStaff(me as Staff);
+      if (financePage && !legacyFinance) return;
       const records = await api(
         `${endpoint}?page=${page}&search=${encodeURIComponent(query)}&status=${status}`,
       );
@@ -409,7 +429,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
     } finally {
       setBusy(false);
     }
-  }, [endpoint, page, query, status, router, searchParams]);
+  }, [endpoint, page, query, status, router, searchParams, financePage, legacyFinance]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -563,7 +583,11 @@ function Workspace({ route, title }: { route: string; title: string }) {
         >
           ×
         </button>
-        <SidebarNavigation route={route} permissions={staff?.permissions ?? []} onNavigate={() => setMenu(false)} />
+        <SidebarNavigation
+          route={route}
+          permissions={staff?.permissions ?? []}
+          onNavigate={() => setMenu(false)}
+        />
         <div className="live-staff">
           <strong>{staff?.fullName || "Staff account"}</strong>
           <small>{staff?.email}</small>
@@ -596,53 +620,60 @@ function Workspace({ route, title }: { route: string; title: string }) {
           <span className="live-status">● Staff operations</span>
         </header>
         <div className="live-content">
-          {["withdrawals", "reconciliation"].includes(resource) && can("payments.read") && (
-            <MoneyOperations manage={can("payments.manage")} />
-          )}
           <div className="live-page-heading">
             <div>
               <div className="live-eyebrow">LEETLOGIC OPERATIONS</div>
               <h1>{title}</h1>
-              <p>Review and manage marketplace records.</p>
+              <p>
+                {financePage
+                  ? "Collections, obligations and financial operations"
+                  : "Review and manage marketplace records."}
+              </p>
             </div>
-            <div className="live-actions">
-              <button className="secondary" onClick={() => void load()} disabled={busy}>
-                Refresh
-              </button>
-              {items.length > 0 && (
-                <button className="secondary" onClick={exportCsv}>
-                  Export this page
+            {(!financePage || legacyFinance) && (
+              <div className="live-actions">
+                <button className="secondary" onClick={() => void load()} disabled={busy}>
+                  Refresh
                 </button>
-              )}
-              {content[resource] && can(createPermission[resource]!) && (
-                <button
-                  onClick={() =>
-                    open(
-                      `Create ${resource === "system" ? "incident" : resource === "faq" ? "FAQ" : resource === "support" ? "ticket" : resource === "translations" ? "translation" : resource === "orders" ? "order" : resource === "logistics" ? "shipment" : resource === "withdrawals" ? "withdrawal" : resource === "risk" ? "risk alert" : "compliance review"}`,
-                      resource,
-                      content[resource]!,
-                      { stepUp: resource === "withdrawals" },
-                    )
-                  }
-                >
-                  + Create
-                </button>
-              )}
-              {resource === "roles" && can("admin.manage") && (
-                <button
-                  onClick={() =>
-                    open(
-                      "Invite staff",
-                      "invitations",
-                      [email, text("fullName", "Full name"), select("roleCode", "Role", roleCodes)],
-                      { stepUp: true },
-                    )
-                  }
-                >
-                  + Invite staff
-                </button>
-              )}
-            </div>
+                {items.length > 0 && (
+                  <button className="secondary" onClick={exportCsv}>
+                    Export this page
+                  </button>
+                )}
+                {content[resource] && can(createPermission[resource]!) && (
+                  <button
+                    onClick={() =>
+                      open(
+                        `Create ${resource === "system" ? "incident" : resource === "faq" ? "FAQ" : resource === "support" ? "ticket" : resource === "translations" ? "translation" : resource === "orders" ? "order" : resource === "logistics" ? "shipment" : resource === "withdrawals" ? "withdrawal" : resource === "risk" ? "risk alert" : "compliance review"}`,
+                        resource,
+                        content[resource]!,
+                        { stepUp: resource === "withdrawals" },
+                      )
+                    }
+                  >
+                    + Create
+                  </button>
+                )}
+                {resource === "roles" && can("admin.manage") && (
+                  <button
+                    onClick={() =>
+                      open(
+                        "Invite staff",
+                        "invitations",
+                        [
+                          email,
+                          text("fullName", "Full name"),
+                          select("roleCode", "Role", roleCodes),
+                        ],
+                        { stepUp: true },
+                      )
+                    }
+                  >
+                    + Invite staff
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           {error && !action && (
             <div className="live-error" role="alert">
@@ -658,6 +689,14 @@ function Workspace({ route, title }: { route: string; title: string }) {
             </div>
           )}
           {busy && !action && <p role="status">Loading marketplace records…</p>}
+          {financePage && can("payments.read") && (
+            <MoneyOperations
+              key={financeOrderId || resource}
+              view={resource}
+              orderId={financeOrderId}
+              manage={can("payments.manage")}
+            />
+          )}
           {resource === "dashboard" && (
             <div className="live-metrics">
               {["users", "listings", "orders", "verifications", "tickets"].map((key) => (
@@ -678,30 +717,6 @@ function Workspace({ route, title }: { route: string; title: string }) {
               </section>
             </div>
           )}
-          {resource === "reports" &&
-            Object.entries(data).map(
-              ([key, group]) =>
-                Array.isArray(group) && (
-                  <section className="live-card" key={key}>
-                    <h2>{key}</h2>
-                    {group.length ? (
-                      group.map((row: Row, index: number) => (
-                        <div className="live-report-row" key={index}>
-                          <strong>{row.status || row.kind}</strong>
-                          <span>{row._count} records</span>
-                          {Object.entries(row._sum || {}).map(([key, value]) => (
-                            <span key={key}>
-                              {key.replace("Minor", "")}: {money(value)}
-                            </span>
-                          ))}
-                        </div>
-                      ))
-                    ) : (
-                      <p>No records yet.</p>
-                    )}
-                  </section>
-                ),
-            )}
           {resource === "settings" && data.version && (
             <section className="live-card">
               <form
@@ -760,543 +775,589 @@ function Workspace({ route, title }: { route: string; title: string }) {
           {resource === "categories" && can("catalog.manage") && Array.isArray(data.items) && (
             <Categories items={data.items || []} request={api} reload={load} />
           )}
-          {!["dashboard", "reports", "settings", "categories"].includes(resource) && (
-            <section className="live-card">
-              {resource === "listings" && (
-                <div className="listing-queue-heading">
-                  <div>
-                    <h2>Produce listings</h2>
-                    <p>Review produce photos, stock and farmer details before publishing.</p>
+          {(!financePage || legacyFinance) &&
+            !["dashboard", "reports", "settings", "categories"].includes(resource) && (
+              <section className="live-card">
+                {resource === "listings" && (
+                  <div className="listing-queue-heading">
+                    <div>
+                      <h2>Produce listings</h2>
+                      <p>Review produce photos, stock and farmer details before publishing.</p>
+                    </div>
+                    <span>{data.total ?? 0} matching listings</span>
                   </div>
-                  <span>{data.total ?? 0} matching listings</span>
-                </div>
-              )}
-              <form
-                className="live-search"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  setPage(1);
-                  setQuery(search);
-                }}
-              >
-                <input
-                  aria-label={resource === "listings" ? "Search produce titles" : "Search records"}
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={
-                    resource === "listings" ? "Search produce titles…" : "Search records…"
-                  }
-                />
-                {statuses[resource] && (
-                  <select
-                    aria-label="Filter by status"
-                    value={status}
-                    onChange={(event) => {
-                      setStatus(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="ALL">All statuses</option>
-                    {statuses[resource]!.map((value) => (
-                      <option key={value} value={value}>
-                        {["verification", "listings"].includes(resource)
-                          ? verificationLabel(value)
-                          : value}
-                      </option>
-                    ))}
-                  </select>
                 )}
-                <button className="secondary">Search</button>
-              </form>
-              {resource === "listings" ? (
-                <ListingQueue
-                  items={items}
-                  busy={busy}
-                  selectedId={selected?.id}
-                  onReview={(row) => void review(row)}
-                />
-              ) : (
-                <div className="live-table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{resource === "verification" ? "Farm / applicant" : "Record"}</th>
-                        <th>
-                          {resource === "verification" ? "Application status" : "Status / action"}
-                        </th>
-                        <th>{resource === "verification" ? "Farm details" : "Details"}</th>
-                        <th>{resource === "verification" ? "Submitted" : "Created"}</th>
-                        <th>Review</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((row) => (
-                        <tr key={row.id}>
-                          <td>
-                            <strong>{rowLabel(row)}</strong>
-                            <small>
-                              {resource === "verification"
-                                ? [
-                                    row.farmerProfile?.user?.profile?.fullName ||
-                                      row.farmerProfile?.user?.profile?.displayName,
-                                    row.farmerProfile?.user?.phoneE164,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ") || "Applicant details not provided"
-                                : row.email || row.phoneE164 || row.id}
-                            </small>
-                          </td>
-                          <td>
-                            <span className="live-badge">
-                              {(resource === "verification"
-                                ? verificationLabel(row.status)
-                                : row.status) ||
-                                row.action ||
-                                (row.balanced === undefined
-                                  ? "—"
-                                  : row.balanced
-                                    ? "Balanced"
-                                    : "Mismatch")}
-                            </span>
-                          </td>
-                          <td>
-                            {resource === "verification" ? (
-                              <>
-                                {row.farmerProfile?.farmType || "Farmer type not provided"}
-                                <small>
-                                  {row._count?.documents || 0} documents ·{" "}
-                                  {row._count?.evidence || 0} evidence entries
-                                </small>
-                              </>
-                            ) : row.totalMinor ? (
-                              money(row.totalMinor)
-                            ) : row.amountMinor ? (
-                              money(row.amountMinor)
-                            ) : (
-                              row.locale ||
-                              row.priority ||
-                              row.severity ||
-                              row.roleCode ||
-                              row.farmerProfile?.user?.profile?.fullName ||
-                              "—"
-                            )}
-                          </td>
-                          <td>
-                            {resource === "verification"
-                              ? row.submittedAt
-                                ? new Date(row.submittedAt).toLocaleString()
-                                : "Not submitted"
-                              : row.createdAt
-                                ? new Date(row.createdAt).toLocaleString()
-                                : "—"}
-                          </td>
-                          <td>
-                            <button className="secondary" onClick={() => void review(row)}>
-                              Review →
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {!busy && !items.length && (
-                <div className="live-empty">
-                  <h2>{query ? "No matching records" : "No records yet"}</h2>
-                  <p>
-                    {query
-                      ? "Try another search."
-                      : "Records will appear here when they are created in the marketplace."}
-                  </p>
-                </div>
-              )}
-              <div className="live-pagination">
-                <span>
-                  {data.total ?? items.length} records · Page {page}
-                </span>
-                <button
-                  className="secondary"
-                  disabled={page <= 1 || busy}
-                  onClick={() => setPage(page - 1)}
+                <form
+                  className="live-search"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (legacyFinance) legacyFilters({ legacySearch: search, legacyPage: "1" });
+                    else {
+                      setPage(1);
+                      setQuery(search);
+                    }
+                  }}
                 >
-                  Previous
-                </button>
-                <button
-                  className="secondary"
-                  disabled={busy || !data.total || page * 25 >= data.total}
-                  onClick={() => setPage(page + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </section>
-          )}
-          {selected && (
-            <section className="live-card live-detail" ref={reviewPanel} tabIndex={-1}>
-              <div className="live-page-heading">
-                <div>
-                  <h2>{rowLabel(selected)}</h2>
-                  {resource === "verification" && (
-                    <p>Review the applicant, farm details and supporting evidence.</p>
-                  )}
-                  {resource === "listings" && (
-                    <p>Review the produce, photos and farmer details before making a decision.</p>
-                  )}
-                </div>
-                <button className="secondary" onClick={() => setSelected(undefined)}>
-                  Close review
-                </button>
-              </div>
-              {resource === "verification" ? (
-                <VerificationReview
-                  record={selected}
-                  busy={busy}
-                  canDecide={!!can("verification.decide")}
-                  reviewerName={staff?.fullName}
-                  onRefresh={() => review(selected)}
-                  onDecision={(decision) =>
-                    open(
-                      `${decision === "approve" ? "Approve" : "Reject"} verification`,
-                      `verifications/${selected.id}/${decision}`,
-                      [reason],
-                    )
-                  }
-                />
-              ) : resource === "listings" ? (
-                <ListingReview
-                  key={selected.id}
-                  record={selected}
-                  busy={busy}
-                  canDecide={!!can("catalog.manage")}
-                  onCompletePacking={() =>
-                    open(
-                      "Complete package measurements",
-                      `listings/${selected.id}/packaging`,
-                      [
-                        {
-                          name: "unitsPerPackage",
-                          label: "Selling units per package",
-                          type: "number",
-                        },
-                        { name: "weightKg", label: "Total packed weight (kg)", type: "number" },
-                        { name: "length", label: "Length (cm)", type: "number" },
-                        { name: "width", label: "Width (cm)", type: "number" },
-                        { name: "height", label: "Height (cm)", type: "number" },
-                        {
-                          name: "handling",
-                          label: "Handling",
-                          options: ["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"],
-                        },
-                        { name: "notes", label: "Packing notes", type: "optional" },
-                        reason,
-                      ],
-                      { method: "PATCH" },
-                    )
-                  }
-                  onStatus={(status) =>
-                    open(
-                      `${status === "ACTIVE" ? "Approve" : status === "REJECTED" ? "Reject" : status === "PAUSED" ? "Pause" : "Archive"} listing`,
-                      `listings/${selected.id}/status`,
-                      [reason],
-                      { extra: { status } },
-                    )
-                  }
-                />
-              ) : (
-                <dl>
-                  {Object.entries(selected)
-                    .filter(([, value]) => value !== null && typeof value !== "object")
-                    .map(([key, value]) => (
-                      <div key={key}>
-                        <dt>{key.replace(/([A-Z])/g, " $1")}</dt>
-                        <dd>{String(value)}</dd>
-                      </div>
-                    ))}
-                </dl>
-              )}
-              {!["verification", "listings"].includes(resource) && selected.farmerProfile && (
-                <div className="live-record-context">
-                  <h3>{selected.farmerProfile.farmName}</h3>
-                  <p>
-                    {selected.farmerProfile.user?.profile?.fullName} ·{" "}
-                    {selected.farmerProfile.user?.phoneE164}
-                  </p>
-                  <p>
-                    {selected.farmerProfile.primaryAddress?.state}{" "}
-                    {selected.farmerProfile.primaryAddress?.city}
-                  </p>
-                </div>
-              )}
-              {selected.roles && (
-                <p>
-                  Assigned roles:{" "}
-                  {selected.roles.map((assignment: Row) => assignment.role?.name).join(", ")}
-                </p>
-              )}
-              {resource !== "verification" &&
-                selected.reviews?.map((review: Row) => (
-                  <article key={review.id}>
-                    <strong>{review.decision}</strong>
-                    <p>{review.reason}</p>
-                    {review.internalNotes && <p>Internal note: {review.internalNotes}</p>}
-                  </article>
-                ))}
-              {resource !== "verification" &&
-                selected.evidence?.map((evidence: Row) => (
-                  <div key={evidence.id}>
-                    {evidence.note && <p>Farm evidence: {evidence.note}</p>}
-                    {evidence.readUrl && (
-                      <a href={evidence.readUrl} target="_blank" rel="noreferrer">
-                        Open private farm evidence
-                      </a>
-                    )}
-                  </div>
-                ))}
-              {resource === "audit" && (
-                <pre className="live-audit-change">
-                  {JSON.stringify(
-                    { before: selected.beforeRedacted, after: selected.afterRedacted },
-                    null,
-                    2,
-                  )}
-                </pre>
-              )}
-              {resource !== "verification" &&
-                selected.documents?.map((document: Row) => (
-                  <p key={document.id}>
-                    <a href={document.readUrl} target="_blank" rel="noreferrer">
-                      Open {document.documentType || "verification document"} (link expires in 5
-                      minutes)
-                    </a>
-                  </p>
-                ))}
-              {resource === "disputes" && selected.evidence?.length > 0 && (
-                <div className="verification-evidence">
-                  <h3>Private evidence photos</h3>
-                  {selected.evidence.map((file: Row, index: number) => (
-                    <a
-                      key={file.id}
-                      href={`/api/admin/dispute-evidence/${file.id}`}
-                      target="_blank"
-                      rel="noreferrer"
+                  <input
+                    aria-label={
+                      resource === "listings" ? "Search produce titles" : "Search records"
+                    }
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={
+                      resource === "listings" ? "Search produce titles…" : "Search records…"
+                    }
+                  />
+                  {statuses[resource] && (
+                    <select
+                      aria-label="Filter by status"
+                      value={status}
+                      onChange={(event) => {
+                        if (legacyFinance)
+                          legacyFilters({ legacyStatus: event.target.value, legacyPage: "1" });
+                        else {
+                          setStatus(event.target.value);
+                          setPage(1);
+                        }
+                      }}
                     >
-                      View evidence photo {index + 1}
-                    </a>
-                  ))}
-                </div>
-              )}
-              {selected.messages && (
-                <div className="live-messages">
-                  <h3>Conversation</h3>
-                  {selected.messages.length ? (
-                    selected.messages.map((message: Row) => (
-                      <article key={message.id}>
-                        <small>
-                          {message.internal
-                            ? "Internal note"
-                            : message.authorId === selected.userId
-                              ? "Buyer"
-                              : "Staff reply"}{" "}
-                          · {new Date(message.createdAt).toLocaleString()}
-                        </small>
-                        <p>{message.body}</p>
-                      </article>
-                    ))
-                  ) : (
-                    <p>No messages yet.</p>
+                      <option value="ALL">All statuses</option>
+                      {statuses[resource]!.map((value) => (
+                        <option key={value} value={value}>
+                          {["verification", "listings"].includes(resource)
+                            ? verificationLabel(value)
+                            : value}
+                        </option>
+                      ))}
+                    </select>
                   )}
-                </div>
-              )}
-              <div className="live-actions">
-                {resource === "users" && can("users.manage") && (
+                  <button className="secondary">Search</button>
+                </form>
+                {resource === "listings" ? (
+                  <ListingQueue
+                    items={items}
+                    busy={busy}
+                    selectedId={selected?.id}
+                    onReview={(row) => void review(row)}
+                  />
+                ) : (
+                  <div className="live-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{resource === "verification" ? "Farm / applicant" : "Record"}</th>
+                          <th>
+                            {resource === "verification" ? "Application status" : "Status / action"}
+                          </th>
+                          <th>{resource === "verification" ? "Farm details" : "Details"}</th>
+                          <th>{resource === "verification" ? "Submitted" : "Created"}</th>
+                          <th>Review</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((row) => (
+                          <tr key={row.id}>
+                            <td>
+                              <strong>{rowLabel(row)}</strong>
+                              <small>
+                                {resource === "verification"
+                                  ? [
+                                      row.farmerProfile?.user?.profile?.fullName ||
+                                        row.farmerProfile?.user?.profile?.displayName,
+                                      row.farmerProfile?.user?.phoneE164,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ") || "Applicant details not provided"
+                                  : row.email || row.phoneE164 || row.id}
+                              </small>
+                            </td>
+                            <td>
+                              <span className="live-badge">
+                                {(resource === "verification"
+                                  ? verificationLabel(row.status)
+                                  : row.status) ||
+                                  row.action ||
+                                  (row.balanced === undefined
+                                    ? "—"
+                                    : row.balanced
+                                      ? "Balanced"
+                                      : "Mismatch")}
+                              </span>
+                            </td>
+                            <td>
+                              {resource === "verification" ? (
+                                <>
+                                  {row.farmerProfile?.farmType || "Farmer type not provided"}
+                                  <small>
+                                    {row._count?.documents || 0} documents ·{" "}
+                                    {row._count?.evidence || 0} evidence entries
+                                  </small>
+                                </>
+                              ) : row.totalMinor ? (
+                                money(row.totalMinor)
+                              ) : row.amountMinor ? (
+                                money(row.amountMinor)
+                              ) : (
+                                row.locale ||
+                                row.priority ||
+                                row.severity ||
+                                row.roleCode ||
+                                row.farmerProfile?.user?.profile?.fullName ||
+                                "—"
+                              )}
+                            </td>
+                            <td>
+                              {resource === "verification"
+                                ? row.submittedAt
+                                  ? new Date(row.submittedAt).toLocaleString()
+                                  : "Not submitted"
+                                : row.createdAt
+                                  ? new Date(row.createdAt).toLocaleString()
+                                  : "—"}
+                            </td>
+                            <td>
+                              <button className="secondary" onClick={() => void review(row)}>
+                                Review →
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {!busy && !items.length && (
+                  <div className="live-empty">
+                    <h2>{query ? "No matching records" : "No records yet"}</h2>
+                    <p>
+                      {query
+                        ? "Try another search."
+                        : "Records will appear here when they are created in the marketplace."}
+                    </p>
+                  </div>
+                )}
+                <div className="live-pagination">
+                  <span>
+                    {data.total ?? items.length} records · Page {page}
+                  </span>
                   <button
+                    className="secondary"
+                    disabled={page <= 1 || busy}
                     onClick={() =>
+                      legacyFinance
+                        ? legacyFilters({ legacyPage: String(page - 1) })
+                        : setPage(page - 1)
+                    }
+                  >
+                    Previous
+                  </button>
+                  <button
+                    className="secondary"
+                    disabled={busy || !data.total || page * 25 >= data.total}
+                    onClick={() =>
+                      legacyFinance
+                        ? legacyFilters({ legacyPage: String(page + 1) })
+                        : setPage(page + 1)
+                    }
+                  >
+                    Next
+                  </button>
+                </div>
+              </section>
+            )}
+          {selected && (
+            <ReviewShell title={rowLabel(selected)} onClose={() => setSelected(undefined)}>
+              <section className="live-card live-detail" ref={reviewPanel} tabIndex={-1}>
+                {!financePage && (
+                  <>
+                    <div className="live-page-heading">
+                      <div>
+                        <h2>{rowLabel(selected)}</h2>
+                        {resource === "verification" && (
+                          <p>Review the applicant, farm details and supporting evidence.</p>
+                        )}
+                        {resource === "listings" && (
+                          <p>
+                            Review the produce, photos and farmer details before making a decision.
+                          </p>
+                        )}
+                      </div>
+                      <button className="secondary" onClick={() => setSelected(undefined)}>
+                        Close review
+                      </button>
+                    </div>
+                  </>
+                )}
+                {resource === "verification" ? (
+                  <VerificationReview
+                    record={selected}
+                    busy={busy}
+                    canDecide={!!can("verification.decide")}
+                    reviewerName={staff?.fullName}
+                    onRefresh={() => review(selected)}
+                    onDecision={(decision) =>
                       open(
-                        "Update user status",
-                        `users/${selected.id}/status`,
-                        [select("status", "Status", ["ACTIVE", "SUSPENDED", "CLOSED"]), reason],
-                        { values: selected },
+                        `${decision === "approve" ? "Approve" : "Reject"} verification`,
+                        `verifications/${selected.id}/${decision}`,
+                        [reason],
                       )
                     }
-                  >
-                    Change account status
-                  </button>
-                )}
-                {resource === "orders" &&
-                  selected.status === "AWAITING_PAYMENT" &&
-                  can("orders.manage") && (
-                    <button
-                      onClick={() =>
-                        open("Cancel unpaid order", `orders/${selected.id}/cancel`, [reason])
-                      }
-                    >
-                      Cancel order
-                    </button>
-                  )}
-                {resource === "orders" &&
-                  selected.fundsProvider !== "bachs" &&
-                  can("payments.manage") && (
-                    <button
-                      onClick={() =>
-                        open(
-                          "Record escrow transaction",
-                          `orders/${selected.id}/escrow`,
-                          [
-                            select("kind", "Action", ["FUND", "RELEASE", "REFUND"]),
-                            text("amountMinor", "Amount in kobo"),
-                            {
-                              name: "externalRef",
-                              label: "Verified payment reference (required for funding)",
-                              type: "optional",
-                            },
-                            reason,
-                          ],
-                          { stepUp: true, extra: { mutationKey: crypto.randomUUID() } },
-                        )
-                      }
-                    >
-                      Manage escrow
-                    </button>
-                  )}
-                {resource === "orders" &&
-                  selected?.fundsProvider === "bachs" &&
-                  can("payments.read") && (
-                    <MoneyOperations orderId={selected.id} manage={can("payments.manage")} />
-                  )}
-                {resource === "orders" && selected?.id && (
-                  <CustomerDelivery
-                    id={selected.id}
-                    staff
-                    staffPermissions={staff?.permissions || []}
                   />
-                )}
-                {resource === "logistics" && can("orders.manage") && (
-                  <button
-                    onClick={() =>
-                      open("Update shipment", `logistics/${selected.id}/status`, [
-                        select("status", "Status", ["IN_TRANSIT", "DELIVERED"]),
-                        text("evidence", "Delivery / tracking evidence"),
-                      ])
+                ) : resource === "listings" ? (
+                  <ListingReview
+                    key={selected.id}
+                    record={selected}
+                    busy={busy}
+                    canDecide={!!can("catalog.manage")}
+                    onCompletePacking={() =>
+                      open(
+                        "Complete package measurements",
+                        `listings/${selected.id}/packaging`,
+                        [
+                          {
+                            name: "unitsPerPackage",
+                            label: "Selling units per package",
+                            type: "number",
+                          },
+                          { name: "weightKg", label: "Total packed weight (kg)", type: "number" },
+                          { name: "length", label: "Length (cm)", type: "number" },
+                          { name: "width", label: "Width (cm)", type: "number" },
+                          { name: "height", label: "Height (cm)", type: "number" },
+                          {
+                            name: "handling",
+                            label: "Handling",
+                            options: ["STANDARD", "PERISHABLE", "COLD_CHAIN", "BULK"],
+                          },
+                          { name: "notes", label: "Packing notes", type: "optional" },
+                          reason,
+                        ],
+                        { method: "PATCH" },
+                      )
                     }
-                  >
-                    Update shipment
-                  </button>
+                    onStatus={(status) =>
+                      open(
+                        `${status === "ACTIVE" ? "Approve" : status === "REJECTED" ? "Reject" : status === "PAUSED" ? "Pause" : "Archive"} listing`,
+                        `listings/${selected.id}/status`,
+                        [reason],
+                        { extra: { status } },
+                      )
+                    }
+                  />
+                ) : legacyFinance ? (
+                  <dl className="finance-facts">
+                    {[
+                      ["Withdrawal reference", selected.id],
+                      ["Amount", money(selected.amountMinor)],
+                      ["Status", selected.status],
+                      ["Bank", selected.bankName],
+                      ["Account ending", selected.accountLastFour],
+                      ["Created", financeDate(selected.createdAt)],
+                      ["Updated", financeDate(selected.updatedAt)],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <dl>
+                    {Object.entries(selected)
+                      .filter(([, value]) => value !== null && typeof value !== "object")
+                      .map(([key, value]) => (
+                        <div key={key}>
+                          <dt>{key.replace(/([A-Z])/g, " $1")}</dt>
+                          <dd>{String(value)}</dd>
+                        </div>
+                      ))}
+                  </dl>
                 )}
-                {resource === "withdrawals" &&
-                  can("payments.manage") &&
-                  selected.status === "REQUESTED" && (
+                {!["verification", "listings"].includes(resource) && selected.farmerProfile && (
+                  <div className="live-record-context">
+                    <h3>{selected.farmerProfile.farmName}</h3>
+                    <p>
+                      {selected.farmerProfile.user?.profile?.fullName} ·{" "}
+                      {selected.farmerProfile.user?.phoneE164}
+                    </p>
+                    <p>
+                      {selected.farmerProfile.primaryAddress?.state}{" "}
+                      {selected.farmerProfile.primaryAddress?.city}
+                    </p>
+                  </div>
+                )}
+                {selected.roles && (
+                  <p>
+                    Assigned roles:{" "}
+                    {selected.roles.map((assignment: Row) => assignment.role?.name).join(", ")}
+                  </p>
+                )}
+                {resource !== "verification" &&
+                  selected.reviews?.map((review: Row) => (
+                    <article key={review.id}>
+                      <strong>{review.decision}</strong>
+                      <p>{review.reason}</p>
+                      {review.internalNotes && <p>Internal note: {review.internalNotes}</p>}
+                    </article>
+                  ))}
+                {resource !== "verification" &&
+                  selected.evidence?.map((evidence: Row) => (
+                    <div key={evidence.id}>
+                      {evidence.note && <p>Farm evidence: {evidence.note}</p>}
+                      {evidence.readUrl && (
+                        <a href={evidence.readUrl} target="_blank" rel="noreferrer">
+                          Open private farm evidence
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                {resource === "audit" && (
+                  <pre className="live-audit-change">
+                    {JSON.stringify(
+                      { before: selected.beforeRedacted, after: selected.afterRedacted },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                )}
+                {resource !== "verification" &&
+                  selected.documents?.map((document: Row) => (
+                    <p key={document.id}>
+                      <a href={document.readUrl} target="_blank" rel="noreferrer">
+                        Open {document.documentType || "verification document"} (link expires in 5
+                        minutes)
+                      </a>
+                    </p>
+                  ))}
+                {resource === "disputes" && selected.evidence?.length > 0 && (
+                  <div className="verification-evidence">
+                    <h3>Private evidence photos</h3>
+                    {selected.evidence.map((file: Row, index: number) => (
+                      <a
+                        key={file.id}
+                        href={`/api/admin/dispute-evidence/${file.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View evidence photo {index + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {selected.messages && (
+                  <div className="live-messages">
+                    <h3>Conversation</h3>
+                    {selected.messages.length ? (
+                      selected.messages.map((message: Row) => (
+                        <article key={message.id}>
+                          <small>
+                            {message.internal
+                              ? "Internal note"
+                              : message.authorId === selected.userId
+                                ? "Buyer"
+                                : "Staff reply"}{" "}
+                            · {new Date(message.createdAt).toLocaleString()}
+                          </small>
+                          <p>{message.body}</p>
+                        </article>
+                      ))
+                    ) : (
+                      <p>No messages yet.</p>
+                    )}
+                  </div>
+                )}
+                <div className="live-actions">
+                  {resource === "users" && can("users.manage") && (
                     <button
                       onClick={() =>
                         open(
-                          "Review withdrawal",
-                          `withdrawals/${selected.id}/status`,
-                          [select("status", "Decision", ["AUTHORIZED", "REJECTED"]), reason],
-                          { stepUp: true },
-                        )
-                      }
-                    >
-                      Authorize / reject
-                    </button>
-                  )}
-                {["support", "disputes"].includes(resource) && can("support.manage") && (
-                  <>
-                    <button
-                      onClick={() =>
-                        open("Add reply", `support/${selected.id}/message`, [
-                          { name: "body", label: "Message", type: "textarea" },
-                          { name: "internal", label: "Internal note", type: "checkbox" },
-                        ])
-                      }
-                    >
-                      Reply / add note
-                    </button>
-                    <button
-                      onClick={() =>
-                        open(
-                          "Update ticket",
-                          `support/${selected.id}/status`,
-                          [select("status", "Status", ["OPEN", "IN_PROGRESS", "RESOLVED"]), reason],
+                          "Update user status",
+                          `users/${selected.id}/status`,
+                          [select("status", "Status", ["ACTIVE", "SUSPENDED", "CLOSED"]), reason],
                           { values: selected },
                         )
                       }
                     >
-                      Assign to me / resolve
+                      Change account status
                     </button>
-                  </>
+                  )}
+                  {resource === "orders" &&
+                    selected.status === "AWAITING_PAYMENT" &&
+                    can("orders.manage") && (
+                      <button
+                        onClick={() =>
+                          open("Cancel unpaid order", `orders/${selected.id}/cancel`, [reason])
+                        }
+                      >
+                        Cancel order
+                      </button>
+                    )}
+                  {resource === "orders" &&
+                    selected.fundsProvider !== "bachs" &&
+                    can("payments.manage") && (
+                      <button
+                        onClick={() =>
+                          open(
+                            "Record escrow transaction",
+                            `orders/${selected.id}/escrow`,
+                            [
+                              select("kind", "Action", ["FUND", "RELEASE", "REFUND"]),
+                              text("amountMinor", "Amount in kobo"),
+                              {
+                                name: "externalRef",
+                                label: "Verified payment reference (required for funding)",
+                                type: "optional",
+                              },
+                              reason,
+                            ],
+                            { stepUp: true, extra: { mutationKey: crypto.randomUUID() } },
+                          )
+                        }
+                      >
+                        Manage escrow
+                      </button>
+                    )}
+                  {resource === "orders" &&
+                    selected?.fundsProvider === "bachs" &&
+                    can("payments.read") && (
+                      <MoneyOperations orderId={selected.id} manage={can("payments.manage")} />
+                    )}
+                  {resource === "orders" && selected?.id && (
+                    <CustomerDelivery
+                      id={selected.id}
+                      staff
+                      staffPermissions={staff?.permissions || []}
+                    />
+                  )}
+                  {resource === "logistics" && can("orders.manage") && (
+                    <button
+                      onClick={() =>
+                        open("Update shipment", `logistics/${selected.id}/status`, [
+                          select("status", "Status", ["IN_TRANSIT", "DELIVERED"]),
+                          text("evidence", "Delivery / tracking evidence"),
+                        ])
+                      }
+                    >
+                      Update shipment
+                    </button>
+                  )}
+                  {resource === "withdrawals" &&
+                    can("payments.manage") &&
+                    selected.status === "REQUESTED" && (
+                      <button
+                        onClick={() =>
+                          open(
+                            "Review withdrawal",
+                            `withdrawals/${selected.id}/status`,
+                            [select("status", "Decision", ["AUTHORIZED", "REJECTED"]), reason],
+                            { stepUp: true },
+                          )
+                        }
+                      >
+                        Authorize / reject
+                      </button>
+                    )}
+                  {["support", "disputes"].includes(resource) && can("support.manage") && (
+                    <>
+                      <button
+                        onClick={() =>
+                          open("Add reply", `support/${selected.id}/message`, [
+                            { name: "body", label: "Message", type: "textarea" },
+                            { name: "internal", label: "Internal note", type: "checkbox" },
+                          ])
+                        }
+                      >
+                        Reply / add note
+                      </button>
+                      <button
+                        onClick={() =>
+                          open(
+                            "Update ticket",
+                            `support/${selected.id}/status`,
+                            [
+                              select("status", "Status", ["OPEN", "IN_PROGRESS", "RESOLVED"]),
+                              reason,
+                            ],
+                            { values: selected },
+                          )
+                        }
+                      >
+                        Assign to me / resolve
+                      </button>
+                    </>
+                  )}
+                  {["risk", "compliance"].includes(resource) && (
+                    <button
+                      onClick={() =>
+                        open("Review record", `${resource}/${selected.id}/status`, [
+                          select(
+                            "status",
+                            "Decision",
+                            resource === "risk"
+                              ? ["RESOLVED", "DISMISSED", "OPEN"]
+                              : ["APPROVED", "REJECTED"],
+                          ),
+                          reason,
+                        ])
+                      }
+                    >
+                      Review decision
+                    </button>
+                  )}
+                  {["faq", "translations", "system"].includes(resource) && (
+                    <button
+                      onClick={() =>
+                        open("Update record", `${resource}/${selected.id}`, content[resource]!, {
+                          method: "PUT",
+                          values: selected,
+                        })
+                      }
+                    >
+                      Edit / publish
+                    </button>
+                  )}
+                  {resource === "roles" && selected.status === "INVITED" && can("admin.manage") && (
+                    <button
+                      onClick={() =>
+                        open("Resend invitation", `invitations/${selected.id}/resend`, [], {
+                          stepUp: true,
+                        })
+                      }
+                    >
+                      Resend invitation
+                    </button>
+                  )}
+                  {resource === "roles" && can("admin.manage") && (
+                    <button
+                      onClick={() =>
+                        open(
+                          "Update staff access",
+                          `roles/${selected.id}`,
+                          [
+                            select("roleCode", "Role", roleCodes),
+                            select("status", "Status", ["ACTIVE", "SUSPENDED"]),
+                          ],
+                          { stepUp: true },
+                        )
+                      }
+                    >
+                      Change role / suspend
+                    </button>
+                  )}
+                </div>
+                {resource === "withdrawals" && (
+                  <p className="live-muted">
+                    Authorization reserves funds for payout. Bank transfer execution requires a
+                    configured payout provider.
+                  </p>
                 )}
-                {["risk", "compliance"].includes(resource) && (
-                  <button
-                    onClick={() =>
-                      open("Review record", `${resource}/${selected.id}/status`, [
-                        select(
-                          "status",
-                          "Decision",
-                          resource === "risk"
-                            ? ["RESOLVED", "DISMISSED", "OPEN"]
-                            : ["APPROVED", "REJECTED"],
-                        ),
-                        reason,
-                      ])
-                    }
-                  >
-                    Review decision
-                  </button>
+                {resource === "orders" && (
+                  <p className="live-muted">
+                    Funding records a verified payment reference. Refunds and releases update the
+                    internal ledger; external transfers require the payment provider.
+                  </p>
                 )}
-                {["faq", "translations", "system"].includes(resource) && (
-                  <button
-                    onClick={() =>
-                      open("Update record", `${resource}/${selected.id}`, content[resource]!, {
-                        method: "PUT",
-                        values: selected,
-                      })
-                    }
-                  >
-                    Edit / publish
-                  </button>
-                )}
-                {resource === "roles" && selected.status === "INVITED" && can("admin.manage") && (
-                  <button
-                    onClick={() =>
-                      open("Resend invitation", `invitations/${selected.id}/resend`, [], {
-                        stepUp: true,
-                      })
-                    }
-                  >
-                    Resend invitation
-                  </button>
-                )}
-                {resource === "roles" && can("admin.manage") && (
-                  <button
-                    onClick={() =>
-                      open(
-                        "Update staff access",
-                        `roles/${selected.id}`,
-                        [
-                          select("roleCode", "Role", roleCodes),
-                          select("status", "Status", ["ACTIVE", "SUSPENDED"]),
-                        ],
-                        { stepUp: true },
-                      )
-                    }
-                  >
-                    Change role / suspend
-                  </button>
-                )}
-              </div>
-              {resource === "withdrawals" && (
-                <p className="live-muted">
-                  Authorization reserves funds for payout. Bank transfer execution requires a
-                  configured payout provider.
-                </p>
-              )}
-              {resource === "orders" && (
-                <p className="live-muted">
-                  Funding records a verified payment reference. Refunds and releases update the
-                  internal ledger; external transfers require the payment provider.
-                </p>
-              )}
-            </section>
+              </section>
+            </ReviewShell>
           )}
         </div>
       </div>
@@ -1362,4 +1423,14 @@ const statuses: Record<string, string[]> = {
 
 function formatMinor(value: unknown) {
   return formatMoney(String(value));
+}
+
+function InlineReview({
+  children,
+}: {
+  children: React.ReactNode;
+  title: string;
+  onClose: () => void;
+}) {
+  return <>{children}</>;
 }
