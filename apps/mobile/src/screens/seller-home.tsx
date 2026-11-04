@@ -1,5 +1,4 @@
 import { NotificationBell } from "../components/notification-bell";
-import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -209,7 +208,6 @@ export function SellerHome() {
             </View>
             {financial.error && <Notice text={financial.error} error />}
           </Card>
-          <PaymentRecovery />
           <View style={styles.stats}>
             <Pressable
               accessibilityRole="button"

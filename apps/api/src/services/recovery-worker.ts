@@ -114,9 +114,9 @@ export async function processDeadline(orderId: string) {
     if (shippingBudget < 0n) shippingBudget = 0n;
     for (const p of payments) {
       if (p.status === "REFUNDED") continue;
-      const previous = await tx.moneyOperation.findFirst({ where: { paymentId: p.id, kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] }, status: { not: "FAILED" } } });
+      const previous = await tx.moneyOperation.findFirst({ where: { paymentId: p.id, kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] }, status: { not: "RESOLVED" } }, orderBy: { createdAt: "desc" } });
       if (previous) {
-        if (["BLOCKED", "UNKNOWN"].includes(previous.status)) {
+        if (["FAILED", "BLOCKED", "UNKNOWN"].includes(previous.status)) {
           await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "REFUND_BLOCKED", failureCode: previous.failureCode || "REFUND_REVIEW_REQUIRED" } });
           await financeAlert(tx, `${orderId}:refund:${previous.failureCode || previous.status}`, mode(), previous.failureCode || "REFUND_REVIEW_REQUIRED", orderId);
           return;

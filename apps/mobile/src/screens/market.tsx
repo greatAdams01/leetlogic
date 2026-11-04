@@ -1,5 +1,4 @@
 import { NotificationBell } from "../components/notification-bell";
-import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { ReservationTimer } from "../components/reservation-timer";
 import { ProductActions } from "../components/product-actions";
@@ -634,7 +633,6 @@ export function Orders() {
     <Page loading={r.loading} contentStyle={{ gap: 18 }}>
       <Label muted>{a.role === "SELLER" ? "SELLER PORTAL" : "BUYER PORTAL"}</Label>
       <Heading>{a.t("orders.title")}</Heading>
-      <PaymentRecovery />
       {a.role === "BUYER" && a.route.query === "checkout" && (
         <Card style={{ backgroundColor: "#e4f3e9", flexDirection: "row", gap: 12 }}>
           <Icon name="cartShield" size={22} />

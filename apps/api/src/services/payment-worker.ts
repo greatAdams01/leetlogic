@@ -326,6 +326,39 @@ async function complete(op: MoneyOperation, result: any) {
     );
   });
 }
+/** Read-only provider discovery: never submits another refund when its outcome is uncertain. */
+export async function reconcileRefundByCharge(id: string) {
+  const op = await prisma.moneyOperation.findUniqueOrThrow({ where: { id } });
+  if (op.mode !== mode() || op.kind !== "REFUND" || !op.paymentId || op.status !== "UNKNOWN")
+    throw new AppError(409, "STALE_RECORD", "This refund cannot be reconciled by charge.");
+  const payment = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: op.paymentId } });
+  if (!payment.chargeId)
+    throw new AppError(
+      409,
+      "PROVIDER_REFERENCE_REQUIRED",
+      "The original payment reference is missing.",
+    );
+  const result = await bachs.refundByCharge(payment.chargeId);
+  if (!result)
+    throw new AppError(
+      409,
+      "REFUND_NOT_LOCATED",
+      "The provider has not located this refund. Do not create a second refund; staff must reconcile the original request.",
+    );
+  if (
+    result.reference !== op.id ||
+    result.charge_id !== payment.chargeId ||
+    typeof result.requested_amount !== "string" ||
+    minor(result.requested_amount) !== op.amountMinor ||
+    (result.currency && result.currency !== "NGN")
+  )
+    throw new AppError(
+      409,
+      "REFUND_REFERENCE_MISMATCH",
+      "The provider refund belongs to a different operation. Link and reconcile that original operation before continuing.",
+    );
+  await complete(op, result);
+}
 export async function runMoneyOperation(id: string) {
   const c = getConfig();
   const claimed = await prisma.moneyOperation.updateMany({
@@ -644,6 +677,7 @@ export async function runMoneyOperation(id: string) {
             reference: op.id,
             reason: "Order cancellation",
             fee_bearer: payload.automaticDeadline ? "org" : "customer",
+            idempotency_key: op.id,
           },
           op.id,
         );
@@ -755,7 +789,7 @@ export async function runMoneyOperation(id: string) {
           exceptionCode: code,
         },
       });
-    logger.warn({ operationId: id, code }, "Payment operation needs attention");
+    logger.warn({ operationId: id, code, ...(error instanceof AppError && error.diagnostics ? { provider: error.diagnostics } : {}) }, "Payment operation needs attention");
   }
 }
 async function processWebhook(event: any) {

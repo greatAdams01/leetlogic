@@ -51,20 +51,39 @@ describe("Bachs payment protocol", () => {
     expect(checkoutChargeId({ charge_id: "ch_legacy" })).toBe("ch_legacy");
     expect(() => checkoutChargeId({ charge: { payment_id: "https://private.invalid" } })).toThrow();
   });
-  it.each(["principal", "fee-inclusive"])("verifies %s charge amounts without funding fees", (format) => {
-    const receipt = receiptAmounts({
-      amount: format === "principal" ? "94625.00" : "96517.50",
-      amount_paid: "96517.50", amount_remaining: "0.00", status: "succeeded",
-      merchant_bears_cost: false, fees: { amount: "1892.50", currency: "NGN" },
-    }, 9462500n);
-    expect(receipt).toEqual({ fee: 189250n, received: 9462500n, success: true, declined: false });
-  });
+  it.each(["principal", "fee-inclusive"])(
+    "verifies %s charge amounts without funding fees",
+    (format) => {
+      const receipt = receiptAmounts(
+        {
+          amount: format === "principal" ? "94625.00" : "96517.50",
+          amount_paid: "96517.50",
+          amount_remaining: "0.00",
+          status: "succeeded",
+          merchant_bears_cost: false,
+          fees: { amount: "1892.50", currency: "NGN" },
+        },
+        9462500n,
+      );
+      expect(receipt).toEqual({ fee: 189250n, received: 9462500n, success: true, declined: false });
+    },
+  );
   it("does not relax amount, fee-currency or payment-status checks", () => {
-    const receipt = { amount: "102.00", amount_paid: "102.00", amount_remaining: "0.00",
-      fees: { amount: "2.00", currency: "NGN" }, merchant_bears_cost: false, status: "succeeded" };
-    expect(() => receiptAmounts({ ...receipt, amount: "103.00" }, 10000n)).toThrow("PAYMENT_CHARGE_MISMATCH");
+    const receipt = {
+      amount: "102.00",
+      amount_paid: "102.00",
+      amount_remaining: "0.00",
+      fees: { amount: "2.00", currency: "NGN" },
+      merchant_bears_cost: false,
+      status: "succeeded",
+    };
+    expect(() => receiptAmounts({ ...receipt, amount: "103.00" }, 10000n)).toThrow(
+      "PAYMENT_CHARGE_MISMATCH",
+    );
     expect(() => receiptAmounts({ ...receipt, merchant_bears_cost: true }, 10000n)).toThrow();
-    expect(() => receiptAmounts({ ...receipt, fees: { amount: "2.00", currency: "USD" } }, 10000n)).toThrow();
+    expect(() =>
+      receiptAmounts({ ...receipt, fees: { amount: "2.00", currency: "USD" } }, 10000n),
+    ).toThrow();
     expect(receiptAmounts({ ...receipt, status: "pending" }, 10000n).success).toBe(false);
     expect(receiptAmounts({ ...receipt, amount_paid: "103.00" }, 10000n).success).toBe(false);
     expect(receiptAmounts({ ...receipt, amount_remaining: "1.00" }, 10000n).success).toBe(false);
@@ -155,8 +174,16 @@ describe("Bachs payment protocol", () => {
     config.PAYMENT_AUTO_REFUNDS_ENABLED = true;
     config.PAYMENTS_REFUNDS_ENABLED = false;
     let error: any;
-    try { paymentReady("CHECKOUT"); } catch (e) { error=e; }
-    expect(error).toMatchObject({ status:503, code:"PAYMENTS_UNAVAILABLE", diagnostics:{reason:"AUTO_REFUNDS_REQUIRE_REFUNDS_ENABLED"} });
+    try {
+      paymentReady("CHECKOUT");
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toMatchObject({
+      status: 503,
+      code: "PAYMENTS_UNAVAILABLE",
+      diagnostics: { reason: "AUTO_REFUNDS_REQUIRE_REFUNDS_ENABLED" },
+    });
     config.PAYMENTS_REFUNDS_ENABLED = true;
     expect(paymentReady("CHECKOUT")).toBe(config);
   });
@@ -169,5 +196,22 @@ describe("Bachs payment protocol", () => {
       "https://user@checkout.bachs.io/a",
     ])
       expect(() => hostedUrl(url)).toThrow();
+  });
+  it("locates refunds by original charge without submitting another refund", async () => {
+    fetcher.mockResolvedValue(
+      Response.json({ refund_id: "r1", reference: "original", status: "processing" }),
+    );
+    expect(await provider.refundByCharge("charge/1")).toMatchObject({ refund_id: "r1" });
+    expect(fetcher.mock.calls[0]![0]).toContain("/refunds/by-charge/charge%2F1");
+    expect(fetcher.mock.calls[0]![1]).toMatchObject({ method: "GET" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("treats only provider 404 as missing, never an outage", async () => {
+    fetcher.mockResolvedValueOnce(Response.json({ error_code: "NOT_FOUND" }, { status: 404 }));
+    expect(await provider.refundByCharge("charge")).toBeNull();
+    fetcher.mockResolvedValueOnce(Response.json({ error_code: "UNAVAILABLE" }, { status: 503 }));
+    await expect(provider.refundByCharge("charge")).rejects.toMatchObject({
+      code: "PAYMENT_RESULT_UNKNOWN",
+    });
   });
 });

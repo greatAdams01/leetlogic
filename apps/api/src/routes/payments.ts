@@ -26,9 +26,18 @@ import {
   createOperation,
   accountLock,
 } from "../services/payments.js";
-import { runMoneyOperation, reconcileBalances } from "../services/payment-worker.js";
+import {
+  runMoneyOperation,
+  reconcileBalances,
+  reconcileRefundByCharge,
+} from "../services/payment-worker.js";
 import { hasDeliverySettlement, serialize } from "../services/delivery.js";
-import { assertPaymentShipment, checkoutSummary, shippingOrderInclude, type CheckoutOrder } from "../services/delivery-quote.js";
+import {
+  assertPaymentShipment,
+  checkoutSummary,
+  shippingOrderInclude,
+  type CheckoutOrder,
+} from "../services/delivery-quote.js";
 import { audit as recordAudit } from "../services/audit.js";
 const audit: typeof recordAudit = (req, input, tx) =>
   recordAudit(
@@ -72,7 +81,9 @@ const safePayment = (item: any) => ({
   exceptionCode: item.exceptionCode,
   confirmedAt: item.confirmedAt,
   paymentConfirmed: !!item.confirmedAt || ["SUCCEEDED", "REFUNDED"].includes(item.status),
-  confirmationPending: !item.confirmedAt && ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN", "BLOCKED"].includes(item.status),
+  confirmationPending:
+    !item.confirmedAt &&
+    ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN", "BLOCKED"].includes(item.status),
   amountMinor: item.amountMinor,
   produceMinor: item.produceMinor,
   shippingMinor: item.shippingMinor,
@@ -86,7 +97,9 @@ function safeOrderPayment(order: CheckoutOrder, item: PaymentAttempt, buyer: boo
   try {
     assertPaymentShipment(order, item);
     available = item.status === "OPEN";
-  } catch { /* Keep attempts visible for reconciliation, but never expose a stale payment link. */ }
+  } catch {
+    /* Keep attempts visible for reconciliation, but never expose a stale payment link. */
+  }
   return { ...safePayment(item), checkoutUrl: available && buyer ? item.checkoutUrl : null };
 }
 async function throttle(userId: string, action: string) {
@@ -115,8 +128,11 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
     serialize({
       enabled: getConfig().PAYMENTS_ENABLED,
       ...checkoutSummary(order),
-      checkoutActive: items.some((item) => ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(item.status) ||
-        (item.status === "BLOCKED" && !!item.checkoutId)),
+      checkoutActive: items.some(
+        (item) =>
+          ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(item.status) ||
+          (item.status === "BLOCKED" && !!item.checkoutId),
+      ),
       items: items.map((item) => safeOrderPayment(order, item, order.buyerId === req.auth!.sub)),
       fulfillment: await readFulfillment(order.id),
       orderStatus: order.status,
@@ -181,7 +197,9 @@ financialRouter.get("/payments/:id", async (req, res) => {
     where: { id: uuid.parse(req.params.id), buyerId: req.auth!.sub, mode: mode() },
   });
   if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
-  res.json(serialize(safeOrderPayment(await ownedOrder(payment.orderId, req.auth!.sub), payment, true)));
+  res.json(
+    serialize(safeOrderPayment(await ownedOrder(payment.orderId, req.auth!.sub), payment, true)),
+  );
 });
 financialRouter.get("/", async (req, res) => {
   const userId = req.auth!.sub;
@@ -380,12 +398,20 @@ moneyAdminRouter.get("/", async (req, res) => {
   const paymentId = req.query.paymentId ? uuid.parse(req.query.paymentId) : undefined;
   const [operations, payments, webhooks, reconciliations] = await Promise.all([
     prisma.moneyOperation.findMany({
-      where: { mode: mode(), ...(orderId ? { orderId } : {}), ...(operationId ? { id: operationId } : {}) },
+      where: {
+        mode: mode(),
+        ...(orderId ? { orderId } : {}),
+        ...(operationId ? { id: operationId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
     prisma.paymentAttempt.findMany({
-      where: { mode: mode(), ...(orderId ? { orderId } : {}), ...(paymentId ? { id: paymentId } : {}) },
+      where: {
+        mode: mode(),
+        ...(orderId ? { orderId } : {}),
+        ...(paymentId ? { id: paymentId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
@@ -674,6 +700,16 @@ moneyAdminRouter.post(
       op.kind === "DISPUTE"
     )
       throw new AppError(409, "STALE_RECORD", "This operation cannot be retried.");
+    if (op.status === "UNKNOWN" && !op.providerRef && op.kind === "REFUND") {
+      await reconcileRefundByCharge(op.id);
+      await audit(req, {
+        action: "money.refund.located",
+        entityType: "money_operation",
+        entityId: op.id,
+      });
+      res.status(202).json({ reconciled: true });
+      return;
+    }
     if (op.status === "UNKNOWN" && !op.providerRef)
       throw new AppError(
         409,
@@ -694,6 +730,73 @@ moneyAdminRouter.post(
       entityId: op.id,
     });
     res.status(202).json({ queued: true });
+  },
+);
+moneyAdminRouter.post(
+  "/operations/:id/retry-refund",
+  requirePermission("payments.manage"),
+  requireRecentStepUp,
+  async (req, res) => {
+    z.object({ reason }).strict().parse(req.body);
+    const op = await prisma.moneyOperation.findUniqueOrThrow({
+      where: { id: uuid.parse(req.params.id) },
+    });
+    if (
+      op.mode !== mode() ||
+      op.kind !== "REFUND" ||
+      op.status !== "UNKNOWN" ||
+      op.providerRef ||
+      !op.paymentId ||
+      !op.orderId
+    )
+      throw new AppError(
+        409,
+        "STALE_RECORD",
+        "Only an uncertain original refund can be retried here.",
+      );
+    const payment = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: op.paymentId } });
+    if (!payment.chargeId)
+      throw new AppError(409, "PROVIDER_REFERENCE_REQUIRED", "The original charge is missing.");
+    const existing = await bachs.refundByCharge(payment.chargeId);
+    if (existing) {
+      await reconcileRefundByCharge(op.id);
+      res.status(202).json({ reconciled: true });
+      return;
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${op.orderId}::uuid FOR UPDATE`;
+      const current = await tx.moneyOperation.findUniqueOrThrow({ where: { id: op.id } });
+      const latestPayment = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: op.paymentId! } });
+      const competing = await tx.moneyOperation.count({
+        where: {
+          paymentId: op.paymentId,
+          id: { not: op.id },
+          kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] },
+          status: { notIn: ["FAILED", "RESOLVED"] },
+        },
+      });
+      if (
+        current.status !== "UNKNOWN" ||
+        current.providerRef ||
+        competing ||
+        latestPayment.status === "REFUNDED"
+      )
+        throw new AppError(
+          409,
+          "STALE_RECORD",
+          "This refund changed or another refund requires reconciliation.",
+        );
+      await tx.moneyOperation.update({
+        where: { id: op.id },
+        data: { status: "QUEUED", nextRunAt: new Date(), leaseUntil: null, failureCode: null },
+      });
+      await audit(
+        req,
+        { action: "money.refund.original.retry", entityType: "money_operation", entityId: op.id },
+        tx,
+      );
+    });
+    res.status(202).json({ queued: true, id: op.id });
   },
 );
 moneyAdminRouter.post(

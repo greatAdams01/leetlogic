@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Pressable } from "react-native";
+import { PaymentRecovery } from "../components/payment-recovery";
+import { Pressable, View } from "react-native";
 import { useApp } from "../state";
 import { useOrderInbox } from "../lib/order-inbox";
 import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
@@ -8,7 +9,19 @@ export function Notifications() {
   const a = useApp(),
     r = useOrderInbox(),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [filter, setFilter] = useState("All");
+  const items = (r.data?.items || []).filter(
+    (i) =>
+      filter === "All" ||
+      (filter === "Unread"
+        ? !i.readAt
+        : filter === "Payments"
+          ? /PAYMENT|PAID|RECOVERY|REFUND/.test(i.messageKey)
+          : filter === "Listings"
+            ? !!i.listingId
+            : !i.listingId && !/PAYMENT|PAID|RECOVERY|REFUND/.test(i.messageKey)),
+  );
   const open = (item: import("../lib/order-inbox").InboxItem) => {
     if (!item.readAt) void r.read([item.id]).catch(() => {});
     if (item.listingId) a.go("myListings");
@@ -16,7 +29,7 @@ export function Notifications() {
       a.go(/RECOVERY|REFUND/.test(item.messageKey) ? "recovery" : "delivery", item.orderId);
   };
   return (
-    <Page title="Notifications" back={a.back} loading={r.loading}>
+    <Page title="Updates" back={a.back} loading={r.loading}>
       <Heading>Order and account updates</Heading>
       <Label muted>
         {a.ui("Unread")}: {r.data?.unreadCount || 0}
@@ -35,11 +48,33 @@ export function Notifications() {
           }}
         />
       ) : null}
+      <PaymentRecovery />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {["All", "Unread", "Payments", "Delivery", "Listings"].map((value) => (
+          <Pressable
+            key={value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: filter === value }}
+            onPress={() => setFilter(value)}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: 24,
+              backgroundColor: filter === value ? colors.green : "#eef2ef",
+            }}
+          >
+            <Label style={{ color: filter === value ? "#fff" : colors.green }}>{a.ui(value)}</Label>
+          </Pressable>
+        ))}
+      </View>
+      {!r.loading && !items.length && !!r.data?.items.length && (
+        <Notice text="No updates match this filter." />
+      )}
       {(r.error || error) && <Notice text={r.error || error} error />}
       {!r.loading && !r.data?.items.length && (
         <Notice text="Listing approvals, paid orders and delivery updates will appear here." />
       )}
-      {r.data?.items.map((i) => {
+      {items.map((i) => {
         const copy = orderUpdateCopy(i.messageKey, a.role !== "SELLER");
         return (
           <Pressable

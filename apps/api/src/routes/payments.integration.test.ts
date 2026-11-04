@@ -1874,7 +1874,7 @@ suite("provider-backed payment safeguards", () => {
     vi.spyOn(bachs,"payment").mockResolvedValue({payment_id:`ch_${f.a.id}`,checkout_id:f.a.checkoutId,currency:"NGN",is_refundable:true});
     vi.spyOn(bachs,"call").mockImplementation(async(path,body:any)=>{
       if(path!=="/refunds")throw Error("Unexpected external call");
-      expect(body.amount).toBe("110.00");expect(body.fee_bearer).toBe("org");
+      expect(body.amount).toBe("110.00");expect(body.fee_bearer).toBe("org");expect(body.idempotency_key).toBe(ops[0]!.id);
       return {refund_id:`refund-${f.a.id}`,charge_id:`ch_${f.a.id}`,reference:body.reference,status:"success",requested_amount:body.amount};
     });
     await runMoneyOperation(ops[0]!.id);await processDeadline(f.o.id);
@@ -2068,6 +2068,39 @@ suite("provider-backed payment safeguards", () => {
     expect(resolved.body.support.status).toBe("RESOLVED");expect(resolved.body.support.reply).toBe("Your refund is being reviewed.");
     expect(JSON.stringify(resolved.body)).not.toContain("Private reconciliation evidence");
     expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUND_BLOCKED");
+  });
+
+  it("blocks repeated deadline refunds after rejection and retries an uncertain original with the same id", async () => {
+    const f = await recoverable();
+    await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{refundDueAt:new Date(Date.now()-1000)}});
+    await processDeadline(f.o.id);
+    const op = await prisma.moneyOperation.findFirstOrThrow({where:{paymentId:f.a.id,kind:"REFUND"}});
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"FAILED",failureCode:"PAYMENT_PROVIDER_REJECTED"}});
+    await processDeadline(f.o.id); await processDeadline(f.o.id);
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
+    expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUND_BLOCKED");
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"UNKNOWN"}});
+    const lookup = vi.spyOn(bachs,"refundByCharge").mockResolvedValue(null);
+    const path = `/v1/admin/money/operations/${op.id}/retry-refund`;
+    const [a,b] = await Promise.all([request(app).post(path).set(staffAuth()).send({reason:"Provider lookup found no original refund"}),request(app).post(path).set(staffAuth()).send({reason:"Provider lookup found no original refund"})]);
+    expect([a.status,b.status].sort()).toEqual([202,409]);
+    expect(lookup).toHaveBeenCalled();
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
+    expect((await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).status).toBe("QUEUED");
+  });
+  it("locates an uncertain refund without resubmission and confirms only the matching provider receipt", async () => {
+    const f = await recoverable();
+    await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{refundDueAt:new Date(Date.now()-1000)}});
+    await processDeadline(f.o.id);
+    const op = await prisma.moneyOperation.findFirstOrThrow({where:{paymentId:f.a.id,kind:"REFUND"}});
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"UNKNOWN"}});
+    const lookup = vi.spyOn(bachs,"refundByCharge").mockResolvedValue({refund_id:`rf-${op.id}`,charge_id:`ch_${f.a.id}`,reference:"wrong",status:"processing",requested_amount:"110.00"});
+    const path=`/v1/admin/money/operations/${op.id}/reconcile`;
+    expect((await request(app).post(path).set(staffAuth()).send({reason:"Locate and reconcile original refund"})).status).toBe(409);
+    lookup.mockResolvedValue({refund_id:`rf-${op.id}`,charge_id:`ch_${f.a.id}`,reference:op.id,status:"success",requested_amount:"110.00"});
+    expect((await request(app).post(path).set(staffAuth()).send({reason:"Locate and reconcile original refund"})).status).toBe(202);
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
   });
 
 });

@@ -1,4 +1,6 @@
 [
+  ["Updates", "Updates", "Sabuntawa", "Mmelite", "Àwọn ìmúdójúìwọ̀n"],
+  ["No updates match this filter.", "No updates match this filter.", "Babu sabuntawa da ya dace da wannan tacewar.", "Ọ dịghị mmelite dabara nzacha a.", "Kò sí ìmúdójúìwọ̀n tó bá àlẹ̀mọ́ yìí mu."],
   ["Digital postcode (optional)", "Digital postcode (if you want)", "Lambar gidan waya ta dijital (zaɓi)", "Koodu nzi dijitalụ (ọ bụrụ na ịchọrọ)", "Kóòdù ìfìwéránṣẹ́ onídíjítà (bí o bá fẹ́)"],
   ["Search uses postcode segments, not street names. Manual address entry is always available.", "Search na with parts of postcode, no be street name. You fit always enter address yourself.", "Bincike yana amfani da sassan lambar gidan waya, ba sunayen tituna ba. Za ka iya shigar da adireshi da kanka koyaushe.", "Ọchụchọ na-eji akụkụ koodu nzi, ọ bụghị aha okporo ụzọ. Ị nwere ike itinye adreesị n’onwe gị mgbe niile.", "Ìṣàwárí ń lo àwọn apá kóòdù ìfìwéránṣẹ́, kì í ṣe orúkọ òpópónà. O lè tẹ àdírẹ́sì rẹ fúnra rẹ nígbà gbogbo."],
   ["Search postcode", "Search postcode", "Nemo lambar gidan waya", "Chọọ koodu nzi", "Wá kóòdù ìfìwéránṣẹ́"],

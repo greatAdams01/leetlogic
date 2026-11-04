@@ -1,6 +1,4 @@
-import { orderUpdateCopy } from "../../../packages/contracts/src/order-updates";
 "use client";
-import { CustomerRecovery } from "./customer-recovery";
 import { useEffect, useRef, useState } from "react";
 import {ui, localizedError} from "../../mobile/src/lib/localization";
 import { needsSignIn, profileFailureCode } from "../../mobile/src/lib/auth-errors";
@@ -68,7 +66,7 @@ export function CustomerAccount() {
       const orders = await customerApi(`orders?view=${data.user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "seller" : "buyer"}`);
       if (loadVersion.current !== version) return;
       setOrders(orders.items);
-      const inbox = await customerApi("orders/notifications");
+      const inbox = await customerApi(`orders/notifications?view=${data.user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "seller" : "buyer"}`);
       if (loadVersion.current === version) setNotifications(inbox.items);
     } catch (error) {
       // Orders/inbox outages must not turn a successful profile read into a failed login.
@@ -182,7 +180,6 @@ export function CustomerAccount() {
   return (
     <section className="customer-panel">
       <h1>{user ? (user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "Seller Dashboard" : "Buyer Dashboard") : t("auth.title")}</h1>
-      {user && <CustomerRecovery />}
       {!user && checkingProfile && <p role="status">{ui(locale, "Loading your account…")}</p>}
       {profilePending && !checkingProfile && <div>
         <button type="button" disabled={busy} onClick={() => void retryProfile()}>{t("common.retry")}</button>
@@ -259,11 +256,7 @@ export function CustomerAccount() {
             <Link href="/sell">{t("nav.sell")}</Link>
           </p>}
           <CustomerAddresses addresses={user.addresses || []} seller={user.capabilities?.some((entry: any) => entry.capability === "SELLER")} onSaved={async () => { await load(); }} />
-          <h2>{ui(locale,"Order and account updates")}</h2>
-          {notifications.map(n=>{const copy=orderUpdateCopy(n.messageKey,!user?.capabilities?.some((entry:any)=>entry.capability==="SELLER"));return <article key={n.id}>
-            <Link href={n.listingId?`/produce/${n.listingId}`:`/orders/${n.orderId}${/RECOVERY|REFUND/.test(n.messageKey)?"#order-assistance":""}`} onClick={()=>{if(!n.readAt)void customerApi("orders/notifications/read",{ids:[n.id]}).then(()=>setNotifications(current=>current.map(item=>item.id===n.id?{...item,readAt:new Date().toISOString()}:item))).catch(()=>{});}}><strong>{ui(locale,copy.title)}</strong>{!n.readAt?` · ${ui(locale,"Unread")}`:""}</Link>
-            {n.produceTitle&&<p>{n.produceTitle}</p>}<p>{ui(locale,copy.body)}</p><small>{new Date(n.createdAt).toLocaleString()}</small>
-          </article>;})}
+          <p><Link href="/account/updates">{ui(locale,"Updates")} · {notifications.filter(n => !n.readAt).length} {ui(locale,"Unread")}</Link></p>
           <h2>{t("orders.title")}</h2>
           {orders.length ? (
             orders.map((order) => (

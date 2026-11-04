@@ -139,7 +139,7 @@ it("renders readable updates with order context and opens the relevant action sc
   await act(async () => {
     tree = create(<Notifications />);
   });
-  const update = tree.root.findByType("Pressable" as any);
+  const update = tree.root.findAllByType("Pressable" as any).find(n => n.props.accessibilityLabel === "Stock confirmation needed")!;
   expect(update.props.accessibilityLabel).toBe("Stock confirmation needed");
   await act(async () => update.props.onPress());
   expect(h.api).toHaveBeenCalledWith("/orders/notifications/read", {

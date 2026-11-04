@@ -19,8 +19,11 @@ export function decimal(value: bigint): string {
 }
 /** Checkout reads embed the submitted charge; redirects and webhook bodies are not receipts. */
 export function checkoutChargeId(checkout: any): string | undefined {
-  const id = checkout.charge?.payment_id || checkout.charge?.charge_id ||
-    checkout.charge_id || checkout.payment_id;
+  const id =
+    checkout.charge?.payment_id ||
+    checkout.charge?.charge_id ||
+    checkout.charge_id ||
+    checkout.payment_id;
   if (id === undefined || id === null) return;
   if (typeof id !== "string" || !/^[\w-]{1,160}$/.test(id))
     throw new Error("PAYMENT_CHARGE_ID_INVALID");
@@ -33,19 +36,23 @@ export function receiptAmounts(payment: any, principal: bigint) {
   if (payment.fees && payment.fees.currency !== "NGN")
     throw new Error("PAYMENT_FEE_CURRENCY_MISMATCH");
   const fee = payment.fees ? minor(payment.fees.amount) : 0n;
-  if (amount !== principal &&
-    !(payment.merchant_bears_cost === false && amount === principal + fee))
+  if (
+    amount !== principal &&
+    !(payment.merchant_bears_cost === false && amount === principal + fee)
+  )
     throw new Error("PAYMENT_CHARGE_MISMATCH");
   const rawPaid = minor(payment.amount_paid || "0");
   // Bachs can report both amount and amount_paid inclusive of the customer-borne fee.
   // Never subtract a guessed fee or accept arbitrary overpayment as order funding.
-  const received = payment.merchant_bears_cost === false && rawPaid === principal + fee
-    ? principal : rawPaid;
+  const received =
+    payment.merchant_bears_cost === false && rawPaid === principal + fee ? principal : rawPaid;
   const status = String(payment.status || "").toLowerCase();
   return {
     fee,
     received,
-    success: status === "succeeded" && received === principal &&
+    success:
+      status === "succeeded" &&
+      received === principal &&
       minor(payment.amount_remaining || "0") === 0n,
     declined: status === "failed" && received === 0n,
   };
@@ -61,8 +68,17 @@ export function paymentReady(kind = "CHECKOUT") {
           ? c.PAYMENTS_REFUNDS_ENABLED
           : true;
   if (kind === "CHECKOUT" && c.PAYMENT_AUTO_REFUNDS_ENABLED && !c.PAYMENTS_REFUNDS_ENABLED) {
-    const error = new AppError(503, "PAYMENTS_UNAVAILABLE", "Payments are not available right now. Please try again later.");
-    error.diagnostics = { provider: "bachs", operation: "checkout_configuration", reason: "AUTO_REFUNDS_REQUIRE_REFUNDS_ENABLED", hint: "PAYMENT_AUTO_REFUNDS_ENABLED requires PAYMENTS_REFUNDS_ENABLED and a funded, verified refund route. Correct the configuration and restart the API/worker." };
+    const error = new AppError(
+      503,
+      "PAYMENTS_UNAVAILABLE",
+      "Payments are not available right now. Please try again later.",
+    );
+    error.diagnostics = {
+      provider: "bachs",
+      operation: "checkout_configuration",
+      reason: "AUTO_REFUNDS_REQUIRE_REFUNDS_ENABLED",
+      hint: "PAYMENT_AUTO_REFUNDS_ENABLED requires PAYMENTS_REFUNDS_ENABLED and a funded, verified refund route. Correct the configuration and restart the API/worker.",
+    };
     throw error;
   }
   if (
@@ -198,12 +214,25 @@ export class Bachs {
         "We’re checking the result. Please don’t start another payment.",
       );
     }
-    if (!response.ok)
-      throw new AppError(
+    if (!response.ok) {
+      const error = new AppError(
         response.status >= 500 ? 503 : 422,
         response.status >= 500 ? "PAYMENT_RESULT_UNKNOWN" : "PAYMENT_PROVIDER_REJECTED",
         "We couldn’t complete this payment action. Please try again or contact support.",
       );
+      const body = await response.json().catch(() => null);
+      error.diagnostics = {
+        provider: "bachs",
+        operation: path.split("/")[1] || "request",
+        providerStatus: response.status,
+        reason:
+          typeof body?.error_code === "string" && /^[A-Z_0-9]{1,80}$/i.test(body.error_code)
+            ? body.error_code
+            : "PROVIDER_REJECTED",
+        hint: "Reconcile the original operation before retrying. Provider response text is intentionally omitted.",
+      };
+      throw error;
+    }
     const json = await response.json().catch(() => null);
     if (!json || typeof json !== "object")
       throw new AppError(
@@ -236,9 +265,14 @@ export class Bachs {
             customer_bears_fee: true,
             reference: input.id,
             metadata: { order_id: input.orderId, attempt_id: input.id },
-            payment_method_types: c.BACHS_BANK_REFUNDS_VERIFIED && (!c.PAYMENT_AUTO_REFUNDS_ENABLED || (c.PAYMENTS_TRANSFERS_ENABLED && c.PAYMENTS_PAYOUTS_ENABLED && c.BACHS_NGN_PAYOUT_FEE_MINOR !== undefined))
-              ? ["NGN_CARD", "NGN_BANK_TRANSFER"]
-              : ["NGN_CARD"],
+            payment_method_types:
+              c.BACHS_BANK_REFUNDS_VERIFIED &&
+              (!c.PAYMENT_AUTO_REFUNDS_ENABLED ||
+                (c.PAYMENTS_TRANSFERS_ENABLED &&
+                  c.PAYMENTS_PAYOUTS_ENABLED &&
+                  c.BACHS_NGN_PAYOUT_FEE_MINOR !== undefined))
+                ? ["NGN_CARD", "NGN_BANK_TRANSFER"]
+                : ["NGN_CARD"],
             ...redirects,
             expires_in_minutes: input.expiresAt
               ? Math.max(
@@ -254,6 +288,14 @@ export class Bachs {
   }
   checkoutState(id: string) {
     return this.call(`/checkout-sessions/${encodeURIComponent(id)}`);
+  }
+  async refundByCharge(id: string) {
+    try {
+      return await this.call(`/refunds/by-charge/${encodeURIComponent(id)}`);
+    } catch (error) {
+      if (error instanceof AppError && error.diagnostics?.providerStatus === 404) return null;
+      throw error;
+    }
   }
   payment(id: string) {
     return this.call(`/payments/${encodeURIComponent(id)}`);

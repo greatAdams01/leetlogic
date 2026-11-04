@@ -22,6 +22,7 @@ export function MoneyActions({
   const [data, setData] = useState<any>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [code, setCode] = useState(""),
     [reason, setReason] = useState(""),
     [shipping, setShipping] = useState("0"),
@@ -43,12 +44,27 @@ export function MoneyActions({
     if (busy) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       if (step) {
         await call("auth/totp/step-up", { code });
         setCode("");
       }
       const result = await call(`money/${path}`, body);
+      if (path.endsWith("/refund"))
+        setNotice(
+          result.status === "UNKNOWN"
+            ? "Refund outcome is uncertain. Reconcile the original operation below; do not create another refund."
+            : `Refund request: ${result.status || "recorded"}. The buyer is refunded only after provider confirmation.`,
+        );
+      if (path.endsWith("/retry-refund"))
+        setNotice(
+          "Original refund checked and queued or reconciled. No second refund operation was created.",
+        );
+      if (path.endsWith("/reconcile"))
+        setNotice(
+          "Reconciliation requested. Check the operation status below; this does not mean the refund is completed.",
+        );
       if (path === "readiness") setProviderReadiness(result);
       await load();
       await onUpdated?.();
@@ -208,9 +224,19 @@ export function MoneyActions({
                         disabled={busy || code.length !== 6 || reason.length < 10}
                         onClick={() => void action(`operations/${op.id}/reconcile`, { reason })}
                       >
-                        Reconcile operation
+                        {op.kind === "REFUND" && !op.providerRef
+                          ? "Find original refund with provider"
+                          : "Reconcile operation"}
                       </button>
                     )}
+                  {manage && op.kind === "REFUND" && op.status === "UNKNOWN" && !op.providerRef && (
+                    <button
+                      disabled={busy || code.length !== 6 || reason.length < 10}
+                      onClick={() => void action(`operations/${op.id}/retry-refund`, { reason })}
+                    >
+                      Check provider and retry original refund
+                    </button>
+                  )}
                   {manage && op.status === "UNKNOWN" && !op.providerRef && (
                     <>
                       <input
@@ -285,6 +311,7 @@ export function MoneyActions({
               )}
             </p>
           ))}
+      {notice && <p role="status">{notice}</p>}
       {error && (
         <p role="alert" className="live-error">
           {error}
