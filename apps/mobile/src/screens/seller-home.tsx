@@ -1,3 +1,4 @@
+import { NotificationBell } from "../components/notification-bell";
 import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import React, { useCallback, useEffect, useState } from "react";
@@ -158,6 +159,7 @@ export function SellerHome() {
               <Icon name="sellerLogo" nativeSize={{ width: 28.019, height: 28.019 }} />
               <Icon name="sellerWordmark" nativeSize={{ width: 106.501, height: 21.0094 }} />
             </View>
+            <View style={{flexDirection:"row",alignItems:"center",gap:12}}><NotificationBell light/>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Menu"
@@ -167,7 +169,7 @@ export function SellerHome() {
               <Label style={{ color: "white", fontFamily: "NotoBold", fontSize: 14 }}>
                 {initials || "●"}
               </Label>
-            </Pressable>
+            </Pressable></View>
           </View>
           <View style={{ gap: 8 }}>
             <Label style={styles.greeting}>

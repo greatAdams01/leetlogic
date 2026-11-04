@@ -1,3 +1,4 @@
+import { NotificationBell } from "../components/notification-bell";
 import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { ReservationTimer } from "../components/reservation-timer";
@@ -76,6 +77,7 @@ export function Market() {
               LeetLogic
             </Label>
           </View>
+          <View style={s.row}><NotificationBell/>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={a.ui("My account")}
@@ -90,7 +92,7 @@ export function Market() {
             }}
           >
             <Icon name="buyerAccount" nativeSize={{ width: 20, height: 20 }} />
-          </Pressable>
+          </Pressable></View>
         </View>
       ) : (
         <View style={s.between}>
@@ -103,13 +105,7 @@ export function Market() {
               </Label>
             </View>
           </View>
-          <Pressable
-            accessibilityLabel="Notifications"
-            accessibilityRole="button"
-            onPress={() => a.go("notifications")}
-          >
-            <Icon name="bell" nativeSize={{ width: 22, height: 22 }} />
-          </Pressable>
+          <NotificationBell/>
         </View>
       )}
       {a.route.name === "search" && (

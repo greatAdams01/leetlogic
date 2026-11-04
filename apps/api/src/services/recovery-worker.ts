@@ -44,6 +44,7 @@ export async function scanFulfillmentDeadlines() {
       await prisma.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${row.orderId}::uuid FOR UPDATE`;
         await tx.fulfillmentDeadline.updateMany({ where: { orderId: row.orderId, state: { notIn: terminal } }, data: { failureCode: code, nextRunAt: new Date(Date.now() + 60000), ...(overdue(row.refundDueAt) && deadlinesEnabled() ? { state: "REFUND_BLOCKED" } : {}) } });
+        if (overdue(row.refundDueAt) && deadlinesEnabled()) await notify(tx,row.orderId,"REFUND_BLOCKED");
         await financeAlert(tx, `${row.orderId}:${code}`, mode(), code, row.orderId);
       });
       logger.warn({ orderId: row.orderId, reason: code }, "Fulfillment deadline requires attention");
@@ -94,6 +95,7 @@ export async function processDeadline(orderId: string) {
       await tx.delivery.update({ where: { id: d.id }, data: { ...(collected ? {} : { cancelRequestedAt: d.cancelRequestedAt || new Date() }), nextSyncAt: new Date() } });
       const reason = collected ? "REFUND_COLLECTED_SHIPMENT_REVIEW" : "REFUND_SHIPMENT_RECONCILIATION";
       await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "REFUND_RECONCILIATION", failureCode: reason } });
+      await notify(tx,orderId,"REFUND_RECONCILIATION");
       await financeAlert(tx, `${orderId}:${reason}`, mode(), reason, orderId); return;
     }
     if (order.releasedMinor > 0n || await tx.moneyOperation.count({ where: { orderId, kind: { in: ["RELEASE", "DISPUTE"] }, status: { notIn: ["FAILED", "RESOLVED"] } } }) ||

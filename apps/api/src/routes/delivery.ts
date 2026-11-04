@@ -1,3 +1,4 @@
+import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
 import { recoveryEnabled, financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
 import { rankDeliveryQuotes, courierQuality } from "../services/delivery-ranking.js";
@@ -119,62 +120,15 @@ customerDeliveryRouter.get("/notifications", async (req, res) => {
       "ROLE_FORBIDDEN",
       "This dashboard is not available for your account role.",
     );
-  const recoveryOrders = recoveryEnabled() && view === "seller" ? await prisma.paymentRecovery.findMany({ where: { mode: getConfig().BACHS_MODE }, select: { orderId: true } }) : [];
-  const items = await prisma.deliveryNotification.findMany({
-    where: {
-      userId: req.auth!.sub,
-      event: {
-        delivery: {
-          order:
-            view === "seller"
-              ? {
-                  farmerProfile: { userId: req.auth!.sub },
-                  OR: [
-                    { ledger: { some: { kind: "FUND" } }, status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] } },
-                    { id: { in: recoveryOrders.map(r => r.orderId) } },
-                  ],
-                }
-              : { buyerId: req.auth!.sub },
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
-  const paid =
-    view === "seller"
-      ? await prisma.paidOrderNotification.findMany({
-          where: {
-            userId: req.auth!.sub,
-            order: {
-              farmerProfile: { userId: req.auth!.sub },
-              ledger: { some: { kind: "FUND" } },
-              status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
-            },
-          },
-          select: { id: true, orderId: true, createdAt: true },
-          orderBy: { createdAt: "desc" },
-          take: 50,
-        })
-      : [];
-  const approved =
-    view === "seller"
-      ? await prisma.listingApprovalNotification.findMany({
-          where: { userId: req.auth!.sub },
-          select: { id: true, listingId: true, title: true, createdAt: true },
-          orderBy: { createdAt: "desc" },
-          take: 50,
-        })
-      : [];
-  res.json({
-    items: [
-      ...items,
-      ...paid.map((i) => ({ ...i, messageKey: "order.paid" })),
-      ...approved.map((i) => ({ ...i, messageKey: "listing.approved" })),
-    ]
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .slice(0, 50),
-  });
+  res.set("Cache-Control", "private, no-store");
+  res.json(await notificationInbox(req.auth!.sub, view === "seller"));
+});
+customerDeliveryRouter.post("/notifications/read", async (req,res)=>{
+  const input=z.union([z.object({ids:z.array(uuid).min(1).max(150)}).strict(),z.object({through:z.string().datetime()}).strict()]).parse(req.body);
+  const through="through" in input?new Date(input.through):undefined;
+  if(through && through.getTime()>Date.now())throw new AppError(422,"INVALID_READ_TIME","Refresh your updates before marking them read.");
+  await readNotifications(req.auth!.sub,"ids" in input?input.ids:undefined,through);
+  res.json({read:true});
 });
 customerDeliveryRouter.get("/", async (req, res) => {
   const { view: requestedView } = z

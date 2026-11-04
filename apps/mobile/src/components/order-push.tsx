@@ -1,3 +1,4 @@
+import { refreshOrderInbox } from "../lib/order-inbox";
 import type { NotificationResponse } from "expo-notifications";
 import React, { useEffect } from "react";
 import { AppState, Platform } from "react-native";
@@ -49,7 +50,8 @@ export function OrderPush() {
           }
         };
         const listener = notifications.addNotificationResponseReceivedListener(open);
-        remove = () => listener.remove();
+        const received = notifications.addNotificationReceivedListener(()=>refreshOrderInbox());
+        remove = () => {listener.remove();received.remove();};
         const last = await notifications.getLastNotificationResponseAsync();
         if (last) open(last);
       })

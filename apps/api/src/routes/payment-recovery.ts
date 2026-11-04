@@ -1,3 +1,6 @@
+import { savedPickup } from "../services/delivery-quote.js";
+import { packageSuggestion } from "../services/packaging.js";
+import { recoveryExperience } from "@leetlogic/contracts";
 import type { Router, Request } from "express";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -9,7 +12,7 @@ import { audit } from "../services/audit.js";
 import { serialize, deliveryEvent } from "../services/delivery.js";
 import { mode } from "../services/payments.js";
 import { financeEnabled, recoveryEnabled, assertFulfillmentOpen, markFulfillmentSecured } from "../services/fulfillment-deadline.js";
-import { approveRecovery, confirmRecoveryFarmer, quoteRecovery, acceptRecovery, releaseRecoveryStock } from "../services/payment-recovery.js";
+import { recoveryOrder, approveRecovery, confirmRecoveryFarmer, quoteRecovery, acceptRecovery, releaseRecoveryStock } from "../services/payment-recovery.js";
 import { logisticsFinance, verifyFunding } from "../services/logistics-finance.js";
 import { refreshShippingWallet, scanFulfillmentDeadlines } from "../services/recovery-worker.js";
 import { readMedia, storeMedia, deleteMedia } from "../services/storage/private-media.js";
@@ -20,16 +23,23 @@ const farmerBody = z.object({ pickupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/
 async function caseView(id: string, req: Request) {
   const r = await prisma.paymentRecovery.findFirst({ where: { id, mode: mode() } });
   if (!r) throw new AppError(404,"NOT_FOUND","Recovery not found.");
-  const o = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: r.orderId }, include: { listing: { select: { title: true } }, farmerProfile: { select: { userId: true } } } });
+  const o = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: r.orderId }, include: { listing: { select: { title: true,unitCode:true,packaging:true } }, farmerProfile: { select: { userId: true } } } });
   const staff = req.auth!.subject === "admin", buyer = req.auth!.sub === o.buyerId;
   if (!staff && !buyer && req.auth!.sub !== o.farmerProfile.userId) throw new AppError(404,"NOT_FOUND","Recovery not found.");
   const p = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: r.paymentId } });
   const proposal = await prisma.recoveryProposal.findUnique({ where: { recoveryId_version: { recoveryId: id, version: r.version } } });
   const snapshot = proposal?.snapshot as any;
-  return { id:r.id, orderId:o.id, reference:o.reference, title:o.listing.title, quantity:o.quantity, state:r.state, version:r.version, isBuyer:buyer, farmerConfirmedAt:r.farmerConfirmedAt, farmerConfirmation: staff ? r.farmerConfirmation : r.farmerConfirmedAt ? { pickupDate:(r.farmerConfirmation as any)?.pickupDate,preparationMinutes:(r.farmerConfirmation as any)?.preparationMinutes } : null, reservationUntil:r.reservationUntil, allocatedAt:r.allocatedAt,
+  const deadline = await prisma.fulfillmentDeadline.findUnique({where:{orderId:o.id}});
+  const experience = recoveryExperience({...r,isBuyer:buyer,proposal,deadline});
+  let pickup: ReturnType<typeof savedPickup> | null=null;
+  if(!buyer){try{pickup=savedPickup(await recoveryOrder(prisma,r.orderId));}catch{/* Staff assistance remains available when a saved address needs repair. */}}
+  const packing = packageSuggestion(o.packagingSnapshot ?? o.listing.packaging,o.quantity);
+  const ticket=await prisma.supportTicket.findFirst({where:{orderId:o.id,userId:req.auth!.sub,kind:"SUPPORT",subject:`Order recovery: ${o.reference}`},orderBy:{createdAt:"desc"},include:{messages:{where:{internal:false},orderBy:{createdAt:"desc"},take:1}}});
+  const support=ticket?{id:ticket.id,status:ticket.status,updatedAt:ticket.updatedAt,reply:ticket.messages[0]?.authorId!==req.auth!.sub?ticket.messages[0]?.body:null}:null;
+  return { id:r.id, orderId:o.id, reference:o.reference, title:o.listing.title, quantity:o.quantity,pickup,unitCode:o.listing.unitCode,packing:packing?{packageCount:packing.packageCount,weightKg:packing.weightKg,notes:packing.farmer.notes}:null,support, state:r.state, version:r.version, isBuyer:buyer, farmerConfirmedAt:r.farmerConfirmedAt, farmerConfirmation: staff ? r.farmerConfirmation : r.farmerConfirmedAt ? { pickupDate:(r.farmerConfirmation as any)?.pickupDate,preparationMinutes:(r.farmerConfirmation as any)?.preparationMinutes } : null, reservationUntil:r.reservationUntil, allocatedAt:r.allocatedAt,
     payment: buyer||staff ? { paymentConfirmed:!!p.confirmedAt, amountMinor:p.paidMinor, processingFeeMinor:p.processingFeeMinor } : {paymentConfirmed:!!p.confirmedAt},
     proposal: proposal ? {id:proposal.id,version:proposal.version,quoteId:proposal.quoteId,expiresAt:proposal.expiresAt,buyerAcceptedAt:proposal.buyerAcceptedAt,buyerRejectedAt:proposal.buyerRejectedAt,snapshot:{...snapshot,input:undefined}} : null,
-    deadline:await prisma.fulfillmentDeadline.findUnique({where:{orderId:o.id}}) };
+    deadline, experience };
 }
 export function installRecoveryRoutes(customer: Router, admin: Router) {
   customer.get("/recoveries", async(req,res)=>{
@@ -57,13 +67,30 @@ export function installRecoveryRoutes(customer: Router, admin: Router) {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${initial.orderId}::uuid FOR UPDATE`;
       const r=await tx.paymentRecovery.findUniqueOrThrow({where:{id}});
       if(r.allocatedAt)throw new AppError(409,"RECOVERY_ALLOCATED","Use the funded-order refund controls.");
+      if(r.state === "REFUND_REQUIRED" || r.state === "REFUNDED") return;
+      const deadline=await tx.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:r.orderId}});
+      if(deadline.state !== "ACTIVE" || deadline.refundDueAt <= new Date()) throw new AppError(409,"FULFILLMENT_REFUND_DUE","Stock confirmation is closed. Follow the refund status in your order.");
       await releaseRecoveryStock(tx,id);
       await tx.paymentRecovery.update({where:{id},data:{state:"REFUND_REQUIRED"}});
       await tx.fulfillmentDeadline.update({where:{orderId:r.orderId},data:{state:"REFUND_DUE",nextRunAt:new Date()}});
+      const delivery=await tx.delivery.findUnique({where:{orderId:r.orderId}});
+      if(delivery)await deliveryEvent(tx,delivery.id,"RECOVERY_DECLINED","customer",`${r.id}:declined`,req.auth!.sub);
       await audit(req,{action:"recovery.refund.selected",entityType:"recovery",entityId:id,after:{reason:input.reason}},tx);
     });res.json({refundDue:true});
   };
   customer.post("/recoveries/:recoveryId/decline",refuse);
+  customer.post("/recoveries/:recoveryId/support",async(req,res)=>{
+    enabled();const id=uuid.parse(req.params.recoveryId),view=await caseView(id,req);
+    const input=z.object({message:z.string().trim().min(10).max(1000),sourceLocale:z.enum(["en","pcm","ha","ig","yo"]).default("en")}).strict().parse(req.body);
+    const ticket=await prisma.$transaction(async tx=>{
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${view.orderId}::uuid FOR UPDATE`;
+      const subject=`Order recovery: ${view.reference}`;
+      const prior=await tx.supportTicket.findFirst({where:{orderId:view.orderId,userId:req.auth!.sub,kind:"SUPPORT",subject,status:{not:"RESOLVED"}}});
+      if(prior)return prior;
+      const created=await tx.supportTicket.create({data:{orderId:view.orderId,userId:req.auth!.sub,kind:"SUPPORT",subject,priority:"HIGH",messages:{create:{authorId:req.auth!.sub,body:input.message,sourceLocale:input.sourceLocale}}}});
+      await audit(req,{action:"recovery.support.requested",entityType:"support_ticket",entityId:created.id,after:{orderId:view.orderId}},tx);return created;
+    });res.status(201).json({id:ticket.id,status:ticket.status});
+  });
   customer.post("/:id/delivery/collection-confirmation",async(req,res)=>{
     if(!financeEnabled())throw new AppError(404,"NOT_FOUND","Not found.");
     const orderId=uuid.parse(req.params.id);

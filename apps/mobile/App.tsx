@@ -1,3 +1,4 @@
+import { RecoveryScreen } from "./src/components/payment-recovery";
 import { OrderPush } from "./src/components/order-push";
 import { Cart, LikedProduce } from "./src/screens/cart";
 import { BuyerCategories } from "./src/screens/buyer-categories";
@@ -47,6 +48,7 @@ function Router() {
     likes: LikedProduce,
     orders: Orders,
     delivery: Delivery,
+    recovery: RecoveryScreen,
     quotes: Quotes,
     finance: Finance,
     banks: BankAccounts,

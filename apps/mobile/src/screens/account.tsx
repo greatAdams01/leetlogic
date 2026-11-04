@@ -475,37 +475,6 @@ export function Addresses() {
     </Page>
   );
 }
-export function Notifications() {
-  const a = useApp(),
-    r = useResource<{
-      items: { id: string; orderId?: string; listingId?: string; title?: string; messageKey: string; createdAt: string }[];
-    }>(`/orders/notifications?view=${a.role === "SELLER" ? "seller" : "buyer"}`);
-  return (
-    <Page title="Notifications" back={a.back} loading={r.loading}>
-      {r.error && <Notice text={r.error} error />}
-      {!r.loading && !r.data?.items.length && (
-        <Notice text="Listing approvals, paid orders and delivery updates will appear here." />
-      )}
-      {r.data?.items.map((i) => (
-        <Pressable key={i.id} accessibilityRole="button" onPress={() => i.messageKey === "listing.approved" ? a.go("myListings") : i.orderId && a.go("delivery", i.orderId)}>
-          <Card>
-            <Label>
-              {i.messageKey === "listing.approved"
-                ? a.ui("Your listing “{title}” has been approved and is now live.", { title: i.title || "" })
-                : i.messageKey === "order.paid"
-                ? "New paid order. Review it and prepare your produce."
-                : a.t(i.messageKey as any) || a.status(i.messageKey.split(".").pop() || "Update")}
-            </Label>
-            <Label muted style={s.small}>
-              {a.date(i.createdAt)}
-            </Label>
-          </Card>
-        </Pressable>
-      ))}
-      <Button title="Refresh" secondary onPress={() => void r.reload()} />
-    </Page>
-  );
-}
 export function Help() {
   const a = useApp(),
     r = useResource<{ items: { id: string; question: string; answer: string }[] }>(
@@ -528,3 +497,5 @@ export function Help() {
   );
 }
 export { Seller } from "./seller";
+
+export { Notifications } from "./notifications";

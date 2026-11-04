@@ -2029,4 +2029,45 @@ suite("provider-backed payment safeguards", () => {
     expect(delivery.body.order.checkoutReady).toBe(false);
   });
 
+  it("delivers readable recovery context to both participants and persists per-user read state",async()=>{
+    const f=await recoverable();const sellerToken=(await createSession({subject:"CUSTOMER",principalId:seller,deviceId:randomUUID()})).accessToken;
+    const sellerAuth={Authorization:`Bearer ${sellerToken}`};
+    const buyerInbox=await request(app).get("/v1/orders/notifications?view=buyer").set(customerAuth());
+    const entry=buyerInbox.body.items.find((n:any)=>n.orderId===f.o.id&&n.messageKey==="status.RECOVERY_REQUIRED");
+    expect(entry.orderReference).toBe(f.o.reference);expect(entry.produceTitle).toBeDefined();expect(entry.readAt).toBeNull();expect(buyerInbox.body.unreadCount).toBeGreaterThan(0);
+    const farmerInbox=await request(app).get("/v1/orders/notifications?view=seller").set(sellerAuth);
+    const farmerEntry=farmerInbox.body.items.find((n:any)=>n.orderId===f.o.id&&n.messageKey==="status.RECOVERY_REQUIRED");expect(farmerEntry).toBeDefined();
+    await request(app).post("/v1/orders/notifications/read").set(customerAuth()).send({ids:[entry.id,farmerEntry.id]});
+    expect((await prisma.deliveryNotification.findUniqueOrThrow({where:{id:entry.id}})).readAt).not.toBeNull();
+    expect((await prisma.deliveryNotification.findUniqueOrThrow({where:{id:farmerEntry.id}})).readAt).toBeNull();
+    const future=new Date(Date.now()+60000).toISOString();expect((await request(app).post("/v1/orders/notifications/read").set(customerAuth()).send({through:future})).status).toBe(422);
+    await request(app).post("/v1/orders/notifications/read").set(customerAuth()).send({through:buyerInbox.body.readThrough});
+    const confirmation=await request(app).post(`/v1/orders/recoveries/${f.r.id}/farmer`).set(sellerAuth).send({pickupDate:new Date(Date.now()+86400000).toISOString().slice(0,10),preparationMinutes:30,notes:"Stock is packed and available"});
+    expect(confirmation.status).toBe(200);expect(confirmation.body.experience.canFarmerConfirm).toBe(false);
+    expect(await prisma.deliveryNotification.count({where:{orderId:f.o.id,messageKey:"status.RECOVERY_FARMER_CONFIRMED"}})).toBe(2);
+    expect((await request(app).get("/v1/orders/notifications").set(customerAuth())).body.unreadCount).toBeGreaterThan(0);
+  });
+  it("provides explicit overdue actions and one support case without reopening recovery",async()=>{
+    const f=await recoverable();await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{state:"REFUND_BLOCKED",refundDueAt:new Date(Date.now()-1000)}});
+    const sellerToken=(await createSession({subject:"CUSTOMER",principalId:seller,deviceId:randomUUID()})).accessToken;
+    const sellerView=await request(app).get(`/v1/orders/recoveries/${f.r.id}`).set({Authorization:`Bearer ${sellerToken}`});
+    expect(sellerView.body.experience).toMatchObject({phase:"REFUND_BLOCKED",canFarmerConfirm:false,canRequestRefund:false});
+    expect(sellerView.body.payment.amountMinor).toBeUndefined();expect(sellerView.body.packing).toBeDefined();expect(sellerView.body.pickup.address).toBeDefined();
+    const path=`/v1/orders/recoveries/${f.r.id}/support`,body={message:"Please help resolve the paid order and refund",sourceLocale:"en"};
+    const [first,second]=await Promise.all([request(app).post(path).set(customerAuth()).send(body),request(app).post(path).set(customerAuth()).send(body)]);
+    expect(first.status).toBe(201);expect(second.body.id).toBe(first.body.id);
+    expect((await request(app).post(path).set({Authorization:`Bearer ${outsider}`}).send(body)).status).toBe(404);
+    const buyerView=await request(app).get(`/v1/orders/recoveries/${f.r.id}`).set(customerAuth());
+    expect(buyerView.body.support.status).toBe("OPEN");expect(buyerView.body.pickup).toBeNull();
+    const staffId=verifyAccessToken(staff,"admin").sub;
+    await prisma.supportMessage.create({data:{ticketId:first.body.id,authorId:staffId,body:"Private reconciliation evidence",internal:true}});
+    expect((await request(app).get(`/v1/orders/recoveries/${f.r.id}`).set(customerAuth())).body.support.reply).toBeNull();
+    await prisma.supportMessage.create({data:{ticketId:first.body.id,authorId:staffId,body:"Your refund is being reviewed.",internal:false}});
+    await prisma.supportTicket.update({where:{id:first.body.id},data:{status:"RESOLVED"}});
+    const resolved=await request(app).get(`/v1/orders/recoveries/${f.r.id}`).set(customerAuth());
+    expect(resolved.body.support.status).toBe("RESOLVED");expect(resolved.body.support.reply).toBe("Your refund is being reviewed.");
+    expect(JSON.stringify(resolved.body)).not.toContain("Private reconciliation evidence");
+    expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUND_BLOCKED");
+  });
+
 });

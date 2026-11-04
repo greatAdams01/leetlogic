@@ -1,3 +1,4 @@
+import { orderUpdateCopy } from "../../../packages/contracts/src/order-updates";
 "use client";
 import { CustomerRecovery } from "./customer-recovery";
 import { useEffect, useRef, useState } from "react";
@@ -258,12 +259,11 @@ export function CustomerAccount() {
             <Link href="/sell">{t("nav.sell")}</Link>
           </p>}
           <CustomerAddresses addresses={user.addresses || []} seller={user.capabilities?.some((entry: any) => entry.capability === "SELLER")} onSaved={async () => { await load(); }} />
-          <h2>{t("delivery.title")}</h2>
-          {notifications.map((n) => (
-            <p key={n.id}>
-              <Link href={`/orders/${n.orderId}`}>{t(n.messageKey) || n.messageKey}</Link>
-            </p>
-          ))}
+          <h2>{ui(locale,"Order and account updates")}</h2>
+          {notifications.map(n=>{const copy=orderUpdateCopy(n.messageKey,!user?.capabilities?.some((entry:any)=>entry.capability==="SELLER"));return <article key={n.id}>
+            <Link href={n.listingId?`/produce/${n.listingId}`:`/orders/${n.orderId}${/RECOVERY|REFUND/.test(n.messageKey)?"#order-assistance":""}`} onClick={()=>{if(!n.readAt)void customerApi("orders/notifications/read",{ids:[n.id]}).then(()=>setNotifications(current=>current.map(item=>item.id===n.id?{...item,readAt:new Date().toISOString()}:item))).catch(()=>{});}}><strong>{ui(locale,copy.title)}</strong>{!n.readAt?` · ${ui(locale,"Unread")}`:""}</Link>
+            {n.produceTitle&&<p>{n.produceTitle}</p>}<p>{ui(locale,copy.body)}</p><small>{new Date(n.createdAt).toLocaleString()}</small>
+          </article>;})}
           <h2>{t("orders.title")}</h2>
           {orders.length ? (
             orders.map((order) => (

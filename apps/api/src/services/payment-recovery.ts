@@ -22,7 +22,7 @@ export async function ensureRecovery(tx: Prisma.TransactionClient, paymentId: st
   if (p.mode !== mode() || p.kind !== "ORDER" || !p.confirmedAt || p.status !== "EXCEPTION" || p.exceptionCode !== "PAYMENT_ORDER_CHANGED") return null;
   const r = await tx.paymentRecovery.upsert({ where: { paymentId }, create: { paymentId, orderId: p.orderId, mode: p.mode }, update: {} });
   await financeAlert(tx, `recovery:${r.id}`, mode(), "RECOVERY_REQUIRED", p.orderId);
-  const d = await tx.delivery.findUnique({ where: { orderId: p.orderId } });
+  const d = await tx.delivery.upsert({ where: { orderId: p.orderId }, create: { orderId: p.orderId, status: "RECOVERY_REQUIRED" }, update: {} });
   if (d) await deliveryEvent(tx, d.id, "RECOVERY_REQUIRED", "system", `${r.id}:opened`);
   return r;
 }
@@ -65,13 +65,15 @@ export async function confirmRecoveryFarmer(id: string, input: { pickupDate: str
     const listing = await tx.listing.findUniqueOrThrow({ where: { id: o.listingId } });
     if (listing.availableQuantity.minus(listing.reservedQuantity).lt(o.quantity)) throw fail("INVENTORY_UNAVAILABLE");
     const deadline = await tx.fulfillmentDeadline.findUniqueOrThrow({ where: { orderId: o.id } });
-    if (new Date(`${input.pickupDate}T00:00:00Z`).toISOString().slice(0,10) !== input.pickupDate || input.pickupDate < new Date().toISOString().slice(0,10)) throw fail("INVALID_PICKUP_DATE");
+    const pickupDate = new Date(`${input.pickupDate}T00:00:00Z`);
+    if (!Number.isFinite(pickupDate.getTime()) || pickupDate.toISOString().slice(0,10) !== input.pickupDate || input.pickupDate < new Date().toISOString().slice(0,10)) throw fail("INVALID_PICKUP_DATE");
     const until = new Date(Math.min(Date.now() + 30 * 60000, deadline.refundDueAt.getTime()));
     if (until <= new Date()) throw fail("FULFILLMENT_REFUND_DUE");
     await tx.listing.update({ where: { id: listing.id }, data: { reservedQuantity: { increment: o.quantity } } });
     await tx.inventoryMovement.create({ data: { listingId: listing.id, type: "RESERVE", quantity: o.quantity, referenceType: "recovery", referenceId: id } });
     const confirmation = { pickupDate: input.pickupDate, preparationMinutes: input.preparationMinutes, notes: input.notes, channel: staff ? "STAFF_PHONE" : "FARMER_APP", confirmedBy: req.auth!.sub, pickup: confirmedPickup(o), quantity: o.quantity.toString(), packing: o.packagingSnapshot };
     r = await tx.paymentRecovery.update({ where: { id }, data: { farmerConfirmation: confirmation as any, farmerConfirmedAt: new Date(), reservationActive: true, reservationUntil: until, version: { increment: 1 }, state: "WAITING_BUYER" } });
+    await deliveryEvent(tx,o.delivery!.id,"RECOVERY_FARMER_CONFIRMED","farmer",`${r.id}:farmer:${r.version}`,req.auth!.sub);
     await audit(req, { action: "recovery.farmer.confirmed", entityType: "recovery", entityId: id, after: { version: r.version, channel: confirmation.channel } }, tx);
     return r;
   });
@@ -123,6 +125,7 @@ export async function acceptRecovery(id: string, version: number, quoteId: strin
     if (!accept) await releaseRecoveryStock(tx, id);
     await tx.paymentRecovery.update({ where: { id }, data: { state: accept ? "READY_FOR_APPROVAL" : "REFUND_REQUIRED" } });
     if (!accept) await tx.fulfillmentDeadline.update({ where: { orderId: o.id }, data: { state: "REFUND_DUE", nextRunAt: new Date() } });
+    await deliveryEvent(tx,o.delivery!.id,accept ? "RECOVERY_BUYER_ACCEPTED" : "RECOVERY_DECLINED","buyer",`${id}:decision:${version}:${accept}`,req.auth!.sub);
     await audit(req, { action: accept ? "recovery.buyer.accepted" : "recovery.buyer.rejected", entityType: "recovery", entityId: id, after: { version, quoteId } }, tx);
   });
 }

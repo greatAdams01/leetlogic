@@ -13,6 +13,7 @@ export type Route = {
     | "cart"
     | "likes"
     | "orders"
+    | "recovery"
     | "delivery"
     | "quotes"
     | "finance"
@@ -49,6 +50,7 @@ export const protectedScreens: Route["name"][] = [
   "cart",
   "likes",
   "orders",
+  "recovery",
   "delivery",
   "quotes",
   "finance",
