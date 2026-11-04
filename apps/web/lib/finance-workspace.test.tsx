@@ -103,29 +103,45 @@ describe("finance workspace", () => {
     expect(h.push.mock.calls.at(-1)?.[0]).toContain("finStatus=BLOCKED");
     expect(h.push.mock.calls.at(-1)?.[0]).toContain("finTab=operations");
   });
-  it("opens reviews in a modal drawer and preserves queue state in the order detail link", async () => {
+  it("shows a plain refund status in the queue while the system checks automatically", async () => {
+    h.params = new URLSearchParams("finTab=operations");
+    const original = h.request.getMockImplementation()!;
+    h.request.mockImplementation((input: string) =>
+      String(input).includes("/records?")
+        ? Promise.resolve({
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  ...row,
+                  kind: "REFUND",
+                  status: "UNKNOWN",
+                  failureCode: "PAYMENT_RESULT_UNKNOWN",
+                },
+              ],
+              total: 1,
+            }),
+          })
+        : original(input),
+    );
+    render(<MoneyOperations />);
+    expect(await screen.findByText("Checking refund")).toBeTruthy();
+    expect(screen.queryByText("Payment result unknown")).toBeNull();
+  });
+  it("opens reviews on a dedicated page and preserves the entire queue state", async () => {
     h.params = new URLSearchParams("finTab=payments&finSearch=ORDER&finStatus=SUCCEEDED&finPage=2");
     render(<MoneyOperations />);
-    const trigger = await screen.findByRole("button", { name: "Review ORDER-1042" });
-    trigger.focus();
-    fireEvent.click(trigger);
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog.hasAttribute("open")).toBe(true);
-    expect(screen.getByText("provider-charge")).toBeTruthy();
-    const href = screen
-      .getByRole("link", { name: /Open complete order finance/ })
-      .getAttribute("href")!;
-    expect(href).toContain(`/reconciliation/orders/${id}`);
-    expect(decodeURIComponent(href)).toContain("finPage=2");
-    expect(decodeURIComponent(href)).toContain("finSearch=ORDER");
-    fireEvent.click(screen.getByRole("button", { name: "Close review" }));
+    const trigger = await screen.findByRole("link", { name: "Review ORDER-1042" });
+    const href = trigger.getAttribute("href")!;
+    expect(href).toContain(`/reconciliation/records/payments/${id}`);
+    const target = new URL(href, "https://example.test");
+    expect(target.searchParams.get("returnTo")).toBe(`/admin/reconciliation?${h.params}`);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
   });
   it("searches and paginates server records and preserves other filters", async () => {
     h.params = new URLSearchParams("finTab=payments&finStatus=SUCCEEDED&finFrom=2026-11-01");
     render(<MoneyOperations />);
-    await screen.findByRole("button", { name: "Review ORDER-1042" });
+    await screen.findByRole("link", { name: "Review ORDER-1042" });
     expect(
       h.request.mock.calls.some(
         ([url]) =>
@@ -193,13 +209,11 @@ describe("finance request safety", () => {
     expect(h.request).toHaveBeenCalledOnce();
   });
   it("does not repeat an invalid step-up code", async () => {
-    h.request
-      .mockReset()
-      .mockResolvedValue({
-        status: 401,
-        ok: false,
-        json: async () => ({ error: { message: "Code invalid" } }),
-      });
+    h.request.mockReset().mockResolvedValue({
+      status: 401,
+      ok: false,
+      json: async () => ({ error: { message: "Code invalid" } }),
+    });
     await expect(financeRequest("auth/totp/step-up", { code: "000000" })).rejects.toThrow(
       "Code invalid",
     );

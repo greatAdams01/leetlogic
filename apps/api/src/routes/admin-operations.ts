@@ -492,6 +492,7 @@ operationsRouter.put(
         exportFeeBasisPoints: z.number().int().min(0).max(10000),
         escrowHoldHours: z.number().int().min(0).max(8760),
         disputeGraceHours: z.number().int().min(0).max(8760),
+        paymentRecoveryTimeoutMinutes: z.number().int().min(15).max(10080).optional(),
         supportPhone: z.string().max(40),
         supportEmail: z.string().email().max(254),
       })

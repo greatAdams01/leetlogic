@@ -118,6 +118,7 @@ export function installRecoveryRoutes(customer: Router, admin: Router) {
     const rows=await prisma.paymentRecovery.findMany({where:{mode:mode(),...(req.query.orderId?{orderId:uuid.parse(req.query.orderId)}:{})},orderBy:{createdAt:"desc"},take:100});
     res.json(serialize({enabled:true,items:await Promise.all(rows.map(r=>caseView(r.id,req)))}));
   });
+  admin.get("/recoveries/:recoveryId",async(req,res)=>{enabled();res.json(serialize(await caseView(uuid.parse(req.params.recoveryId),req)));});
   admin.post("/recoveries/backfill",requirePermission("payments.manage"),requireRecentStepUp,async(req,res)=>{
     enabled();const input=z.object({reason,acknowledgeOverdueRefunds:z.literal(true)}).strict().parse(req.body);
     await scanFulfillmentDeadlines();await audit(req,{action:"recovery.backfill",entityType:"recovery",after:{reason:input.reason}});res.json({scanned:true});

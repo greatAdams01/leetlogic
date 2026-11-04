@@ -821,6 +821,7 @@ model MarketplaceSettings {
   exportFeeBasisPoints   Int      @default(250)
   escrowHoldHours        Int      @default(72)
   disputeGraceHours      Int      @default(24)
+  paymentRecoveryTimeoutMinutes Int @default(120)
   supportPhone           String   @default("") @db.VarChar(20)
   supportEmail           String   @default("") @db.VarChar(254)
   version                Int      @default(1)

@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { formatMoney as money } from "../../../../packages/contracts/src/money";
 import { FinanceLedger, FinanceReportTables } from "./finance-ledger";
 import { FinanceOperations } from "./finance-operations";
+import { refundState } from "./refund-state";
 import { MoneyActions } from "./money-actions";
 import {
-  FinanceDrawer,
   FinanceEmpty,
   FinanceStatus,
   financeDate,
@@ -69,11 +69,9 @@ export function MoneyOperations({
     [summary, setSummary] = useState<Row>(),
     [base, setBase] = useState<Row>(),
     [records, setRecords] = useState<Row>(),
-    [selected, setSelected] = useState<Row>(),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
-    [refresh, setRefresh] = useState(0),
-    [reviewing, setReviewing] = useState(false);
+    [refresh, setRefresh] = useState(0);
   useEffect(() => setDraft(search), [search]);
   const update = useCallback(
     (changes: Record<string, string>) => {
@@ -134,18 +132,6 @@ export function MoneyOperations({
       live = false;
     };
   }, [active, page, search, status, from, to, orderId, view, refresh]);
-  const review = async (row: Row) => {
-    setReviewing(true);
-    setError("");
-    try {
-      const detail = await financeRequest(`money/records/${active}/${row.id}`);
-      setSelected({ ...detail, recordType: active });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setReviewing(false);
-    }
-  };
   const rawReturn = params.get("returnTo");
   const back =
     rawReturn && /^\/admin\/(reconciliation|withdrawals|reports)(\?|$)/.test(rawReturn)
@@ -465,23 +451,30 @@ export function MoneyOperations({
                           </small>
                         </td>
                         <td>
-                          <FinanceStatus value={row.status} />
-                          {(row.failureCode || row.exceptionCode) && (
-                            <small className="finance-error-code">
-                              {financeLabel(row.failureCode || row.exceptionCode)}
-                            </small>
+                          {row.kind?.startsWith("REFUND") ? (
+                            <span className={`finance-badge ${refundState(row as any).tone}`}>
+                              {refundState(row as any).label}
+                            </span>
+                          ) : (
+                            <FinanceStatus value={row.status} />
                           )}
+                          {(row.failureCode || row.exceptionCode) &&
+                            (!row.kind?.startsWith("REFUND") ||
+                              refundState(row as any).needsHelp) && (
+                              <small className="finance-error-code">
+                                {financeLabel(row.failureCode || row.exceptionCode)}
+                              </small>
+                            )}
                         </td>
                         <td>{financeDate(row.createdAt)}</td>
                         <td>
-                          <button
-                            className="secondary"
-                            disabled={reviewing}
-                            onClick={() => void review(row)}
+                          <Link
+                            className="finance-review-link"
+                            href={`/admin/reconciliation/records/${active}/${row.id}?returnTo=${encodeURIComponent(`${pathname}${params.size ? `?${params}` : ""}`)}`}
                             aria-label={`Review ${row.orderReference || row.id}`}
                           >
                             Review →
-                          </button>
+                          </Link>
                         </td>
                       </tr>
                     ))}
@@ -547,78 +540,6 @@ export function MoneyOperations({
           </p>
           <MoneyActions orderId={orderId} manage={manage} />
         </section>
-      )}
-      {selected && (
-        <FinanceDrawer
-          title={selected.orderReference || financeLabel(selected.kind)}
-          onClose={() => {
-            setSelected(undefined);
-          }}
-        >
-          <div className="finance-record-heading">
-            <FinanceStatus value={selected.status} />
-            <strong>{money(selected.amountMinor)}</strong>
-          </div>
-          <dl className="finance-facts">
-            {[
-              ["Record reference", selected.id],
-              ["Order", selected.orderReference || selected.orderId || "Not linked"],
-              ["Type", financeLabel(selected.kind)],
-              ...(selected.recordType === "payments"
-                ? [
-                    ["Verified principal", money(selected.paidMinor)],
-                    ["Produce", money(selected.produceMinor)],
-                    ["Shipping", money(selected.shippingMinor)],
-                    ["Processing fee", money(selected.processingFeeMinor)],
-                    ["Payment confirmed", financeDate(selected.confirmedAt)],
-                  ]
-                : [
-                    ["Operation fee", money(selected.feeMinor)],
-                    ["Next check", financeDate(selected.nextRunAt)],
-                    ["Attempts", String(selected.attempts ?? 0)],
-                  ]),
-              ["Created", financeDate(selected.createdAt)],
-              ["Updated", financeDate(selected.updatedAt)],
-              ["Provider reference", selected.providerRef || selected.chargeId || "Not available"],
-              [
-                "Failure / exception",
-                financeLabel(selected.failureCode || selected.exceptionCode) || "None",
-              ],
-            ].map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-          {selected.orderId && (
-            <Link className="finance-detail-link" href={orderLink(selected.orderId)}>
-              Open complete order finance →
-            </Link>
-          )}
-          <MoneyActions
-            onUpdated={async () => {
-              const updated = await financeRequest(
-                `money/records/${selected.recordType}/${selected.id}`,
-              );
-              setSelected({ ...updated, recordType: selected.recordType });
-              setRecords((current) =>
-                current
-                  ? {
-                      ...current,
-                      items: current.items.map((row: Row) =>
-                        row.id === updated.id ? updated : row,
-                      ),
-                    }
-                  : current,
-              );
-              setSummary(await financeRequest(`money/summary${scope}`));
-            }}
-            operationId={selected.recordType === "operations" ? selected.id : undefined}
-            paymentId={selected.recordType === "payments" ? selected.id : undefined}
-            manage={manage}
-          />
-        </FinanceDrawer>
       )}
     </div>
   );

@@ -527,7 +527,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
         await request(app)
           .put("/v1/admin/settings")
           .set(auth())
-          .send({ ...settings, supportEmail: "support@example.test" })
+          .send({ ...settings, supportEmail: "support@example.test", paymentRecoveryTimeoutMinutes: 45 })
       ).status,
     ).toBe(403);
     const step = await request(app)
@@ -541,9 +541,14 @@ integration("admin PostgreSQL and Redis workflows", () => {
         await request(app)
           .put("/v1/admin/settings")
           .set(auth())
-          .send({ ...settings, supportEmail: "support@example.test" })
+          .send({ ...settings, supportEmail: "support@example.test", paymentRecoveryTimeoutMinutes: 45 })
       ).status,
     ).toBe(200);
+    const saved = (await request(app).get("/v1/admin/settings").set(auth())).body;
+    expect(saved.paymentRecoveryTimeoutMinutes).toBe(45);
+    for (const invalid of [0, 14, 10081, 15.5]) {
+      expect((await request(app).put("/v1/admin/settings").set(auth()).send({...saved,paymentRecoveryTimeoutMinutes:invalid})).status).toBe(422);
+    }
     expect(
       (
         await request(app)

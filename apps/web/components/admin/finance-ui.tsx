@@ -93,8 +93,8 @@ export function FinanceDrawer({
           <p className="finance-eyebrow">FINANCIAL RECORD</p>
           <h2 id={id}>{title}</h2>
         </div>
-        <button type="button" className="secondary" aria-label="Close review" onClick={onClose}>
-          Close ×
+        <button type="button" className="secondary finance-close" aria-label="Close review" onClick={onClose}>
+          <span aria-hidden="true">×</span>
         </button>
       </header>
       <div className="finance-drawer-content">{children}</div>

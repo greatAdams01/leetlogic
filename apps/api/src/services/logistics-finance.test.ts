@@ -16,7 +16,11 @@ describe("fulfillment finance policy",()=>{
     expect(shippingFundingRequirement({...valid,committed:10000n},now).fundingShortfallMinor).toBe(10000n);
     expect(shippingFundingRequirement({...valid,incoming:20000n},now).fundingShortfallMinor).toBe(0n);
   });
-  it("expires exactly two hours after provider completion",()=>{
+  it("supports configured deadlines from the provider completion time",()=>{
+    expect(refundDeadline(now, 15).toISOString()).toBe("2026-11-02T12:15:00.000Z");
+    expect(refundDeadline(now, 180).toISOString()).toBe("2026-11-02T15:00:00.000Z");
+  });
+  it("expires exactly two hours after provider completion by default",()=>{
     const due=refundDeadline(now);expect(due.toISOString()).toBe("2026-11-02T14:00:00.000Z");
     expect(overdue(due,new Date(due.getTime()-1))).toBe(false);expect(overdue(due,due)).toBe(true);
   });

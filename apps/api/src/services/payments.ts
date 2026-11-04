@@ -781,13 +781,13 @@ export async function requestWithdrawal(
 }
 export async function requestRefund(orderId: string, req: Request) {
   paymentReady("REFUND");
-  const shippingRefundMinor = BigInt(req.body.shippingRefundMinor);
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${orderId}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: orderId },
       include: { delivery: { include: { parcels: true } } },
     });
+    const shippingRefundMinor = req.body.shippingRefundMinor === undefined ? (order.delivery?.paidMinor || 0n) : BigInt(req.body.shippingRefundMinor);
     const previous = await tx.moneyOperation.findFirst({
       where: {
         mode: mode(),

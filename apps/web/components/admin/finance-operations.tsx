@@ -356,12 +356,12 @@ export function FinanceOperations({
                       <td>{financeDate(r.deadline?.refundDueAt)}</td>
                       <td>
                         {view === "recovery" ? (
-                          <button
-                            className="secondary"
-                            onClick={() => setSelected({ type: "case", id: r.id })}
+                          <Link
+                            className="finance-review-link"
+                            href={`/admin/reconciliation/records/recoveries/${r.id}?returnTo=${encodeURIComponent(`${pathname}${params.size ? `?${params}` : ""}`)}`}
                           >
                             Review case →
-                          </button>
+                          </Link>
                         ) : (
                           <Link href={orderLink(r.orderId)}>Order finance →</Link>
                         )}
@@ -407,7 +407,8 @@ export function FinanceOperations({
         <section className="finance-panel">
           <h2>Deadline & incident queue</h2>
           <p>
-            Refund initiation is due after two hours without secured fulfillment. Provider credit
+            Refund initiation follows each order’s recorded deadline, using the configured
+            marketplace recovery period. Staff acknowledgement does not pause it. Provider credit
             may take longer.
           </p>
           {data.deadlines.filter((d: Row) => !["SECURED", "REFUNDED"].includes(d.state)).length ? (
@@ -505,15 +506,6 @@ export function FinanceOperations({
           )}
         </section>
       )}
-      {selected?.type === "case" && item && (
-        <FinanceDrawer
-          key={item.id}
-          title={`Recovery · ${item.reference}`}
-          onClose={() => setSelected(undefined)}
-        >
-          <RecoveryReview item={item} manage={manage} refresh={load} orderLink={orderLink} />
-        </FinanceDrawer>
-      )}
       {selected?.type === "batch" && item && (
         <FinanceDrawer
           key={item.id}
@@ -539,7 +531,7 @@ export function FinanceOperations({
     </div>
   );
 }
-function RecoveryReview({
+export function RecoveryReview({
   item: r,
   manage,
   refresh,
@@ -554,7 +546,14 @@ function RecoveryReview({
     key = useRef("");
   const [pickupDate, setPickupDate] = useState(new Date().toISOString().slice(0, 10)),
     [minutes, setMinutes] = useState("60"),
-    [notes, setNotes] = useState("");
+    [notes, setNotes] = useState(""),
+    [refundChoice, setRefundChoice] = useState(false);
+  const closed =
+    r.allocatedAt ||
+    ["REFUND_REQUIRED", "REFUNDED"].includes(r.state) ||
+    !r.deadline ||
+    r.deadline.state !== "ACTIVE" ||
+    new Date(r.deadline.refundDueAt).getTime() <= Date.now();
   const run = (path: string, body: Row) =>
     void mutation
       .action(`recoveries/${r.id}/${path}`, { reason: mutation.reason, ...body })
@@ -562,7 +561,9 @@ function RecoveryReview({
   return (
     <>
       <div className="finance-record-heading">
-        <FinanceStatus value={r.state} />
+        <FinanceStatus
+          value={r.deadline?.state && r.deadline.state !== "ACTIVE" ? r.deadline.state : r.state}
+        />
         <strong>{money(r.payment.amountMinor)}</strong>
       </div>
       <dl className="finance-facts">
@@ -570,14 +571,20 @@ function RecoveryReview({
           ["Produce", r.title],
           [
             "Farmer confirmation",
-            r.farmerConfirmedAt ? financeDate(r.farmerConfirmedAt) : "Required",
+            r.farmerConfirmedAt
+              ? financeDate(r.farmerConfirmedAt)
+              : closed
+                ? "No confirmation recorded"
+                : "Required",
           ],
           ["Stock reserved until", financeDate(r.reservationUntil)],
           [
             "Buyer proposal",
             r.proposal?.buyerAcceptedAt
               ? `Accepted version ${r.version}`
-              : `Awaiting acceptance · version ${r.version}`,
+              : closed
+                ? "No accepted recovery proposal"
+                : `Awaiting acceptance · version ${r.version}`,
           ],
           ["Proposal expiry", financeDate(r.proposal?.expiresAt)],
           ["Refund due", financeDate(r.deadline?.refundDueAt)],
@@ -591,8 +598,70 @@ function RecoveryReview({
       <Link className="finance-detail-link" href={orderLink(r.orderId)}>
         Open complete order finance →
       </Link>
-      {manage && !r.allocatedAt && !["REFUND_REQUIRED", "REFUNDED"].includes(r.state) && (
-        <>
+      {closed && (
+        <div className="finance-action-guide">
+          <h3>Recovery is closed</h3>
+          <p>
+            {r.allocatedAt
+              ? "This payment has been allocated. Review the order’s fulfillment and refund eligibility."
+              : "Do not reconfirm stock or approve fulfillment. Follow the existing refund obligation and reconcile any uncertain shipment or money operation."}
+          </p>
+          {r.deadline?.paymentId && (
+            <Link
+              className="finance-review-link"
+              href={`/admin/reconciliation/records/payments/${r.deadline.paymentId}?returnTo=${encodeURIComponent(`/admin/reconciliation/records/recoveries/${r.id}`)}`}
+            >
+              Review payment & refund status →
+            </Link>
+          )}
+        </div>
+      )}
+      {manage && !closed && (
+        <section className="finance-panel">
+          <h3>Unable to fulfill this paid order?</h3>
+          <p>
+            Send this case to the refund queue. This ends recovery; it does not mean the provider
+            has completed the refund.
+          </p>
+          {!refundChoice ? (
+            <button className="finance-danger-button" onClick={() => setRefundChoice(true)}>
+              Start refund resolution
+            </button>
+          ) : (
+            <>
+              <h4>Review & authorize refund resolution</h4>
+              <p>
+                Verified principal: {money(r.payment.amountMinor)}. The existing refund service will
+                check shipments, eligibility and prior refunds before submission.
+              </p>
+              <FinanceSecurity mutation={mutation} />
+              <div className="finance-review-actions">
+                <button
+                  className="finance-danger-button"
+                  disabled={!mutation.ready}
+                  onClick={() => run("decline", {})}
+                >
+                  Confirm refund resolution
+                </button>
+                <button
+                  className="secondary"
+                  disabled={mutation.busy}
+                  onClick={() => setRefundChoice(false)}
+                >
+                  Cancel action
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+      {manage && !closed && !refundChoice && (
+        <details className="finance-panel">
+          <summary>Continue fulfillment recovery instead</summary>
+          <p>
+            Use this path only when the original order can still be fulfilled with the required
+            buyer and farmer confirmations.
+          </p>
           <FinanceSecurity mutation={mutation} />
           <section className="finance-panel">
             <h3>Confirm the farmer’s availability</h3>
@@ -652,15 +721,8 @@ function RecoveryReview({
             >
               Approve payment allocation
             </button>
-            <button
-              className="finance-danger-button"
-              disabled={!mutation.ready}
-              onClick={() => run("decline", {})}
-            >
-              Resolve by refund
-            </button>
           </div>
-        </>
+        </details>
       )}
     </>
   );

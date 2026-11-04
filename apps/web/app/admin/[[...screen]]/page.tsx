@@ -8,7 +8,11 @@ type Props = { params: Promise<{ screen?: string[] }> };
 export async function generateMetadata({ params }: Props) {
   const route = (await params).screen?.join("/") || "dashboard";
   const screen = adminScreens[route as keyof typeof adminScreens];
-  return { title: titles[route] || screen?.title || "Staff operations" };
+  return {
+    title: /^reconciliation\/records\//.test(route)
+      ? "Payment & refund review"
+      : titles[route] || screen?.title || "Staff operations",
+  };
 }
 
 export default async function AdminPage({ params }: Props) {
@@ -18,14 +22,27 @@ export default async function AdminPage({ params }: Props) {
     /^reconciliation\/orders\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
       route,
     );
-  if (!screen && !financeDetail && !["setup", "forgot-password", "categories"].includes(route))
+  const financeRecord =
+    /^reconciliation\/records\/(payments|operations|recoveries)\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      route,
+    );
+  if (
+    !screen &&
+    !financeDetail &&
+    !financeRecord &&
+    !["setup", "forgot-password", "categories"].includes(route)
+  )
     notFound();
   return (
     <Suspense fallback={<p>Loading staff workspace…</p>}>
       <LiveAdmin
         route={route}
         title={
-          financeDetail ? "Order finance" : titles[route] || screen?.title || "Staff account setup"
+          financeRecord
+            ? "Payment & refund review"
+            : financeDetail
+              ? "Order finance"
+              : titles[route] || screen?.title || "Staff account setup"
         }
       />
     </Suspense>

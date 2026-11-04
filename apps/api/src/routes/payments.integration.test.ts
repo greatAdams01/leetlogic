@@ -24,7 +24,7 @@ import {
   journal,
   systemRequest,
 } from "../services/payments.js";
-import { runMoneyOperation, runPaymentJobs } from "../services/payment-worker.js";
+import { runMoneyOperation, runPaymentJobs, reconcileUncertainRefunds } from "../services/payment-worker.js";
 import { redis } from "../lib/redis.js";
 import { applyTracking, runDeliveryJobs, shippingProvider } from "../services/delivery.js";
 import { deliveryInputHash, deriveDeliveryInput, savedPickup, shippingOrderInclude } from "../services/delivery-quote.js";
@@ -2101,6 +2101,98 @@ suite("provider-backed payment safeguards", () => {
     expect((await request(app).post(path).set(staffAuth()).send({reason:"Locate and reconcile original refund"})).status).toBe(202);
     expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
     expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
+  });
+
+  it("snapshots configured recovery time and does not extend an existing payment deadline", async () => {
+    const settings = await prisma.marketplaceSettings.upsert({where:{id:"marketplace"},create:{},update:{}});
+    try {
+      await prisma.marketplaceSettings.update({where:{id:"marketplace"},data:{paymentRecoveryTimeoutMinutes:45}});
+      const first = await recoverable();
+      const recorded = await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:first.o.id}});
+      expect(recorded.refundDueAt.getTime()-recorded.confirmedAt.getTime()).toBe(45*60000);
+      await prisma.marketplaceSettings.update({where:{id:"marketplace"},data:{paymentRecoveryTimeoutMinutes:180}});
+      await reconcilePayment(first.a.id);
+      expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:first.o.id}})).refundDueAt).toEqual(recorded.refundDueAt);
+      const second = await recoverable();
+      const latest = await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:second.o.id}});
+      expect(latest.refundDueAt.getTime()-latest.confirmedAt.getTime()).toBe(180*60000);
+      const response=await request(app).get(`/v1/admin/money?paymentId=${first.a.id}`).set(staffAuth());
+      expect(response.status).toBe(200);
+      expect(response.body.operations.every((op:any)=>op.paymentId===first.a.id)).toBe(true);
+    } finally {
+      await prisma.marketplaceSettings.update({where:{id:"marketplace"},data:{paymentRecoveryTimeoutMinutes:settings.paymentRecoveryTimeoutMinutes}});
+    }
+  });
+
+  it("scales warning alerts to the recorded recovery duration without duplicating them", async () => {
+    const f = await recoverable(), now = Date.now();
+    await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{confirmedAt:new Date(now-25*60000),refundDueAt:new Date(now+5*60000)}});
+    await processDeadline(f.o.id); await processDeadline(f.o.id);
+    expect(await prisma.financeAlert.count({where:{orderId:f.o.id,code:"RECOVERY_DEADLINE_15"}})).toBe(1);
+    expect(await prisma.financeAlert.count({where:{orderId:f.o.id,code:"RECOVERY_DEADLINE_23"}})).toBe(1);
+    expect(await prisma.financeAlert.count({where:{orderId:f.o.id,code:"RECOVERY_DEADLINE_28"}})).toBe(0);
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(0);
+  });
+
+  it("opens one authorized recovery record directly without relying on a queue page", async () => {
+    const f=await recoverable();
+    const response=await request(app).get(`/v1/admin/money/recoveries/${f.r.id}`).set(staffAuth());
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe(f.r.id);
+    expect(response.body.deadline.paymentId).toBe(f.a.id);
+    expect((await request(app).get(`/v1/admin/money/recoveries/${f.r.id}`).set(customerAuth())).status).not.toBe(200);
+    await prisma.paymentRecovery.update({where:{id:f.r.id},data:{mode:"live"}});
+    expect((await request(app).get(`/v1/admin/money/recoveries/${f.r.id}`).set(staffAuth())).status).toBe(404);
+  });
+
+  async function uncertainRefund() {
+    const f=await recoverable();
+    await prisma.fulfillmentDeadline.update({where:{orderId:f.o.id},data:{refundDueAt:new Date(Date.now()-1000)}});
+    await processDeadline(f.o.id);
+    const op=await prisma.moneyOperation.findFirstOrThrow({where:{paymentId:f.a.id,kind:"REFUND"}});
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"UNKNOWN",attempts:1,nextRunAt:new Date(0)}});
+    return {...f,op};
+  }
+  it("automatically confirms an uncertain refund from the provider without staff or another submission",async()=>{
+    const f=await uncertainRefund();
+    vi.spyOn(bachs,"refundByCharge").mockImplementation(async charge => charge===`ch_${f.a.id}` ? {refund_id:`rf_${f.op.id}`,reference:f.op.id,charge_id:charge,status:"success",requested_amount:"110.00"} : null);
+    await reconcileUncertainRefunds();
+    expect((await prisma.moneyOperation.findUniqueOrThrow({where:{id:f.op.id}})).status).toBe("SUCCEEDED");
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
+  });
+  it("automatically retries a missing refund with its original id and never turns an outage into a retry",async()=>{
+    const f=await uncertainRefund();
+    const lookup=vi.spyOn(bachs,"refundByCharge").mockRejectedValue(new AppError(503,"PAYMENT_RESULT_UNKNOWN","Provider timeout"));
+    await reconcileUncertainRefunds();
+    expect((await prisma.moneyOperation.findUniqueOrThrow({where:{id:f.op.id}})).status).toBe("UNKNOWN");
+    await prisma.moneyOperation.update({where:{id:f.op.id},data:{nextRunAt:new Date(0)}});
+    lookup.mockResolvedValue(null);
+    await Promise.all([reconcileUncertainRefunds(),reconcileUncertainRefunds()]);
+    expect((await prisma.moneyOperation.findUniqueOrThrow({where:{id:f.op.id}})).status).toBe("QUEUED");
+    expect(await prisma.moneyOperation.count({where:{paymentId:f.a.id,kind:"REFUND"}})).toBe(1);
+  });
+  it("stops automatic resubmission after three attempts, alerts staff and still accepts a later verified refund",async()=>{
+    const f=await uncertainRefund();
+    await prisma.moneyOperation.update({where:{id:f.op.id},data:{attempts:3}});
+    const lookup=vi.spyOn(bachs,"refundByCharge").mockResolvedValue(null);
+    await reconcileUncertainRefunds();
+    const current=await prisma.moneyOperation.findUniqueOrThrow({where:{id:f.op.id}});
+    expect(current.status).toBe("UNKNOWN");expect(current.failureCode).toBe("REFUND_PROVIDER_REVIEW_REQUIRED");
+    expect(await prisma.financeAlert.count({where:{orderId:f.o.id,code:"REFUND_PROVIDER_REVIEW_REQUIRED"}})).toBe(1);
+    await prisma.moneyOperation.update({where:{id:f.op.id},data:{nextRunAt:new Date(0)}});
+    lookup.mockImplementation(async charge => charge===`ch_${f.a.id}` ? {refund_id:`rf_${f.op.id}`,reference:f.op.id,charge_id:charge,status:"success",requested_amount:"110.00"} : null);
+    await reconcileUncertainRefunds();
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
+  });
+  it("defaults an order refund to its verified delivery principal without staff entering kobo",async()=>{
+    const f=await order(), a=await checkout(f.o.id);mockReceipt(a);await reconcilePayment(a.id);
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"BOOKING_BLOCKED"}});
+    const refundReq=req();refundReq.auth.sub=buyer;delete refundReq.body.shippingRefundMinor;
+    const ops=await requestRefund(f.o.id,refundReq);
+    expect(ops.reduce((sum,op)=>sum+op.amountMinor,0n)).toBe(11000n);
+    const response=await request(app).post(`/v1/admin/money/orders/${f.o.id}/refund`).set(staffAuth()).send({reason:"Refund original produce and eligible delivery"});
+    expect(response.status).toBe(202);expect(response.body[0].id).toBe(ops[0]!.id);
   });
 
 });

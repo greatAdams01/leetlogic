@@ -29,7 +29,7 @@ import {
 import {
   runMoneyOperation,
   reconcileBalances,
-  reconcileRefundByCharge,
+  reconcileRefundByCharge, retryOriginalRefund,
 } from "../services/payment-worker.js";
 import { hasDeliverySettlement, serialize } from "../services/delivery.js";
 import {
@@ -402,6 +402,7 @@ moneyAdminRouter.get("/", async (req, res) => {
         mode: mode(),
         ...(orderId ? { orderId } : {}),
         ...(operationId ? { id: operationId } : {}),
+        ...(paymentId ? { paymentId } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -482,7 +483,7 @@ moneyAdminRouter.post(
   async (req, res) => {
     z.object({
       reason,
-      shippingRefundMinor: z.string().regex(/^\d{1,16}$/),
+      shippingRefundMinor: z.string().regex(/^\d{1,16}$/).optional(),
       destinationId: uuid.optional(),
     })
       .strict()
@@ -738,65 +739,7 @@ moneyAdminRouter.post(
   requireRecentStepUp,
   async (req, res) => {
     z.object({ reason }).strict().parse(req.body);
-    const op = await prisma.moneyOperation.findUniqueOrThrow({
-      where: { id: uuid.parse(req.params.id) },
-    });
-    if (
-      op.mode !== mode() ||
-      op.kind !== "REFUND" ||
-      op.status !== "UNKNOWN" ||
-      op.providerRef ||
-      !op.paymentId ||
-      !op.orderId
-    )
-      throw new AppError(
-        409,
-        "STALE_RECORD",
-        "Only an uncertain original refund can be retried here.",
-      );
-    const payment = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: op.paymentId } });
-    if (!payment.chargeId)
-      throw new AppError(409, "PROVIDER_REFERENCE_REQUIRED", "The original charge is missing.");
-    const existing = await bachs.refundByCharge(payment.chargeId);
-    if (existing) {
-      await reconcileRefundByCharge(op.id);
-      res.status(202).json({ reconciled: true });
-      return;
-    }
-    await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${op.orderId}::uuid FOR UPDATE`;
-      const current = await tx.moneyOperation.findUniqueOrThrow({ where: { id: op.id } });
-      const latestPayment = await tx.paymentAttempt.findUniqueOrThrow({ where: { id: op.paymentId! } });
-      const competing = await tx.moneyOperation.count({
-        where: {
-          paymentId: op.paymentId,
-          id: { not: op.id },
-          kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] },
-          status: { notIn: ["FAILED", "RESOLVED"] },
-        },
-      });
-      if (
-        current.status !== "UNKNOWN" ||
-        current.providerRef ||
-        competing ||
-        latestPayment.status === "REFUNDED"
-      )
-        throw new AppError(
-          409,
-          "STALE_RECORD",
-          "This refund changed or another refund requires reconciliation.",
-        );
-      await tx.moneyOperation.update({
-        where: { id: op.id },
-        data: { status: "QUEUED", nextRunAt: new Date(), leaseUntil: null, failureCode: null },
-      });
-      await audit(
-        req,
-        { action: "money.refund.original.retry", entityType: "money_operation", entityId: op.id },
-        tx,
-      );
-    });
-    res.status(202).json({ queued: true, id: op.id });
+    res.status(202).json(await retryOriginalRefund(uuid.parse(req.params.id), req));
   },
 );
 moneyAdminRouter.post(

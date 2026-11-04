@@ -74,8 +74,11 @@ export async function processDeadline(orderId: string) {
     }
     if (d?.failureCode || recovery || !d || !getConfig().DELIVERY_ENABLED || elapsedBlocked(deadline.confirmedAt)) await financeAlert(tx, `${orderId}:fulfillment-blocked`, mode(), "FULFILLMENT_BLOCKED", orderId);
     const elapsed = Date.now() - deadline.confirmedAt.getTime();
-    for (const minute of [60,90,110]) if (elapsed >= minute * 60000)
+    const duration = deadline.refundDueAt.getTime() - deadline.confirmedAt.getTime();
+    for (const fraction of [0.5, 0.75, 11 / 12]) if (elapsed >= duration * fraction) {
+      const minute = Math.round(duration * fraction / 60000);
       await financeAlert(tx, `${orderId}:warning:${minute}`, mode(), `RECOVERY_DEADLINE_${minute}`, orderId);
+    }
     const requestedRefund = deadline.state !== "ACTIVE";
     if (!deadlinesEnabled() || (!requestedRefund && !overdue(deadline.refundDueAt))) return;
     if (payments.length && payments.every(p => p.status === "REFUNDED")) {
@@ -136,7 +139,7 @@ export async function processDeadline(orderId: string) {
       const shippingCovered = allocated ? (shippingBudget > p.shippingMinor ? p.shippingMinor : shippingBudget) : 0n;
       shippingBudget -= shippingCovered;
       await createOperation(tx, { ownerId: p.buyerId, orderId, paymentId: p.id, kind: bank ? "REFUND_TRANSFER" : "REFUND", key: `automatic:${p.id}:${failed}`, amountMinor: p.paidMinor,
-        payload: { automaticDeadline: true, exception: !allocated, produceMinor: allocated ? p.produceMinor.toString() : "0", shippingMinor: allocated ? p.shippingMinor.toString() : "0", shippingFromBusinessMinor: allocated ? (p.shippingMinor - shippingCovered).toString() : "0", destinationId: destinationId ?? null, reason: "Fulfillment not secured within two hours" } });
+        payload: { automaticDeadline: true, exception: !allocated, produceMinor: allocated ? p.produceMinor.toString() : "0", shippingMinor: allocated ? p.shippingMinor.toString() : "0", shippingFromBusinessMinor: allocated ? (p.shippingMinor - shippingCovered).toString() : "0", destinationId: destinationId ?? null, reason: "Fulfillment not secured before the recorded refund deadline" } });
     }
     await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "REFUND_PROCESSING" } });
     await notify(tx, orderId, "REFUND_PROCESSING");

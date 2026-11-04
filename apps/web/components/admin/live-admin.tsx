@@ -5,6 +5,7 @@ import { SidebarNavigation } from "./sidebar-navigation";
 import { ListingQueue, ListingReview } from "./listing-review";
 import { VerificationReview, verificationLabel } from "./verification-review";
 import { FinanceDrawer, financeDate } from "./finance-ui";
+import { MoneyRecordReview } from "./money-record-review";
 import { MoneyOperations } from "./money-operations";
 import { CustomerDelivery } from "../customer-delivery";
 import Link from "next/link";
@@ -20,6 +21,9 @@ type Field = {
   options?: string[];
   type?: string;
   value?: string | number;
+  min?: number;
+  max?: number;
+  step?: number;
 };
 let refreshInFlight: Promise<Response> | undefined;
 async function api(path: string, method = "GET", body?: Row, retry = true): Promise<Row> {
@@ -170,7 +174,9 @@ function Fields({ fields, values = {} }: { fields: Field[]; values?: Row }) {
               type={field.type === "optional" ? "text" : field.type || "text"}
               defaultValue={values[field.name] ?? field.value ?? ""}
               required={field.type !== "optional"}
-              step={field.type === "number" ? "any" : undefined}
+              min={field.min}
+              max={field.max}
+              step={field.step ?? (field.type === "number" ? "any" : undefined)}
               maxLength={field.type === "password" ? 128 : 500}
             />
           )}
@@ -354,6 +360,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
     resource === "reconciliation" && route.split("/")[1] === "orders"
       ? route.split("/")[2]
       : undefined;
+  const financeRecord = resource === "reconciliation" && route.split("/")[1] === "records" ? { type: route.split("/")[2] as "payments" | "operations" | "recoveries", id: route.split("/")[3]! } : null;
   const ReviewShell = financePage ? FinanceDrawer : InlineReview;
   const endpoint =
     resource === "audit" ? "audit-logs" : resource === "verification" ? "verifications" : resource;
@@ -689,14 +696,14 @@ function Workspace({ route, title }: { route: string; title: string }) {
             </div>
           )}
           {busy && !action && <p role="status">Loading marketplace records…</p>}
-          {financePage && can("payments.read") && (
+          {financePage && can("payments.read") && (financeRecord ? <MoneyRecordReview recordType={financeRecord.type} recordId={financeRecord.id} manage={can("payments.manage")} /> : (
             <MoneyOperations
               key={financeOrderId || resource}
               view={resource}
               orderId={financeOrderId}
               manage={can("payments.manage")}
             />
-          )}
+          ))}
           {resource === "dashboard" && (
             <div className="live-metrics">
               {["users", "listings", "orders", "verifications", "tickets"].map((key) => (
@@ -728,6 +735,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     "exportFeeBasisPoints",
                     "escrowHoldHours",
                     "disputeGraceHours",
+                    "paymentRecoveryTimeoutMinutes",
                   ].map((name) => ({ name, label: name, type: "number" }));
                   fields.push(text("supportPhone", "Support phone"), emailForSupport);
                   const body = values(event.currentTarget, fields);
@@ -757,12 +765,14 @@ function Workspace({ route, title }: { route: string; title: string }) {
                         label: "Dispute grace period (hours)",
                         type: "number",
                       },
+                      { name: "paymentRecoveryTimeoutMinutes", label: "Automatic refund deadline (minutes; 15–10,080)", type: "number", min: 15, max: 10080, step: 1 },
                       { name: "supportPhone", label: "Support phone", type: "optional" },
                       emailForSupport,
                     ]}
                     values={data}
                   />
                 </div>
+                <p>Automatic refunds: default 120 minutes, minimum 15 minutes, maximum 7 days. The timer starts at verified payment completion when fulfillment remains unsecured. Changes apply to newly verified payments; existing order deadlines stay unchanged. Staff acknowledgement does not pause the timer. Provider processing and shipment reconciliation can delay completion.</p>
                 <div className="live-actions">
                   <button>Save settings</button>
                   <button type="button" className="secondary" onClick={() => void load()}>
