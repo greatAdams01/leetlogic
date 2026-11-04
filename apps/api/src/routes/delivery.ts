@@ -1,3 +1,4 @@
+import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
 import { recoveryEnabled, financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
 import { rankDeliveryQuotes, courierQuality } from "../services/delivery-ranking.js";
 import { deliveryQuoteConfiguration } from "../services/delivery-configuration.js";
@@ -375,9 +376,12 @@ customerDeliveryRouter.post("/:id/delivery/ready", async (req, res) => {
 
 for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
   router.get("/:id/delivery", async (req, res) => {
+    res.set("Cache-Control", "private, no-store");
     const order = await orderAccess(req);
     const delivery = order.delivery;
     const checkout = checkoutSummary(order);
+    const ownOrStaff = req.auth!.subject === "admin" || order.farmerProfile.userId === req.auth!.sub;
+    const pickupContactAvailable = ownOrStaff || await buyerPickupContactAvailable(order);
     const checkoutActive = !!(await prisma.paymentAttempt.count({
       where: { orderId: order.id, OR: [
         { status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
@@ -413,16 +417,19 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
             order.quantity,
           ),
           isBuyer: order.buyerId === req.auth!.sub,
-          suggestedPickup: {
+          pickupContactAvailable,
+          pickupEmailRequired: !order.farmerProfile.user.profile?.email,
+          suggestedPickup: pickupContactView({
             name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName,
             phone: order.farmerProfile.user.phoneE164,
             email: order.farmerProfile.user.profile?.email || "",
             ...savedPickup(order),
-          },
+          }, pickupContactAvailable),
         },
         delivery: delivery
           ? {
               ...delivery,
+              pickup: pickupContactView(delivery.pickup, pickupContactAvailable),
               quotes: rankDeliveryQuotes(quotes).map(safeQuote),
               parcels: await prisma.deliveryParcel.findMany({
                 where: { deliveryId: delivery.id },
@@ -475,7 +482,12 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       }
       let input;
       try {
-        const body = quoteBody.parse(req.body);
+        // Keep the pickup address integrity checks, while private contact data stays server-side.
+        const raw = req.body;
+        const body = quoteBody.parse(raw && typeof raw === "object" && raw.pickup && typeof raw.pickup === "object" ? {
+          ...raw, pickup: { ...raw.pickup, phone: current.farmerProfile.user.phoneE164,
+            email: current.farmerProfile.user.profile?.email || raw.pickup.email },
+        } : raw);
         input = deriveDeliveryInput(current, { ...body, pickupDate: body.parcel.pickupDate });
       } catch (error) {
         if (current.delivery) await tx.delivery.update({ where: { id: current.delivery.id }, data: { failureCode: error instanceof AppError ? error.code : "VALIDATION_ERROR" } });

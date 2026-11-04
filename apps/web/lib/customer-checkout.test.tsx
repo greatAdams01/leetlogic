@@ -497,6 +497,7 @@ describe("web saved-address checkout", () => {
 
   it("preserves pickup email, date and buyer edits when saving an address invalidates the quote", async () => {
     h.delivery.order.suggestedPickup.email = "";
+    h.delivery.order.pickupEmailRequired = true;
     Object.assign(h.delivery.delivery.destination, { addressId: address.id, address: addressText(address) });
     const updated = { ...address, line1: "26 Community Road", latitude: null, longitude: null };
     h.saveAddress.mockImplementation(async () => {
@@ -580,4 +581,21 @@ describe("automatic payment recovery", () => {
     expect(h.changed).toHaveBeenCalledOnce();
     expect(button("Check Payment")).toBeNull();
   });
+});
+
+it("does not render farmer contact fields before verified payment even with stale contact data", async () => {
+  h.delivery.order.pickupContactAvailable = true;
+  const view = await mountDelivery();
+  expect(view.container.querySelector('[name="pickup.phone"]')).toBeNull();
+  expect(view.container.querySelector('[name="pickup.email"]')).toBeNull();
+  expect(view.container.innerHTML).not.toContain("farmer@example.test");
+  const form=field(view,"date").form;
+  await act(async()=>fireEvent.submit(form!));
+  expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/quotes"))).toBe(true);
+});
+
+it("offers a new purchase route for a cancelled expired order",async()=>{
+  Object.assign(h.delivery.order,{status:"CANCELLED",checkoutReady:false,checkoutErrorCode:"ORDER_EXPIRED",listingId:"produce"});
+  await mountDelivery();
+  expect(screen.getByRole("link",{name:"View produce"}).getAttribute("href")).toBe("/produce/produce");
 });

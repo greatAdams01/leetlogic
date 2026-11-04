@@ -181,6 +181,8 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
       throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
     await assertNoDeliverySettlement(tx, orderId);
     await assertFulfillmentOpen(tx, orderId);
+    if (kind === "ORDER" && !order.financialHold && order.heldMinor === 0n && ["AWAITING_PAYMENT", "CANCELLED"].includes(order.status) && order.reservationExpiresAt && order.reservationExpiresAt <= new Date())
+      throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
     if (
       order.financialHold ||
       (kind === "ORDER"
@@ -190,8 +192,6 @@ export async function startCheckout(orderId: string, buyerId: string, kind = "OR
           !!order.delivery?.bookingStartedAt)
     )
       throw new AppError(409, "PAYMENT_LOCKED", "This order cannot accept a payment right now.");
-    if (kind === "ORDER" && order.reservationExpiresAt && order.reservationExpiresAt <= new Date())
-      throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
     const active = await tx.paymentAttempt.findFirst({
       where: {
         orderId,

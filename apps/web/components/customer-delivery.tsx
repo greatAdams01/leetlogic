@@ -179,6 +179,7 @@ export function CustomerDelivery({
     <section className="customer-panel">
       <h1>{data.order.title}</h1>
       <p>{data.order.reference}</p>
+      {!staff && data.order.isBuyer && data.order.checkoutErrorCode === "ORDER_EXPIRED" && <div role="status"><p>{error({ code: "ORDER_EXPIRED" })}</p><Link href={`/produce/${data.order.listingId}`}>{say("View produce")}</Link></div>}
       {!staff && data.order.description && (
         <TranslatedText
           resource="listings"
@@ -273,7 +274,7 @@ export function CustomerDelivery({
             {["pickup", "destination"].map((prefix) => (
               <fieldset key={prefix} disabled={busy}>
                 <legend>{t(`delivery.${prefix}` as MessageKey)}</legend>
-                {["name", "email", "phone", "address", "state"].map((key) => (
+                {["name", "email", "phone", "address", "state"].filter((key) => prefix !== "pickup" || staff || data.order.pickupContactAvailable === true && ["FUNDED", "DELIVERED", "COMPLETED"].includes(data.order.status) || !["phone", "email"].includes(key) || key === "email" && data.order.pickupEmailRequired === true).map((key) => (
                   <label key={key}>
                     {t(`delivery.${key}` as MessageKey)}
                     <input

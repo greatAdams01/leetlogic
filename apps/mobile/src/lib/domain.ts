@@ -119,6 +119,8 @@ export type DeliveryData = {
     totalWithDeliveryMinor: string | null;
     quoteExpiresAt: string | null;
     checkoutErrorCode: string | null;
+    pickupContactAvailable?: boolean;
+    pickupEmailRequired?: boolean;
     suggestedPickup: Contact;
     quantity?: string;
     unitCode?: string;

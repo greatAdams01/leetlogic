@@ -60,13 +60,17 @@ export function paymentReady(kind = "CHECKOUT") {
         : kind === "REFUND"
           ? c.PAYMENTS_REFUNDS_ENABLED
           : true;
+  if (kind === "CHECKOUT" && c.PAYMENT_AUTO_REFUNDS_ENABLED && !c.PAYMENTS_REFUNDS_ENABLED) {
+    const error = new AppError(503, "PAYMENTS_UNAVAILABLE", "Payments are not available right now. Please try again later.");
+    error.diagnostics = { provider: "bachs", operation: "checkout_configuration", reason: "AUTO_REFUNDS_REQUIRE_REFUNDS_ENABLED", hint: "PAYMENT_AUTO_REFUNDS_ENABLED requires PAYMENTS_REFUNDS_ENABLED and a funded, verified refund route. Correct the configuration and restart the API/worker." };
+    throw error;
+  }
   if (
     !c.PAYMENTS_ENABLED ||
     !c.BACHS_API_KEY ||
     !c.BACHS_ORGANIZATION_ID ||
     !c.BACHS_WEBHOOK_SECRET ||
     !enabled ||
-    (kind === "CHECKOUT" && c.PAYMENT_AUTO_REFUNDS_ENABLED && !c.PAYMENTS_REFUNDS_ENABLED) ||
     (kind.startsWith("REFUND") && !c.PAYMENTS_REFUNDS_ENABLED) ||
     (c.NODE_ENV === "production" && c.BACHS_MODE !== "live")
   )

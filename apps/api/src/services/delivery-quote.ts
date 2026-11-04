@@ -232,12 +232,12 @@ export function assertCurrentDeliveryQuote(
 export function assertCheckoutReady(order: CheckoutOrder, kind?: string, confirmationAt?: Date) {
   const d = order.delivery;
   const topup = order.status === "FUNDED" && d?.status === "TOPUP_REQUIRED";
+  if (!topup && !order.financialHold && order.heldMinor === 0n && ["AWAITING_PAYMENT", "CANCELLED"].includes(order.status) && order.reservationExpiresAt && order.reservationExpiresAt <= (confirmationAt || new Date()))
+    throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
   if (order.financialHold || order.settlementStarted || (order.status !== "AWAITING_PAYMENT" && !topup) ||
     (topup ? order.heldMinor !== order.totalMinor : order.heldMinor !== 0n) ||
     (kind && kind !== (topup ? "DELIVERY_TOPUP" : "ORDER")) || d?.providerShipmentId || d?.bookingStartedAt)
     throw new AppError(409, "PAYMENT_LOCKED", "This order cannot accept a payment right now.");
-  if (!topup && order.reservationExpiresAt && order.reservationExpiresAt <= (confirmationAt || new Date()))
-    throw new AppError(409, "ORDER_EXPIRED", "This order expired. Please place a new order.");
   const collection = d?.status === "PICKUP_PENDING" && !d.selectedQuoteId && d.shippingMinor === 0n && d.paidMinor === 0n;
   let quote: DeliveryQuote | null = null;
   if (!collection) {

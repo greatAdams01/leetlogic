@@ -81,3 +81,19 @@ Continuation validation on 2 November 2026:
 Additional safeguards in the continuation prevent refund/top-up operations claiming the same remaining shipping liability, retain unknown wallet requirements, isolate finance shipment rows by payment environment, count bank transfer/payout stages as one principal obligation, and fairly rotate bounded deadline scans. Completed fulfillment/refunds resolve their active alerts. Missing provider completion timestamps conservatively use checkout creation rather than extending the deadline at discovery.
 
 The remaining operational gates are actual provider sandbox refund completion, external heartbeat alert routing, funded refund routes, and live logistics/physical delivery pilots. Unknown refund writes lacking a provider reference require audited staff lookup through existing recovery controls before any retry. The implementation does not claim those external actions occurred.
+
+## Buyer pickup contact protection — 4 November 2026
+
+The buyer collection summary displayed the farmer phone and a call action before payment. The delivery API also exposed phone/email through both suggested pickup and the stored pickup object. Those contact fields are now withheld from buyers until a successful provider-confirmed order receipt has an allocation journal and the order is in an eligible paid state without a financial hold. An order status or checkout return alone cannot unlock them. Staff and the owning farmer retain authorized access.
+
+The unpaid mobile summary no longer renders a call action. Paid pickup preparation/readiness requires explicit backend contact permission. Web quote forms hide private pickup contact fields before payment; courier requests hydrate those fields server-side, retaining pickup address integrity checks. Repeated cancellation responses omit delivery relations, and delivery responses are private/no-store.
+
+Validated: 65 payment integration tests, 77 delivery/address tests, 394 mobile tests, 95 web tests and workspace type checking. Regression cases cover unpaid/open checkout, manually changed paid state, successful unallocated recovery, verified allocation, older/stale contact payloads, server-side courier contact preservation and repeated cancellation responses. No payment or financial feature switch was enabled.
+
+## Checkout configuration repair — 4 November 2026
+
+The reported checkout 503 occurred before any Bachs request: local `PAYMENT_AUTO_REFUNDS_ENABLED=true` conflicted with the default `PAYMENTS_REFUNDS_ENABLED=false`. Confirmed sandbox credentials, organization and NGN balance readiness, enabled sandbox refund processing, and restarted the local API to load the environment change. Live collections/money remain disabled. Automatic refunds were already enabled; the corrected configuration also permits processing of the existing overdue sandbox refund obligation.
+
+Added a server-only diagnostic for this exact flag conflict. The affected order `9dac4539-e2f0-4f5e-a19e-862da7345a02` had no payment attempts and its reservation expired at 13:32 UTC. It remains cancelled; inventory was released. Expired cancelled checkouts now return `ORDER_EXPIRED` rather than a generic lock, and buyer views provide a View produce action for a fresh, stock-checked purchase. No expired order was reopened and no new charge was submitted for it.
+
+Verified the actual local checkout configuration passes, the API readiness endpoint is healthy, and the original order safely returns 409 ORDER_EXPIRED. Tests: 12 provider protocol, 66 payment integration, 96 web and 395 mobile tests; workspace type checking passed. This validates the configuration repair and retry behavior, not completion of a new buyer payment.

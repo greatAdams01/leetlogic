@@ -414,5 +414,5 @@ marketplaceRouter.post("/orders/:id/cancel", async (req, res) => {
     await audit(req, { action: "order.customer.cancelled", entityType: "order", entityId: id }, tx);
     return cancelled;
   });
-  res.json(serialize({ order: item }));
+  res.json(serialize({ order: { ...item, delivery: undefined, shipment: undefined } }));
 });

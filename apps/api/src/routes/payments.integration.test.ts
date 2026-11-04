@@ -1989,4 +1989,44 @@ suite("provider-backed payment safeguards", () => {
     expect(result.body.orderStates[0]._sum.heldMinor).toBe("10000");
   });
 
+  it("keeps buyer pickup contact private until a verified receipt is allocated", async () => {
+    const {o}=await order();
+    await request(app).post(`/v1/orders/${o.id}/delivery/collection`).set(customerAuth()).send({});
+    const phone=(await prisma.user.findUniqueOrThrow({where:{id:seller}})).phoneE164;
+    const path=`/v1/orders/${o.id}/delivery`;
+    const before=await request(app).get(path).set(customerAuth());
+    expect(before.status).toBe(200);expect(before.headers["cache-control"]).toBe("private, no-store");expect(before.body.order.pickupContactAvailable).toBe(false);
+    expect(before.body.order.suggestedPickup.phone).toBe("");expect(before.body.order.suggestedPickup.email).toBe("");
+    expect(before.body.delivery.pickup.phone).toBe("");expect(JSON.stringify(before.body)).not.toContain(phone);
+    const admin=await request(app).get(`/v1/admin/delivery-orders/${o.id}/delivery`).set(staffAuth());
+    expect(admin.status).toBe(200);expect(admin.body.order.suggestedPickup.phone).toBe(phone);
+    await prisma.tradeOrder.update({where:{id:o.id},data:{status:"FUNDED"}});
+    expect((await request(app).get(path).set(customerAuth())).body.order.pickupContactAvailable).toBe(false);
+    await prisma.tradeOrder.update({where:{id:o.id},data:{status:"AWAITING_PAYMENT"}});
+    const a=await checkout(o.id);
+    expect((await request(app).get(path).set(customerAuth())).body.order.pickupContactAvailable).toBe(false);
+    mockReceipt(a,{amount:"100.00",amount_paid:"101.00"});await reconcilePayment(a.id);
+    const after=await request(app).get(path).set(customerAuth());
+    expect(after.body.order.pickupContactAvailable).toBe(true);expect(after.body.order.suggestedPickup.phone).toBe(phone);expect(after.body.delivery.pickup.phone).toBe(phone);
+  });
+  it("does not disclose farmer contact for a successful but unallocated recovery receipt",async()=>{
+    const f=await recoverable();const result=await request(app).get(`/v1/orders/${f.o.id}/delivery`).set(customerAuth());
+    expect(result.status).toBe(200);expect(result.body.order.pickupContactAvailable).toBe(false);expect(result.body.delivery.pickup.phone).toBe("");
+    expect(result.body.order.suggestedPickup.email).toBe("");
+    const cancelled=await request(app).post(`/v1/marketplace/orders/${f.o.id}/cancel`).set(customerAuth()).send({});
+    expect(cancelled.status).toBe(200);expect(cancelled.body.order.delivery).toBeUndefined();
+    expect(JSON.stringify(cancelled.body)).not.toContain((await prisma.user.findUniqueOrThrow({where:{id:seller}})).phoneE164);
+  });
+
+  it("returns an actionable expiry instead of retrying a cancelled checkout",async()=>{
+    const {o}=await order();
+    await prisma.tradeOrder.update({where:{id:o.id},data:{status:"CANCELLED",reservationExpiresAt:new Date(Date.now()-1000)}});
+    const response=await request(app).post(`/v1/orders/${o.id}/checkout`).set(customerAuth()).send({});
+    expect(response.status).toBe(409);expect(response.body.error.code).toBe("ORDER_EXPIRED");
+    expect(await prisma.paymentAttempt.count({where:{orderId:o.id}})).toBe(0);
+    const delivery=await request(app).get(`/v1/orders/${o.id}/delivery`).set(customerAuth());
+    expect(delivery.body.order.checkoutErrorCode).toBe("ORDER_EXPIRED");
+    expect(delivery.body.order.checkoutReady).toBe(false);
+  });
+
 });

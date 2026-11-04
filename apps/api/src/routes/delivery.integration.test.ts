@@ -374,7 +374,7 @@ suite("delivery and language database workflows", () => {
         expect.objectContaining({
           pickup: expect.objectContaining({
             address: detail.body.order.suggestedPickup.address,
-            phone: detail.body.order.suggestedPickup.phone,
+            phone: (await prisma.farmerProfile.findUniqueOrThrow({ where: { id: farmerId }, include: { user: true } })).user.phoneE164,
           }),
           destination: expect.objectContaining({ address: input.destination.address }),
           parcel: expect.objectContaining({ ...input.parcel, packageCount: 1, notes: "" }),

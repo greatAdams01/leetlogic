@@ -415,17 +415,8 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
           <Label>
             {data.order.suggestedPickup.address}, {data.order.suggestedPickup.state}
           </Label>
-          <Label>{data.order.suggestedPickup.phone}</Label>
           <Label>Call the farmer to arrange collection after payment.</Label>
-          <Button
-            title="Call farmer"
-            secondary
-            onPress={() =>
-              void Linking.openURL(`tel:${data.order.suggestedPickup.phone}`).catch((e) =>
-                setError(a.error(e)),
-              )
-            }
-          />
+
         </Card>
       )}
       <Card style={checkout.productSummary}>
@@ -510,6 +501,10 @@ export function Delivery() {
       {r.error && <Notice text={r.error} error />}
       {data && (
         <>
+          {data.order.isBuyer && data.order.checkoutErrorCode === "ORDER_EXPIRED" && data.order.listingId && <Card>
+            <Notice text={a.error({ code: "ORDER_EXPIRED" })} />
+            <Button title="View produce" onPress={() => a.go("product", data.order.listingId!)} />
+          </Card>}
           <Card>
             <Text style={s.badge}>{a.status(data.order.status)}</Text>
             <Heading>{data.order.title}</Heading>
@@ -538,7 +533,7 @@ export function Delivery() {
             </Label>
           </Card>
           {data.order.isBuyer && data.fulfillment?.state === "ACTIVE" && !data.fulfillment.collectionBuyerAt && d && ["PICKUP_PREPARING", "PICKUP_READY"].includes(d.status) && <Button title="Confirm pickup arrangement" disabled={busy} onPress={() => void run("collection-confirmation")} />}
-          {data.order.isBuyer && d?.status === "PICKUP_READY" && (
+          {data.order.isBuyer && data.order.pickupContactAvailable === true && ["FUNDED", "DELIVERED", "COMPLETED"].includes(data.order.status) && !!data.order.suggestedPickup.phone && ["PICKUP_PREPARING", "PICKUP_READY"].includes(d?.status || "") && (
             <Card>
               <Heading>Pickup</Heading>
               <Label>Payment received. Arrange collection with the farmer.</Label>
@@ -1137,7 +1132,7 @@ export function Quotes() {
           </Label>
           {r.data.order.suggestedPickup.postalCode && <Label>{r.data.order.suggestedPickup.postalCode}</Label>}
           {r.data.order.suggestedPickup.instructions && <Label muted>{r.data.order.suggestedPickup.instructions}</Label>}
-          {!r.data.order.suggestedPickup.email && (
+          {r.data.order.pickupEmailRequired === true && (
             <Field
               label="Farmer contact email"
               value={pickupEmail}

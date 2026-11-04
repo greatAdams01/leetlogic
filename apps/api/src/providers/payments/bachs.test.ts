@@ -7,6 +7,7 @@ const config = vi.hoisted(() => ({
   BACHS_ORGANIZATION_ID: "org_fixture",
   BACHS_WEBHOOK_SECRET: "fixture",
   PAYMENTS_ENABLED: true,
+  PAYMENT_AUTO_REFUNDS_ENABLED: false,
   PAYMENTS_TRANSFERS_ENABLED: true,
   PAYMENTS_PAYOUTS_ENABLED: true,
   PAYMENTS_REFUNDS_ENABLED: true,
@@ -34,6 +35,8 @@ describe("Bachs payment protocol", () => {
   beforeEach(() => {
     fetcher.mockReset();
     config.BACHS_MODE = "sandbox";
+    config.PAYMENT_AUTO_REFUNDS_ENABLED = false;
+    config.PAYMENTS_REFUNDS_ENABLED = true;
     config.BACHS_BANK_REFUNDS_VERIFIED = false;
     config.PAYMENTS_RETURN_ORIGIN = "https://leetlogic.example";
   });
@@ -147,6 +150,15 @@ describe("Bachs payment protocol", () => {
     expect(hostedUrl("https://connect.bachs.io/a", "onboarding")).toBe(
       "https://connect.bachs.io/a",
     );
+  });
+  it("identifies the automatic-refund configuration that blocks checkout", () => {
+    config.PAYMENT_AUTO_REFUNDS_ENABLED = true;
+    config.PAYMENTS_REFUNDS_ENABLED = false;
+    let error: any;
+    try { paymentReady("CHECKOUT"); } catch (e) { error=e; }
+    expect(error).toMatchObject({ status:503, code:"PAYMENTS_UNAVAILABLE", diagnostics:{reason:"AUTO_REFUNDS_REQUIRE_REFUNDS_ENABLED"} });
+    config.PAYMENTS_REFUNDS_ENABLED = true;
+    expect(paymentReady("CHECKOUT")).toBe(config);
   });
   it("blocks unapproved live money and unsafe hosted redirects", () => {
     config.BACHS_MODE = "live";

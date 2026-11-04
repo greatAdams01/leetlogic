@@ -387,3 +387,34 @@ it("guards quote submissions against two presses before the component rerenders"
   });
   expect(h.returnTo).toHaveBeenCalledOnce();
 });
+
+it("hides the prepayment collection call action even if a stale response includes contact details", async () => {
+  Object.assign(h.data.order,{isBuyer:true,status:"AWAITING_PAYMENT",reference:"order",title:"Beans",totalMinor:"10000",pickupContactAvailable:true});
+  h.data.order.suggestedPickup.phone="+2348098765432";
+  h.data.delivery={status:"PICKUP_PENDING",quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
+  await act(async()=>{tree=create(<Delivery/>);});
+  expect(tree.root.findAllByType("Button" as any).some(n=>n.props.title==="Call farmer")).toBe(false);
+  expect(tree.root.findAllByType("Label" as any).flatMap(n=>n.children).filter(c=>typeof c === "string").join(" ")).not.toContain("+2348098765432");
+});
+it.each([false,undefined])("requires explicit backend contact permission on a paid order (%s)", async permission => {
+  Object.assign(h.data.order,{isBuyer:true,status:"FUNDED",reference:"order",title:"Beans",totalMinor:"10000",pickupContactAvailable:permission});
+  h.data.order.suggestedPickup.phone="+2348098765432";
+  h.data.delivery={status:"PICKUP_READY",events:[],quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
+  await act(async()=>{tree=create(<Delivery/>);});
+  expect(tree.root.findAllByType("Button" as any).some(n=>n.props.title==="Call farmer")).toBe(false);
+  expect(tree.root.findAllByType("Label" as any).flatMap(n=>n.children).filter(c=>typeof c === "string").join(" ")).not.toContain("+2348098765432");
+});
+it.each(["PICKUP_PREPARING", "PICKUP_READY"])("allows the farmer call action after verified payment allocation (%s)", async status => {
+  Object.assign(h.data.order,{isBuyer:true,status:"FUNDED",reference:"order",title:"Beans",totalMinor:"10000",pickupContactAvailable:true});
+  h.data.order.suggestedPickup.phone="+2348098765432";
+  h.data.delivery={status,events:[],quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
+  await act(async()=>{tree=create(<Delivery/>);});
+  expect(tree.root.findAllByType("Button" as any).some(n=>n.props.title==="Call farmer")).toBe(true);
+});
+
+it("offers a safe route back to the produce when an unpaid reservation expired",async()=>{
+  Object.assign(h.data.order,{id:"order",listingId:"produce",isBuyer:true,status:"CANCELLED",checkoutErrorCode:"ORDER_EXPIRED",reference:"order",title:"Beans",totalMinor:"10000"});
+  await act(async()=>{tree=create(<Delivery/>);});
+  const action=tree.root.findAllByType("Button" as any).find(n=>n.props.title==="View produce");
+  expect(action).toBeDefined();action!.props.onPress();expect(h.go).toHaveBeenCalledWith("product","produce");
+});
