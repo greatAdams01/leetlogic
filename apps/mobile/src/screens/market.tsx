@@ -663,7 +663,7 @@ export function Orders() {
         return (
           <Card key={i.id} style={{ borderWidth: checkout ? 2 : 0, borderColor: checkout ? colors.green : colors.line, gap: 14 }}>
             <View style={s.between}>
-              <Text style={[s.badge, checkout && { backgroundColor: colors.mint }]}> {checkout ? "Checkout in progress" : a.status(i.delivery?.status || i.status)} </Text>
+              <Text style={[s.badge, checkout && { backgroundColor: colors.mint }]}> {checkout ? "Checkout in progress" : i.fulfillmentStatus ? a.ui(i.fulfillmentStatus) : a.status(i.delivery?.status || i.status)} </Text>
               <Label muted style={s.small}>{i.reference.slice(-8)}</Label>
             </View>
             {checkout && <ReservationTimer expiresAt={i.reservationExpiresAt} />}

@@ -599,3 +599,56 @@ it("offers a new purchase route for a cancelled expired order",async()=>{
   await mountDelivery();
   expect(screen.getByRole("link",{name:"View produce"}).getAttribute("href")).toBe("/produce/produce");
 });
+
+it("organizes a paid order into accessible tabs while keeping buyer confirmation available",async()=>{
+  Object.assign(h.delivery.order,{status:"FUNDED",quantity:"2",unitCode:"BAG"});
+  h.delivery.delivery.status="DELIVERED";
+  h.delivery.progress={method:"Delivery",status:"Awaiting buyer confirmation",next:"Confirm only after collecting and inspecting your produce.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:3,canReady:false,canDispatch:false,canConfirm:true,confirmed:false};
+  await mountDelivery();
+  expect(screen.getByRole("tab",{name:"Order Details"}).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByText("Payment provider fees are shown before confirmation.")).toBeNull();
+  await act(async()=>fireEvent.click(screen.getByRole("tab",{name:"Activity History"})));
+  expect(screen.getByRole("tab",{name:"Activity History"}).getAttribute("aria-selected")).toBe("true");
+  await click("Confirm Delivery Received");
+  expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/delivery/confirm"))).toBe(false);
+  await click("I received it");
+  expect(h.api).toHaveBeenCalledWith("orders/order/delivery/confirm",{});
+});
+it("gives farmers one clear preparation action without order tabs",async()=>{
+  Object.assign(h.delivery.order,{status:"FUNDED",isBuyer:false});
+  h.delivery.progress={method:"Delivery",status:"Preparing for Pickup",next:"Prepare the produce, then mark it ready.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:1,canReady:true,canDispatch:false,canConfirm:false,confirmed:false};
+  await mountDelivery();
+  expect(button("Confirm Delivery Received")).toBeNull();
+  expect(screen.queryByRole("tab")).toBeNull();
+  expect(screen.getByRole("button",{name:"Money"}).getAttribute("aria-expanded")).toBe("false");
+  await click("Order is ready");
+  expect(h.api).toHaveBeenCalledWith("orders/order/delivery/ready",{});
+});
+
+it("offers the existing dispute process instead of forcing buyer receipt confirmation",async()=>{
+  Object.assign(h.delivery.order,{status:"FUNDED"});
+  h.delivery.progress={method:"Delivery",status:"Awaiting buyer confirmation",next:"Confirm only after collecting and inspecting your produce.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:3,canReady:false,canDispatch:false,canConfirm:true,confirmed:false};
+  let saved=false;const original=h.api.getMockImplementation()!;
+  h.api.mockImplementation(async(path:string,body:any)=>{if(path.endsWith("/disputes")){if(body){saved=true;h.delivery.progress.canConfirm=false;return {id:"issue"};}return {canOpen:true,items:saved?[{id:"issue",subject:"Order not received",status:"OPEN",messages:[]}]:[]};}return original(path,body);});
+  await mountDelivery();await click("Report an issue");
+  expect(screen.getByRole("tab",{name:"Fulfillment"}).getAttribute("aria-selected")).toBe("true");
+  await act(async()=>fireEvent.change(screen.getByLabelText("Describe the issue"),{target:{value:"The buyer has not received the produce"}}));
+  await click("Submit issue");
+  expect(h.api).toHaveBeenCalledWith("orders/order/disputes",{reason:"NOT_RECEIVED",description:"The buyer has not received the produce",sourceLocale:"en"});
+  expect(button("Confirm Delivery Received")).toBeNull();
+});
+
+it("uses a plain handoff question before a farmer reports rider collection",async()=>{
+  Object.assign(h.delivery.order,{status:"FUNDED",isBuyer:false});
+  h.delivery.progress={method:"Delivery",status:"Ready for Pickup",next:"Confirm dispatch only after handing all parcels to the courier.",steps:[],stage:1,canReady:false,canDispatch:true,canConfirm:false,confirmed:false};
+  const original=h.api.getMockImplementation()!;
+  h.api.mockImplementation(async(path:string,body:any)=>{if(path.endsWith("/delivery/dispatch")){h.delivery.progress={...h.delivery.progress,status:"Dispatched",canDispatch:false};return {};}return original(path,body);});
+  await mountDelivery();
+  await click("Rider has collected it");
+  expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/delivery/dispatch"))).toBe(false);
+  expect(screen.getByText("Has the rider collected everything?")).toBeTruthy();
+  await click("Rider has collected it");
+  expect(h.api).toHaveBeenCalledWith("orders/order/delivery/dispatch",{});
+  expect(screen.getByText("Waiting for buyer confirmation")).toBeTruthy();
+  expect(button("Rider has collected it")).toBeNull();
+});

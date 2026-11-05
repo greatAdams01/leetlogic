@@ -394,7 +394,7 @@ export function SellerHome() {
                 <View style={styles.between}>
                   <Label style={styles.itemTitle}>{order.reference}</Label>
                   <Label style={[styles.badge, { backgroundColor: "#fef3c7", color: "#8a5b00" }]}>
-                    {a.status(order.status)}
+                    {order.fulfillmentStatus ? a.ui(order.fulfillmentStatus) : a.status(order.status)}
                   </Label>
                 </View>
                 <Label style={styles.muted}>

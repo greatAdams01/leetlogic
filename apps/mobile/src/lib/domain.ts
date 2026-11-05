@@ -80,6 +80,9 @@ export type Customer = {
   addresses: Address[];
 };
 export type Order = {
+  deliveryConfirmedAt?: string | null;
+  financialHold?: boolean;
+  fulfillmentStatus?: string;
   reservationExpiresAt?: string | null;
   id: string;
   reference: string;
@@ -103,6 +106,7 @@ export type Contact = {
   longitude?: number;
 };
 export type DeliveryData = {
+  progress?: import("../../../../packages/contracts/src/order-fulfillment").OrderFulfillment;
   fulfillment?: { state: string; collectionBuyerAt: string | null } | null;
   order: {
     id: string;
@@ -113,6 +117,7 @@ export type DeliveryData = {
     listingId: string;
     totalMinor: string;
     isBuyer: boolean;
+    deliveryConfirmedAt?: string | null;
     checkoutReady: boolean;
     checkoutActive: boolean;
     payableMinor: string | null;

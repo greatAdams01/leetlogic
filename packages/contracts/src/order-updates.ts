@@ -163,6 +163,8 @@ export function orderUpdateCopy(messageKey: string, buyer: boolean) {
     PICKUP_PREPARING: "Preparing for pickup",
     PICKUP_READY: "Ready for pickup",
     READY_FOR_PICKUP: "Ready for pickup",
+    FARMER_DISPATCHED: "Farmer confirmed dispatch",
+    BUYER_RECEIPT_CONFIRMED: "Buyer confirmed receipt",
     BOOKING_QUEUED: "Courier booking queued",
     BOOKING: "Booking your courier",
     BOOKING_UNCERTAIN: "Courier booking needs review",

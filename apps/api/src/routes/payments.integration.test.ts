@@ -2195,4 +2195,49 @@ suite("provider-backed payment safeguards", () => {
     expect(response.status).toBe(202);expect(response.body[0].id).toBe(ops[0]!.id);
   });
 
+  it("records one farmer dispatch and buyer receipt without forging courier delivery or releasing funds",async()=>{
+    const f=await order(),a=await checkout(f.o.id);mockReceipt(a);await reconcilePayment(a.id);
+    const sellerToken=(await createSession({subject:"CUSTOMER",principalId:seller,deviceId:randomUUID()})).accessToken,auth={Authorization:`Bearer ${sellerToken}`};
+    const base=`/v1/orders/${f.o.id}/delivery`;
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"BOOKED",providerShipmentId:`ship-${f.d.id}`}});
+    expect((await request(app).post(`${base}/dispatch`).set(auth).send({})).status).toBe(409);
+    await request(app).post(`${base}/ready`).set(auth).send({});
+    const originalPackage=(await prisma.delivery.findUniqueOrThrow({where:{id:f.d.id}})).package as any;
+    await prisma.delivery.update({where:{id:f.d.id},data:{package:{...originalPackage,packageCount:2}}});
+    expect((await request(app).post(`${base}/dispatch`).set(auth).send({})).status).toBe(409);
+    await prisma.delivery.update({where:{id:f.d.id},data:{package:originalPackage}});
+    expect((await request(app).post(`${base}/dispatch`).set(customerAuth()).send({})).status).toBe(403);
+    const [first,duplicate]=await Promise.all([request(app).post(`${base}/dispatch`).set(auth).send({}),request(app).post(`${base}/dispatch`).set(auth).send({})]);
+    expect(first.status).toBe(200);expect(duplicate.status).toBe(200);
+    expect(await prisma.deliveryEvent.count({where:{deliveryId:f.d.id,status:"FARMER_DISPATCHED"}})).toBe(1);
+    expect(await prisma.deliveryNotification.count({where:{event:{deliveryId:f.d.id,status:"FARMER_DISPATCHED"}}})).toBe(2);
+    expect((await prisma.delivery.findUniqueOrThrow({where:{id:f.d.id}})).status).toBe("BOOKED");
+    const view=(await request(app).get(base).set(customerAuth())).body;
+    expect(view.progress).toMatchObject({status:"Dispatched",canConfirm:false});
+    expect((await request(app).post(`${base}/confirm`).set(customerAuth()).send({})).status).toBe(409);
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"DELIVERED"}});
+    await prisma.tradeOrder.update({where:{id:f.o.id},data:{financialHold:true}});
+    expect((await request(app).post(`${base}/confirm`).set(customerAuth()).send({})).status).toBe(409);
+    await prisma.tradeOrder.update({where:{id:f.o.id},data:{financialHold:false}});
+    const [one,two]=await Promise.all([request(app).post(`${base}/confirm`).set(customerAuth()).send({}),request(app).post(`${base}/confirm`).set(customerAuth()).send({})]);
+    expect(one.status).toBe(200);expect(two.status).toBe(200);
+    expect(await prisma.deliveryEvent.count({where:{deliveryId:f.d.id,status:"BUYER_RECEIPT_CONFIRMED"}})).toBe(1);
+    expect(await prisma.deliveryNotification.count({where:{event:{deliveryId:f.d.id,status:"BUYER_RECEIPT_CONFIRMED"}}})).toBe(2);
+    expect((await request(app).get(base).set(customerAuth())).body.progress).toMatchObject({status:"Completed",canConfirm:false});
+    const list=(await request(app).get("/v1/orders").set(customerAuth())).body.items.find((item:any)=>item.id===f.o.id);expect(list.fulfillmentStatus).toBe("Completed");
+    expect((await prisma.tradeOrder.findUniqueOrThrow({where:{id:f.o.id}})).heldMinor).toBe(10000n);
+  });
+
+  it("lets the farmer prepare and report handoff for an existing staff-verified manual assignment",async()=>{
+    const f=await order(),a=await checkout(f.o.id);mockReceipt(a);await reconcilePayment(a.id);
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"MANUAL_REVIEW",providerShipmentId:null}});
+    const assigned=await request(app).post(`/v1/admin/delivery-orders/${f.o.id}/delivery/manual-dispatch`).set(staffAuth()).send({carrier:"Verified local carrier",trackingRef:randomUUID(),reason:"Verified courier assignment and pickup agreement"});
+    expect(assigned.status).toBe(200);
+    const farmerToken=(await createSession({subject:"CUSTOMER",principalId:seller,deviceId:randomUUID()})).accessToken,auth={Authorization:`Bearer ${farmerToken}`};
+    expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/ready`).set(auth).send({})).status).toBe(200);
+    expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/dispatch`).set(auth).send({})).status).toBe(200);
+    expect((await prisma.delivery.findUniqueOrThrow({where:{id:f.d.id}})).status).toBe("MANUAL_ASSIGNED");
+    expect((await request(app).get(`/v1/orders/${f.o.id}/delivery`).set(customerAuth())).body.progress.status).toBe("Dispatched");
+  });
+
 });

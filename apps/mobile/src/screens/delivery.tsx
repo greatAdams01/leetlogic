@@ -1,3 +1,6 @@
+import { FarmerOrder } from "../components/farmer-order";
+import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
+import { orderTabs, type OrderTab } from "../../../../packages/contracts/src/order-fulfillment";
 import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { checkoutAddress } from "../lib/checkout-address";
@@ -467,6 +470,7 @@ export function Delivery() {
     r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`, true, 30000),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [tab, setTab] = useState<OrderTab>("details"),
     [changePickup, setChangePickup] = useState(false),
     [pickupAddressId, setPickupAddressId] = useState("");
   const data = r.data,
@@ -488,6 +492,39 @@ export function Delivery() {
       setBusy(false);
     }
   };
+  const confirmReceipt = () =>
+    a.alert(
+      "Confirm receipt",
+      "Only confirm after receiving and inspecting all items. Report an issue if anything is wrong.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "I received it", onPress: () => void run("confirm") },
+      ],
+    );
+  const primary = data?.progress?.canConfirm
+    ? {
+        title: data.progress.method === "Pickup" ? "Confirm Pickup" : "Confirm Delivery Received",
+        run: confirmReceipt,
+      }
+    : data?.progress?.canDispatch
+      ? {
+          title: "Mark as Dispatched",
+          run: () =>
+            a.alert("Confirm dispatch", "Confirm only after handing all parcels to the courier.", [
+              { text: "Cancel", style: "cancel" },
+              { text: "Mark as Dispatched", onPress: () => void run("dispatch") },
+            ]),
+        }
+      : data?.progress?.canReady
+        ? {
+            title:
+              data.progress.method === "Pickup"
+                ? "Mark as Ready for Pickup"
+                : "Mark as Ready for Delivery",
+            run: () => void run("ready"),
+          }
+        : null;
+  if(data && !data.order.isBuyer)return <FarmerOrder data={data} busy={busy} error={error||r.error} onRefresh={r.reload} onReady={()=>void run("ready")} onDispatch={()=>a.alert("Has the rider collected everything?","Only confirm after handing every package to the rider.",[{text:"Cancel",style:"cancel"},{text:"Rider has collected it",onPress:()=>void run("dispatch")}])}/>;
   if (data?.order.isBuyer && data.order.status === "AWAITING_PAYMENT")
     return <BuyerCheckout data={data} reload={r.reload} />;
   return (
@@ -497,386 +534,521 @@ export function Delivery() {
       }
       back={a.back}
       loading={r.loading}
+      contentKey={`${a.route.id}:${tab}`}
+      subheader={
+        data && (
+          <View
+            style={{ flexDirection: "row", backgroundColor: colors.paper, paddingHorizontal: 16 }}
+          >
+            {orderTabs.map((t) => (
+              <Pressable
+                key={t.id}
+                accessibilityRole="tab"
+                accessibilityLabel={a.ui(t.label)}
+                accessibilityState={{ selected: tab === t.id }}
+                onPress={() => setTab(t.id)}
+                style={{
+                  flex: 1,
+                  minHeight: 50,
+                  justifyContent: "center",
+                  borderBottomWidth: 3,
+                  borderBottomColor: tab === t.id ? colors.green : "transparent",
+                }}
+              >
+                <Label
+                  style={{
+                    textAlign: "center",
+                    fontSize: 12,
+                    color: tab === t.id ? colors.green : "#66746b",
+                  }}
+                >
+                  {a.ui(t.label)}
+                </Label>
+              </Pressable>
+            ))}
+          </View>
+        )
+      }
+      footer={
+        primary ? (
+          <View style={{ gap: 8 }}>
+            <Button title={primary.title} disabled={busy} onPress={primary.run} />
+            {data?.order.isBuyer && (
+              <Button
+                title="Report an issue"
+                secondary
+                disabled={busy}
+                onPress={() => setTab("fulfillment")}
+              />
+            )}
+          </View>
+        ) : undefined
+      }
     >
       {r.error && <Notice text={r.error} error />}
       {data && (
         <>
-          {data.order.isBuyer && data.order.checkoutErrorCode === "ORDER_EXPIRED" && data.order.listingId && <Card>
-            <Notice text={a.error({ code: "ORDER_EXPIRED" })} />
-            <Button title="View produce" onPress={() => a.go("product", data.order.listingId!)} />
-          </Card>}
-          <Card>
-            <Text style={s.badge}>{a.status(data.order.status)}</Text>
-            <Heading>{data.order.title}</Heading>
-            <View style={s.between}>
-              <Label muted>{a.t("orders.produce")}</Label>
-              <Label>{money(data.order.totalMinor)}</Label>
-            </View>
-            <View style={s.between}>
-              <Label muted>{a.t("orders.delivery")}</Label>
-              <Label>
-                {d && (d.selectedQuoteId || d.paidMinor !== "0")
-                  ? money(d?.shippingMinor)
-                  : "Not quoted"}
-              </Label>
-            </View>
-            {data.order.totalWithDeliveryMinor && (
-              <View style={s.between}>
-                <Label style={{ fontFamily: "NotoBold" }}>Produce + delivery</Label>
-                <Label style={{ fontFamily: "NotoBold" }}>
-                  {money(data.order.totalWithDeliveryMinor)}
-                </Label>
-              </View>
-            )}
-            <Label muted style={s.small}>
-              Produce and shipping are accounted for separately.
-            </Label>
-          </Card>
-          {data.order.isBuyer && data.fulfillment?.state === "ACTIVE" && !data.fulfillment.collectionBuyerAt && d && ["PICKUP_PREPARING", "PICKUP_READY"].includes(d.status) && <Button title="Confirm pickup arrangement" disabled={busy} onPress={() => void run("collection-confirmation")} />}
-          {data.order.isBuyer && data.order.pickupContactAvailable === true && ["FUNDED", "DELIVERED", "COMPLETED"].includes(data.order.status) && !!data.order.suggestedPickup.phone && ["PICKUP_PREPARING", "PICKUP_READY"].includes(d?.status || "") && (
-            <Card>
-              <Heading>Pickup</Heading>
-              <Label>Payment received. Arrange collection with the farmer.</Label>
-              <Label>{data.order.suggestedPickup.phone}</Label>
-              <Button
-                title="Call farmer"
-                secondary
-                onPress={() =>
-                  void Linking.openURL(`tel:${data.order.suggestedPickup.phone}`).catch((e) =>
-                    setError(a.error(e)),
-                  )
-                }
-              />
-            </Card>
-          )}
-          {!data.order.isBuyer && d?.destination?.phone && (
-            <Card>
-              <Heading>Buyer contact</Heading>
-              <Label>{d.destination.name}</Label>
-              <Label>{d.destination.phone}</Label>
-              <Button
-                title="Call buyer"
-                secondary
-                onPress={() =>
-                  void Linking.openURL(`tel:${d.destination.phone}`).catch((e) =>
-                    setError(a.error(e)),
-                  )
-                }
-              />
-            </Card>
-          )}
-          {!data.order.isBuyer && d && ["PICKUP_PREPARING", "PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "BOOKED"].includes(d.status) &&
-            !d.events.some((event) => event.status === "READY_FOR_PICKUP") && (
-            <Button title="Produce ready for pickup" disabled={busy} onPress={() => void run("ready")} />
-          )}
-          {d?.courier && <Label>{d.courier}</Label>}
-          {d?.providerShipmentId && <Notice text="The courier receives your saved pickup contact and directions. Use shipment tracking for courier updates; contact support if pickup coordination fails." />}
-          <PaymentRecovery orderId={a.route.id!} />
-          {data.order.isBuyer && <OrderDisputes orderId={a.route.id!} />}
-          <Card>
-            <Heading>Pickup location</Heading>
-            <Label>
-              {data.order.suggestedPickup.address}, {data.order.suggestedPickup.state}
-            </Label>
-            {data.order.suggestedPickup.latitude != null &&
-              data.order.suggestedPickup.longitude != null && (
+          {data.order.isBuyer &&
+            data.order.checkoutErrorCode === "ORDER_EXPIRED" &&
+            data.order.listingId && (
+              <Card>
+                <Notice text={a.error({ code: "ORDER_EXPIRED" })} />
                 <Button
-                  title="View pickup on map"
-                  secondary
-                  onPress={() => {
-                    void Linking.openURL(
-                      `https://www.google.com/maps/search/?api=1&query=${data.order.suggestedPickup.latitude},${data.order.suggestedPickup.longitude}`,
-                    ).catch(() => setError(a.ui("The map could not be opened. Please try again.")));
-                  }}
+                  title="View produce"
+                  onPress={() => a.go("product", data.order.listingId!)}
                 />
-              )}
-            {!data.order.isBuyer &&
-              data.order.status === "AWAITING_PAYMENT" &&
-              (!d || d.paidMinor === "0") && (
-                <>
-                  <Button
-                    title="Use a different pickup address"
-                    secondary
-                    disabled={busy}
-                    onPress={() => setChangePickup(!changePickup)}
-                  />
-                  {changePickup && (
-                    <>
-                      <Select
-                        label="Pickup address"
-                        value={pickupAddressId}
-                        options={(a.user?.addresses || []).map((address) => ({
-                          value: address.id,
-                          label: `${address.id === a.user?.farmerProfile?.primaryAddressId ? a.ui("Farm location") : address.label} · ${address.line1}, ${address.city}`,
-                        }))}
-                        onChange={setPickupAddressId}
-                        disabled={busy}
-                      />
-                      <Button
-                        title="Save pickup address"
-                        loading={busy}
-                        disabled={busy || !pickupAddressId}
-                         onPress={async () => {
-                           if (running.current) return;
-                           running.current = true;
-                          setBusy(true);
-                          setError("");
-                          try {
-                            await api(`/orders/${a.route.id}/delivery/pickup`, {
-                              method: "POST",
-                              body: { addressId: pickupAddressId },
-                            });
-                            await r.reload();
-                            setChangePickup(false);
-                          } catch (e) {
-                            setError(a.error(e));
-                           } finally {
-                             running.current = false;
-                            setBusy(false);
-                          }
+              </Card>
+            )}
+          <Card>
+            <Text style={s.badge}>{data.progress ? a.ui(data.progress.status) : a.status(data.order.status)}</Text>
+            <Heading>{data.order.title}</Heading>
+            {data.progress && (
+              <>
+                <Label>
+                  {a.ui(data.progress.method)}
+                </Label>
+                <Label>{a.ui(data.progress.next)}</Label>
+                <View style={{ flexDirection: "row", gap: 4 }}>
+                  {data.progress.steps.map((step, index) => (
+                    <View key={step} style={{ flex: 1, gap: 4 }}>
+                      <View
+                        style={{
+                          height: 5,
+                          borderRadius: 3,
+                          backgroundColor: index <= data.progress!.stage ? colors.green : "#dce5df",
                         }}
                       />
-                      <Button
-                        title="Add a different pickup address"
-                        secondary
-                        disabled={busy}
-                        onPress={() => a.go("addresses", "pickup")}
-                      />
-                      <Label muted>
-                        Changing pickup clears delivery quotes. The buyer will need a new quote
-                        before payment.
-                      </Label>
-                    </>
-                  )}
-                </>
-              )}
+                      <Label style={{ fontSize: 10 }}>{a.ui(step)}</Label>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </Card>
-          {d?.package && (
+          {tab === "details" && (
             <Card>
-              <Heading>Package details</Heading>
-              <Label>{a.t("delivery.date")}: {d.package.pickupDate}</Label>
+              <Heading>Order Details</Heading>
               <Label>
-                {a.ui("Final parcel count")}: {d.package.packageCount || 1}
+                {a.ui("Quantity")}: {data.order.quantity}{" "}
+                {data.order.unitCode ? a.unit(data.order.unitCode) : ""}
               </Label>
-              <Label>
-                {a.ui("Total packed weight (kg)")}: {d.package.weightKg}
-              </Label>
-              <Label>
-                {a.ui("Package size: {length} × {width} × {height} cm", {
-                  length: d.package.length,
-                  width: d.package.width,
-                  height: d.package.height,
-                })}
-              </Label>
-              <Label>{a.status(d.package.handling)}</Label>
-              {!!d.package.notes && <Label>{d.package.notes}</Label>}
+              {data.order.description && <Label>{data.order.description}</Label>}
             </Card>
           )}
-          <OrderPayment
-            orderId={a.route.id!}
-            isBuyer={data.order.isBuyer}
-            topup={d?.status === "TOPUP_REQUIRED"}
-            onChanged={r.reload}
-            revision={`${d?.selectedQuoteId}:${d?.status}:${d?.shippingMinor}:${data.order.checkoutReady}`}
-            disabled={busy}
-          />
-          {d && (
-            <Card>
-              <View style={s.row}>
-                <Icon name="truck" />
-                <Text style={s.sectionTitle}>{a.t("delivery.title")}</Text>
-              </View>
-              <Text style={s.badge}>{a.status(d.status)}</Text>
-              {d.courier && <Label>{d.courier}</Label>}
-              {d.destination?.address && (
-                <Label muted>
-                  {d.destination.address}, {d.destination.state}
-                </Label>
-              )}
-              {d.parcels?.map((parcel) => (
-                <View key={parcel.id} style={{ gap: 8 }}>
+          {tab === "payment" && (
+            <>
+              <Card>
+                <View style={s.between}>
+                  <Label muted>{a.t("orders.produce")}</Label>
+                  <Label>{money(data.order.totalMinor)}</Label>
+                </View>
+                <View style={s.between}>
+                  <Label muted>{a.t("orders.delivery")}</Label>
                   <Label>
-                    {a.ui("Parcel {number}", { number: parcel.parcelIndex + 1 })}:{" "}
-                    {a.status(parcel.status)}
+                    {d && (d.selectedQuoteId || d.paidMinor !== "0")
+                      ? money(d?.shippingMinor)
+                      : "Not quoted"}
                   </Label>
-                  {parcel.trackingUrl && safeHttps(parcel.trackingUrl) && (
+                </View>
+                {data.order.totalWithDeliveryMinor && (
+                  <View style={s.between}>
+                    <Label style={{ fontFamily: "NotoBold" }}>Produce + delivery</Label>
+                    <Label style={{ fontFamily: "NotoBold" }}>
+                      {money(data.order.totalWithDeliveryMinor)}
+                    </Label>
+                  </View>
+                )}
+                <Label muted style={s.small}>
+                  Produce and shipping are accounted for separately.
+                </Label>
+              </Card>
+              <PaymentRecovery orderId={a.route.id!} />
+            </>
+          )}
+          {tab === "fulfillment" && (
+            <>
+              {data.order.isBuyer &&
+                data.fulfillment?.state === "ACTIVE" &&
+                !data.fulfillment.collectionBuyerAt &&
+                d &&
+                ["PICKUP_PREPARING", "PICKUP_READY"].includes(d.status) && (
+                  <Button
+                    title="Confirm pickup arrangement"
+                    disabled={busy}
+                    onPress={() => void run("collection-confirmation")}
+                  />
+                )}
+              {data.order.isBuyer &&
+                data.order.pickupContactAvailable === true &&
+                ["FUNDED", "DELIVERED", "COMPLETED"].includes(data.order.status) &&
+                !!data.order.suggestedPickup.phone &&
+                ["PICKUP_PREPARING", "PICKUP_READY"].includes(d?.status || "") && (
+                  <Card>
+                    <Heading>Pickup</Heading>
+                    <Label>Payment received. Arrange collection with the farmer.</Label>
+                    <Label>{data.order.suggestedPickup.phone}</Label>
+                    <Button
+                      title="Call farmer"
+                      secondary
+                      onPress={() =>
+                        void Linking.openURL(`tel:${data.order.suggestedPickup.phone}`).catch((e) =>
+                          setError(a.error(e)),
+                        )
+                      }
+                    />
+                  </Card>
+                )}
+              {!data.order.isBuyer && d?.destination?.phone && (
+                <Card>
+                  <Heading>Buyer contact</Heading>
+                  <Label>{d.destination.name}</Label>
+                  <Label>{d.destination.phone}</Label>
+                  <Button
+                    title="Call buyer"
+                    secondary
+                    onPress={() =>
+                      void Linking.openURL(`tel:${d.destination.phone}`).catch((e) =>
+                        setError(a.error(e)),
+                      )
+                    }
+                  />
+                </Card>
+              )}
+              {d?.courier && <Label>{d.courier}</Label>}
+              {d?.providerShipmentId && (
+                <Notice text="The courier receives your saved pickup contact and directions. Use shipment tracking for courier updates; contact support if pickup coordination fails." />
+              )}
+              {data.order.isBuyer && <OrderDisputes orderId={a.route.id!} />}
+              <Card>
+                <Heading>Pickup location</Heading>
+                <Label>
+                  {data.order.suggestedPickup.address}, {data.order.suggestedPickup.state}
+                </Label>
+                {data.order.suggestedPickup.latitude != null &&
+                  data.order.suggestedPickup.longitude != null && (
+                    <Button
+                      title="View pickup on map"
+                      secondary
+                      onPress={() => {
+                        void Linking.openURL(
+                          `https://www.google.com/maps/search/?api=1&query=${data.order.suggestedPickup.latitude},${data.order.suggestedPickup.longitude}`,
+                        ).catch(() =>
+                          setError(a.ui("The map could not be opened. Please try again.")),
+                        );
+                      }}
+                    />
+                  )}
+                {!data.order.isBuyer &&
+                  data.order.status === "AWAITING_PAYMENT" &&
+                  (!d || d.paidMinor === "0") && (
+                    <>
+                      <Button
+                        title="Use a different pickup address"
+                        secondary
+                        disabled={busy}
+                        onPress={() => setChangePickup(!changePickup)}
+                      />
+                      {changePickup && (
+                        <>
+                          <Select
+                            label="Pickup address"
+                            value={pickupAddressId}
+                            options={(a.user?.addresses || []).map((address) => ({
+                              value: address.id,
+                              label: `${address.id === a.user?.farmerProfile?.primaryAddressId ? a.ui("Farm location") : address.label} · ${address.line1}, ${address.city}`,
+                            }))}
+                            onChange={setPickupAddressId}
+                            disabled={busy}
+                          />
+                          <Button
+                            title="Save pickup address"
+                            loading={busy}
+                            disabled={busy || !pickupAddressId}
+                            onPress={async () => {
+                              if (running.current) return;
+                              running.current = true;
+                              setBusy(true);
+                              setError("");
+                              try {
+                                await api(`/orders/${a.route.id}/delivery/pickup`, {
+                                  method: "POST",
+                                  body: { addressId: pickupAddressId },
+                                });
+                                await r.reload();
+                                setChangePickup(false);
+                              } catch (e) {
+                                setError(a.error(e));
+                              } finally {
+                                running.current = false;
+                                setBusy(false);
+                              }
+                            }}
+                          />
+                          <Button
+                            title="Add a different pickup address"
+                            secondary
+                            disabled={busy}
+                            onPress={() => a.go("addresses", "pickup")}
+                          />
+                          <Label muted>
+                            Changing pickup clears delivery quotes. The buyer will need a new quote
+                            before payment.
+                          </Label>
+                        </>
+                      )}
+                    </>
+                  )}
+              </Card>
+            </>
+          )}
+          {tab === "details" && (
+            <>
+              {d?.package && (
+                <Card>
+                  <Heading>Package details</Heading>
+                  <Label>
+                    {a.t("delivery.date")}: {d.package.pickupDate}
+                  </Label>
+                  <Label>
+                    {a.ui("Final parcel count")}: {d.package.packageCount || 1}
+                  </Label>
+                  <Label>
+                    {a.ui("Total packed weight (kg)")}: {d.package.weightKg}
+                  </Label>
+                  <Label>
+                    {a.ui("Package size: {length} × {width} × {height} cm", {
+                      length: d.package.length,
+                      width: d.package.width,
+                      height: d.package.height,
+                    })}
+                  </Label>
+                  <Label>{a.status(d.package.handling)}</Label>
+                  {!!d.package.notes && <Label>{d.package.notes}</Label>}
+                </Card>
+              )}
+            </>
+          )}
+          {tab === "payment" && (
+            <>
+              <OrderPayment
+                orderId={a.route.id!}
+                isBuyer={data.order.isBuyer}
+                topup={d?.status === "TOPUP_REQUIRED"}
+                onChanged={r.reload}
+                revision={`${d?.selectedQuoteId}:${d?.status}:${d?.shippingMinor}:${data.order.checkoutReady}`}
+                disabled={busy}
+              />
+            </>
+          )}
+          {tab === "fulfillment" && (
+            <>
+              {d && (
+                <Card>
+                  <View style={s.row}>
+                    <Icon name="truck" />
+                    <Text style={s.sectionTitle}>{a.t("delivery.title")}</Text>
+                  </View>
+                  <Text style={s.badge}>{a.status(d.status)}</Text>
+                  {d.courier && <Label>{d.courier}</Label>}
+                  {d.destination?.address && (
+                    <Label muted>
+                      {d.destination.address}, {d.destination.state}
+                    </Label>
+                  )}
+                  {d.parcels?.map((parcel) => (
+                    <View key={parcel.id} style={{ gap: 8 }}>
+                      <Label>
+                        {a.ui("Parcel {number}", { number: parcel.parcelIndex + 1 })}:{" "}
+                        {a.status(parcel.status)}
+                      </Label>
+                      {parcel.trackingUrl && safeHttps(parcel.trackingUrl) && (
+                        <Button
+                          title="Track with courier"
+                          secondary
+                          onPress={() => void Linking.openURL(parcel.trackingUrl!)}
+                        />
+                      )}
+                    </View>
+                  ))}
+                  {d.trackingUrl && safeHttps(d.trackingUrl) && (
                     <Button
                       title="Track with courier"
                       secondary
-                      onPress={() => void Linking.openURL(parcel.trackingUrl!)}
+                      onPress={() => void Linking.openURL(d.trackingUrl!)}
                     />
                   )}
-                </View>
-              ))}
-              {d.trackingUrl && safeHttps(d.trackingUrl) && (
-                <Button
-                  title="Track with courier"
-                  secondary
-                  onPress={() => void Linking.openURL(d.trackingUrl!)}
-                />
+                </Card>
               )}
-            </Card>
-          )}
-          {data.order.isBuyer &&
-            data.order.status === "AWAITING_PAYMENT" &&
-            (!d ||
-              ["QUOTE_REQUIRED", "QUOTED", "PAYMENT_PENDING", "MANUAL_REVIEW"].includes(
-                d.status,
-              )) && (
-              <Button
-                title={a.t("delivery.quotes")}
-                onPress={() => a.go("quotes", data.order.id)}
-              />
-            )}
-          {d?.quotes.map((q) => (
-            <Card
-              key={q.id}
-              style={{ borderWidth: d.selectedQuoteId === q.id ? 2 : 0, borderColor: colors.green }}
-            >
-              <View style={s.between}>
-                <Label style={{ fontFamily: "NotoBold" }}>{q.courier}</Label>
-                <Label>{money(q.amountMinor)}</Label>
-              </View>
-              {q.eta && <Label muted>{q.eta}</Label>}
-              <Label muted style={s.small}>
-                {a.ui("Valid until {date}", { date: a.date(q.expiresAt) })}
-              </Label>
-              {data.order.isBuyer && data.order.status === "AWAITING_PAYMENT" && (
-                <Button
-                  title={d.selectedQuoteId === q.id ? "Selected" : a.t("delivery.select")}
-                  disabled={
-                    busy || data.order.checkoutActive || !q.available || new Date(q.expiresAt) <= new Date() || d.selectedQuoteId === q.id
-                  }
-                  secondary
-                   onPress={async () => {
-                     if (running.current || data.order.checkoutActive || !q.available || !(new Date(q.expiresAt).getTime() > Date.now())) return;
-                     running.current = true;
-                    setBusy(true);
-                    try {
-                      await api(`/orders/${data.order.id}/delivery/select`, {
-                        method: "POST",
-                        body: { quoteId: q.id },
-                      });
-                      await r.reload();
-                    } catch (e) {
-                      setError(a.error(e));
-                     } finally {
-                       running.current = false;
-                      setBusy(false);
-                    }
-                  }}
-                />
-              )}
-            </Card>
-          ))}
-          {data.order.isBuyer &&
-            d?.selectedQuoteId &&
-            ["AWAITING_PAYMENT", "FUNDED"].includes(data.order.status) &&
-             !d.providerShipmentId && !d.bookingStartedAt &&
-             d.quotes.some((q) => q.id === d.selectedQuoteId && (!q.available || new Date(q.expiresAt) <= new Date())) && (
-              <>
-                <Notice text={a.t("delivery.expired")} />
-                <Button
-                  title="Revalidate selected quote"
-                   disabled={busy || data.order.checkoutActive}
-                  secondary
-                  onPress={() => void run("refresh-quote")}
-                />
-              </>
-            )}
-          {d?.status === "MANUAL_REVIEW" && <Notice text={a.t("delivery.manual")} />}
-          <Notice text={a.t("delivery.payment")} />
-          {data.order.isBuyer &&
-            data.order.status === "FUNDED" &&
-             ["PAID", "BOOKING_BLOCKED"].includes(d?.status || "") && !d?.bookingStartedAt && (
-              <Button
-                title={a.t("delivery.book")}
-                disabled={busy}
-                onPress={() => void run("book")}
-              />
-            )}
-          {d && (
-            <Card>
-              <Text style={s.sectionTitle}>Shipment timeline</Text>
-              <Label muted style={s.small}>
-                Carrier events are checked by the server. Delivery does not automatically release
-                escrow.
-              </Label>
-              {d.events.map((e) => (
-                <View key={e.id} style={[s.row, { alignItems: "flex-start" }]}>
-                  <View
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 6,
-                      backgroundColor: colors.green,
-                      marginTop: 6,
-                    }}
+              {data.order.isBuyer &&
+                data.order.status === "AWAITING_PAYMENT" &&
+                (!d ||
+                  ["QUOTE_REQUIRED", "QUOTED", "PAYMENT_PENDING", "MANUAL_REVIEW"].includes(
+                    d.status,
+                  )) && (
+                  <Button
+                    title={a.t("delivery.quotes")}
+                    onPress={() => a.go("quotes", data.order.id)}
                   />
-                  <View style={{ flex: 1 }}>
-                    <Label style={{ fontFamily: "NotoBold" }}>{a.status(e.status)}</Label>
-                    <Label muted style={s.small}>
-                      {a.date(e.createdAt)}
-                    </Label>
+                )}
+              {d?.quotes.map((q) => (
+                <Card
+                  key={q.id}
+                  style={{
+                    borderWidth: d.selectedQuoteId === q.id ? 2 : 0,
+                    borderColor: colors.green,
+                  }}
+                >
+                  <View style={s.between}>
+                    <Label style={{ fontFamily: "NotoBold" }}>{q.courier}</Label>
+                    <Label>{money(q.amountMinor)}</Label>
                   </View>
-                </View>
-              ))}
-            </Card>
-          )}
-          {["DELIVERED", "PICKUP_READY"].includes(d?.status || "") &&
-            data.order.isBuyer &&
-            data.order.status === "FUNDED" && (
-              <Button
-                title={
-                  d?.status === "PICKUP_READY" ? "Confirm pickup received" : a.t("delivery.confirm")
-                }
-                disabled={busy}
-                onPress={() =>
-                  a.alert(
-                    "Confirm receipt",
-                    "Only confirm after inspecting and receiving your produce. Escrow release remains subject to dispute checks.",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      { text: "I received it", onPress: () => void run("confirm") },
-                    ],
-                  )
-                }
-              />
-            )}
-          {data.order.isBuyer && data.order.status === "AWAITING_PAYMENT" && (
-            <Button
-              title="Cancel unpaid order"
-              secondary
-              disabled={busy}
-              onPress={() =>
-                a.alert(
-                  "Cancel this order?",
-                  "The reserved produce will become available again. No payment or refund is processed.",
-                  [
-                    { text: "Keep order", style: "cancel" },
-                    {
-                      text: "Cancel order",
-                       onPress: async () => {
-                         if (running.current) return;
-                         running.current = true;
+                  {q.eta && <Label muted>{q.eta}</Label>}
+                  <Label muted style={s.small}>
+                    {a.ui("Valid until {date}", { date: a.date(q.expiresAt) })}
+                  </Label>
+                  {data.order.isBuyer && data.order.status === "AWAITING_PAYMENT" && (
+                    <Button
+                      title={d.selectedQuoteId === q.id ? "Selected" : a.t("delivery.select")}
+                      disabled={
+                        busy ||
+                        data.order.checkoutActive ||
+                        !q.available ||
+                        new Date(q.expiresAt) <= new Date() ||
+                        d.selectedQuoteId === q.id
+                      }
+                      secondary
+                      onPress={async () => {
+                        if (
+                          running.current ||
+                          data.order.checkoutActive ||
+                          !q.available ||
+                          !(new Date(q.expiresAt).getTime() > Date.now())
+                        )
+                          return;
+                        running.current = true;
                         setBusy(true);
                         try {
-                          await api(`/marketplace/orders/${data.order.id}/cancel`, {
+                          await api(`/orders/${data.order.id}/delivery/select`, {
                             method: "POST",
+                            body: { quoteId: q.id },
                           });
                           await r.reload();
                         } catch (e) {
                           setError(a.error(e));
-                         } finally {
-                           running.current = false;
+                        } finally {
+                          running.current = false;
                           setBusy(false);
                         }
-                      },
-                    },
-                  ],
-                )
-              }
-            />
+                      }}
+                    />
+                  )}
+                </Card>
+              ))}
+              {data.order.isBuyer &&
+                d?.selectedQuoteId &&
+                ["AWAITING_PAYMENT", "FUNDED"].includes(data.order.status) &&
+                !d.providerShipmentId &&
+                !d.bookingStartedAt &&
+                d.quotes.some(
+                  (q) =>
+                    q.id === d.selectedQuoteId &&
+                    (!q.available || new Date(q.expiresAt) <= new Date()),
+                ) && (
+                  <>
+                    <Notice text={a.t("delivery.expired")} />
+                    <Button
+                      title="Revalidate selected quote"
+                      disabled={busy || data.order.checkoutActive}
+                      secondary
+                      onPress={() => void run("refresh-quote")}
+                    />
+                  </>
+                )}
+              {d?.status === "MANUAL_REVIEW" && <Notice text={a.t("delivery.manual")} />}
+              <Notice text={a.t("delivery.payment")} />
+              {data.order.isBuyer &&
+                data.order.status === "FUNDED" &&
+                ["PAID", "BOOKING_BLOCKED"].includes(d?.status || "") &&
+                !d?.bookingStartedAt && (
+                  <Button
+                    title={a.t("delivery.book")}
+                    disabled={busy}
+                    onPress={() => void run("book")}
+                  />
+                )}
+            </>
+          )}
+          {tab === "activity" && (
+            <>
+              {d && (
+                <Card>
+                  <Text style={s.sectionTitle}>Shipment timeline</Text>
+                  <Label muted style={s.small}>
+                    Courier tracking and buyer receipt are recorded separately.
+                  </Label>
+                  {d.events.map((e) => (
+                    <View key={e.id} style={[s.row, { alignItems: "flex-start" }]}>
+                      <View
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 6,
+                          backgroundColor: colors.green,
+                          marginTop: 6,
+                        }}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Label style={{ fontFamily: "NotoBold" }}>
+                          {a.ui(orderUpdateCopy(`status.${e.status}`, data.order.isBuyer).title)}
+                        </Label>
+                        <Label muted style={s.small}>
+                          {a.date(e.createdAt)}
+                        </Label>
+                      </View>
+                    </View>
+                  ))}
+                </Card>
+              )}
+            </>
+          )}
+          {tab === "payment" && (
+            <>
+              {data.order.isBuyer && data.order.status === "AWAITING_PAYMENT" && (
+                <Button
+                  title="Cancel unpaid order"
+                  secondary
+                  disabled={busy}
+                  onPress={() =>
+                    a.alert(
+                      "Cancel this order?",
+                      "The reserved produce will become available again. No payment or refund is processed.",
+                      [
+                        { text: "Keep order", style: "cancel" },
+                        {
+                          text: "Cancel order",
+                          onPress: async () => {
+                            if (running.current) return;
+                            running.current = true;
+                            setBusy(true);
+                            try {
+                              await api(`/marketplace/orders/${data.order.id}/cancel`, {
+                                method: "POST",
+                              });
+                              await r.reload();
+                            } catch (e) {
+                              setError(a.error(e));
+                            } finally {
+                              running.current = false;
+                              setBusy(false);
+                            }
+                          },
+                        },
+                      ],
+                    )
+                  }
+                />
+              )}
+            </>
           )}
           <Button
             title={a.t("delivery.refresh")}
@@ -992,6 +1164,7 @@ const checkout = StyleSheet.create({
   },
 });
 const empty: Contact = { name: "", phone: "", email: "", address: "", state: "", country: "NG" };
+
 export function Quotes() {
   const a = useApp(),
     r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`),

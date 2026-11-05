@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   api: vi.fn(),
+  alert: vi.fn(),
   back: vi.fn(),
   returnTo: vi.fn(),
   go: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock("../localization", () => ({ LocalizedText: "Text" }));
 vi.mock("../components/ui", async () => {
   const { createElement } = await import("react");
   return {
-    Page: ({ children, footer, ...props }: any) => createElement("Page", props, children, footer),
+    Page: ({ children, footer, subheader, ...props }: any) => createElement("Page", props, subheader, children, footer),
     Heading: "Heading",
     Label: "Label",
     Field: "Field",
@@ -42,6 +43,7 @@ vi.mock("../state", () => ({
     route: { id: "order", query: h.query },
     user: h.user,
     back: h.back,
+    alert: h.alert,
     returnTo: h.returnTo,
     go: h.go,
     status: (s: string) => s,
@@ -409,6 +411,7 @@ it.each(["PICKUP_PREPARING", "PICKUP_READY"])("allows the farmer call action aft
   h.data.order.suggestedPickup.phone="+2348098765432";
   h.data.delivery={status,events:[],quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
   await act(async()=>{tree=create(<Delivery/>);});
+  await act(async()=>tree.root.findAllByType("Pressable" as any).find(n=>n.props.accessibilityLabel==="Fulfillment")!.props.onPress());
   expect(tree.root.findAllByType("Button" as any).some(n=>n.props.title==="Call farmer")).toBe(true);
 });
 
@@ -417,4 +420,28 @@ it("offers a safe route back to the produce when an unpaid reservation expired",
   await act(async()=>{tree=create(<Delivery/>);});
   const action=tree.root.findAllByType("Button" as any).find(n=>n.props.title==="View produce");
   expect(action).toBeDefined();action!.props.onPress();expect(h.go).toHaveBeenCalledWith("product","produce");
+});
+
+it("keeps farmer readiness visible with optional money details and no tabs",async()=>{
+  Object.assign(h.data.order,{id:"order",isBuyer:false,status:"FUNDED",reference:"ORDER",title:"Beans",totalMinor:"10000"});
+  h.data.delivery={status:"BOOKED",events:[],quotes:[],shippingMinor:"1000",paidMinor:"1000",selectedQuoteId:"q"};
+  h.data.progress={method:"Delivery",status:"Preparing for Pickup",next:"Prepare the produce, then mark it ready.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:1,canReady:true,canDispatch:false,canConfirm:false,confirmed:false};
+  await act(async()=>{tree=create(<Delivery/>);});
+  expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(0);
+  expect(tree.root.findAllByType("Pressable" as any).filter(n=>n.props.accessibilityRole==="tab")).toHaveLength(0);
+  await act(async()=>tree.root.findAllByType("Pressable" as any).find(n=>n.props.accessibilityLabel==="Money")!.props.onPress());
+  expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(1);
+  const press=tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Order is ready")!.props.onPress;
+  await act(async()=>{await Promise.all([press(),press()]);});
+  expect(h.api.mock.calls.filter(([path])=>path==="/orders/order/delivery/ready")).toHaveLength(1);
+});
+it("asks the buyer to inspect the produce before confirming pickup",async()=>{
+  Object.assign(h.data.order,{id:"order",isBuyer:true,status:"FUNDED",reference:"ORDER",title:"Beans",totalMinor:"10000"});
+  h.data.delivery={status:"PICKUP_READY",events:[],quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
+  h.data.progress={method:"Pickup",status:"Ready for Pickup",next:"Confirm only after collecting and inspecting your produce.",steps:["Payment confirmed","Preparing","Ready for Pickup","Collected","Completed"],stage:2,canReady:false,canDispatch:false,canConfirm:true,confirmed:false};
+  await act(async()=>{tree=create(<Delivery/>);});
+  await act(async()=>tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Confirm Pickup")!.props.onPress());
+  expect(h.api).not.toHaveBeenCalled();
+  await act(async()=>{await h.alert.mock.calls[0]![2].find((b:any)=>b.text==="I received it").onPress();});
+  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/confirm",{method:"POST",body:{}});
 });

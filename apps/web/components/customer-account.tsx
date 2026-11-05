@@ -265,7 +265,7 @@ export function CustomerAccount() {
                   {order.reference} — {order.listing.title}
                 </Link>
                 <p>
-                  {order.delivery
+                  {order.fulfillmentStatus ? ui(locale,order.fulfillmentStatus) : order.delivery
                     ? t(`status.${order.delivery.status}` as any) || order.delivery.status
                     : order.status}
                 </p>

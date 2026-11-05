@@ -78,3 +78,5 @@ describe("seller dashboard and navigation", () => {
       }
   });
 });
+
+it("does not keep dispatched orders in the farmer packing queue",()=>{expect(sellerSummary([], [{...order("FUNDED","BOOKED"),fulfillmentStatus:"Dispatched"}]).toPack).toHaveLength(0);});

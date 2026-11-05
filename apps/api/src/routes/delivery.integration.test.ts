@@ -637,7 +637,7 @@ suite("delivery and language database workflows", () => {
           .set({ Authorization: `Bearer ${seller}` })
           .send({})
       ).status,
-    ).toBe(409);
+    ).toBe(403);
     expect(
       (await request(app).post(`/v1/orders/${orderId}/delivery/confirm`).set(customer()).send({}))
         .status,

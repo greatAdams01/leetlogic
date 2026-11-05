@@ -9,7 +9,7 @@ export function sellerSummary(listings: Listing[], orders: Order[]) {
   // Unpaid orders must never be presented as orders ready to pack.
   const toPack = orders.filter(
     (order) =>
-      order.status === "FUNDED" &&
+      order.status === "FUNDED" && !order.financialHold && !["Dispatched","In Transit","Picked Up","Completed"].includes(order.fulfillmentStatus || "") &&
       ![
         "PICKED_UP",
         "IN_TRANSIT",

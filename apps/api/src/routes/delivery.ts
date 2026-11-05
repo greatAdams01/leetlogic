@@ -1,3 +1,4 @@
+import { orderFulfillment } from "@leetlogic/contracts";
 import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
 import { recoveryEnabled, financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
@@ -165,16 +166,18 @@ customerDeliveryRouter.get("/", async (req, res) => {
       id: true,
       reference: true,
       status: true,
+      deliveryConfirmedAt: true,
+      financialHold: true,
       totalMinor: true,
       reservationExpiresAt: true,
       quantity: true,
       listing: { select: { title: true, unitCode: true, salePackaging: true } },
-      delivery: { select: { status: true, shippingMinor: true } },
+      delivery: { select: { status: true, shippingMinor: true, events: {where:{status:{in:["READY_FOR_PICKUP","FARMER_DISPATCHED"]}},select:{status:true}} } },
     },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
-  res.json(serialize({ items }));
+  res.json(serialize({items:items.map(item=>({...item,delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
 });
 // Buyer collection uses no courier quote or shipping charge.
 customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
@@ -301,6 +304,78 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
   });
   res.json({ saved: true });
 });
+async function fulfillmentView(
+  order: any,
+  buyer: boolean,
+  farmer: boolean,
+  tx: Prisma.TransactionClient = prisma,
+) {
+  const d = order.delivery;
+  const parcels = d ? await tx.deliveryParcel.findMany({ where: { deliveryId: d.id } }) : [];
+  const events = d
+    ? await tx.deliveryEvent.findMany({ where: { deliveryId: d.id }, select: { status: true } })
+    : [];
+  const count = (d?.package as any)?.packageCount || 1;
+  const manual = d?.status === "MANUAL_ASSIGNED" ? await tx.shipment.findUnique({where:{orderId:order.id}}) : null;
+  const booked = !!(manual && manual.carrier === d?.courier && manual.trackingRef && manual.status === "ASSIGNED") ||
+    !!d?.providerShipmentId &&
+    (count === 1 || (parcels.length === count && new Set(parcels.map(p=>p.parcelIndex)).size===count && parcels.every(p => !!p.providerShipmentId && p.quoteId===d.selectedQuoteId && p.parcelIndex>=0 && p.parcelIndex<count)));
+  const disputed =
+    order.financialHold ||
+    (await tx.supportTicket.count({
+      where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } },
+    }));
+  const blocked =
+    !!disputed ||
+    (await hasDeliverySettlement(order.id, tx)) ||
+    ["CANCELLED", "RETURNING", "RETURNED", "BOOKING_UNCERTAIN"].includes(d?.status || "");
+  return orderFulfillment({
+    review: !!disputed,
+    orderStatus: order.status,
+    paid: ["FUNDED", "DELIVERED", "COMPLETED"].includes(order.status),
+    confirmed: !!order.deliveryConfirmedAt,
+    blocked: !!blocked,
+    buyer,
+    farmer,
+    status: d?.status || "",
+    ready: events.some((e) => e.status === "READY_FOR_PICKUP"),
+    dispatched: events.some((e) => e.status === "FARMER_DISPATCHED"),
+    booked,
+    receiptReady: deliveryReceiptReady(d ? { ...d, parcels } : null),
+    collection:
+      !!d?.status?.startsWith("PICKUP_") ||
+      (d?.status === "DELIVERED" && !d.selectedQuoteId && !d.providerShipmentId && !d.courier),
+  });
+}
+customerDeliveryRouter.post("/:id/delivery/dispatch", async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.farmerProfile.userId !== req.auth!.sub)
+    throw new AppError(403, "FARMER_REQUIRED", "Only the farmer can confirm dispatch.");
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
+    const current = await tx.tradeOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { delivery: true },
+    });
+    const d = current.delivery,
+      key = `${d?.id}:farmer-dispatched`;
+    if (d && (await tx.deliveryEvent.findUnique({ where: { dedupeKey: key } }))) return;
+    await assertFulfillmentOpen(tx, order.id);
+    if (!(await fulfillmentView(current, false, true, tx)).canDispatch)
+      throw new AppError(
+        409,
+        "DELIVERY_NOT_READY",
+        "Mark the order ready and wait for a confirmed courier booking before dispatch.",
+      );
+    await deliveryEvent(tx, d!.id, "FARMER_DISPATCHED", "farmer", key, req.auth!.sub);
+    await audit(
+      req,
+      { action: "delivery.farmer.dispatched", entityType: "order", entityId: order.id },
+      tx,
+    );
+  });
+  res.json({ dispatched: true });
+});
 // Readiness is an order-scoped milestone, separate from provider shipment status.
 customerDeliveryRouter.post("/:id/delivery/ready", async (req, res) => {
   const order = await orderAccess(req);
@@ -313,8 +388,8 @@ customerDeliveryRouter.post("/:id/delivery/ready", async (req, res) => {
     const d = current.delivery;
     const key = `${d?.id}:ready`;
     if (d && await tx.deliveryEvent.findUnique({ where: { dedupeKey: key } })) return;
-    if (current.status !== "FUNDED" || current.financialHold || !d ||
-      !["PICKUP_PREPARING", "PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "BOOKED"].includes(d.status))
+    if (!(await fulfillmentView(current,false,true,tx)).canReady || !d ||
+      !["PICKUP_PREPARING", "PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "BOOKED", "MANUAL_ASSIGNED"].includes(d.status))
       throw new AppError(409, "DELIVERY_NOT_READY", "This order cannot be marked ready for pickup.");
     if (d.status === "PICKUP_PREPARING")
       await tx.delivery.update({ where: { id: d.id }, data: { status: "PICKUP_READY" } });
@@ -353,10 +428,12 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     res.json(
       serialize({
         fulfillment: await readFulfillment(order.id),
+        progress: await fulfillmentView(order,order.buyerId===req.auth!.sub,req.auth!.subject!=="admin"&&order.farmerProfile.userId===req.auth!.sub),
         order: {
           id: order.id,
           reference: order.reference,
           status: order.status,
+          deliveryConfirmedAt: order.deliveryConfirmedAt,
           title: order.listing.title,
           description: order.listing.description,
           listingId: order.listing.id,
@@ -968,19 +1045,18 @@ staffDeliveryRouter.post(
 );
 customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
   const order = await orderAccess(req);
-  if (
-    order.buyerId !== req.auth!.sub ||
-    !["DELIVERED", "PICKUP_READY"].includes(order.delivery?.status || "")
-  )
-    throw new AppError(409, "DELIVERY_NOT_READY", "Only the buyer can confirm a delivered order");
+  if(order.buyerId!==req.auth!.sub)throw new AppError(403,"BUYER_REQUIRED","Only the buyer can confirm receipt.");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
-    await unlockedCheckout(tx, order.id);
-    await assertNoDeliverySettlement(tx, order.id);
     const current = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: order.id },
       include: { delivery: { include: { parcels: true } } },
     });
+    if(current.deliveryConfirmedAt)return;
+    await unlockedCheckout(tx,order.id);
+    await assertFulfillmentOpen(tx,order.id);
+    await assertNoDeliverySettlement(tx,order.id);
+    if(current.financialHold || await tx.supportTicket.count({where:{orderId:order.id,kind:"DISPUTE",status:{not:"RESOLVED"}}}))throw new AppError(409,"ORDER_UNDER_REVIEW","Resolve the order dispute before confirming receipt.");
     if (!deliveryReceiptReady(current.delivery))
       throw new AppError(409, "DELIVERY_NOT_READY", "Order is not ready for confirmation");
     if (current.status !== "FUNDED" && current.status !== "DELIVERED")
@@ -994,6 +1070,7 @@ customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
         where: { id: current.delivery.id },
         data: { status: "DELIVERED" },
       });
+    await deliveryEvent(tx,current.delivery!.id,"BUYER_RECEIPT_CONFIRMED","buyer",`${current.delivery!.id}:receipt`,req.auth!.sub);
     await audit(
       req,
       { action: "delivery.recipient.confirmed", entityType: "order", entityId: order.id },

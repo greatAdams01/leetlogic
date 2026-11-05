@@ -239,6 +239,7 @@ export function Page({
   footerSafeArea = true,
   header,
   contentKey,
+  subheader,
   contentStyle,
   scrollRef,
   green = false,
@@ -253,6 +254,7 @@ export function Page({
   footerSafeArea?: boolean;
   header?: React.ReactNode;
   contentKey?: string;
+  subheader?: React.ReactNode;
   contentStyle?: ViewStyle;
   scrollRef?: React.Ref<React.ComponentRef<typeof ScrollView>>;
   green?: boolean;
@@ -300,6 +302,7 @@ export function Page({
             )}
           </View>
         )}
+        {subheader}
         <ScrollView
           key={contentKey}
           ref={scrollRef}
