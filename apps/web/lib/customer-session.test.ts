@@ -99,3 +99,13 @@ it("coalesces parallel profile reads so the same refresh token is rotated only o
     expect(await response.json()).toEqual({ user: { id: "existing-account" } });
   }
 });
+
+it("proxies only the order-scoped unpaid cancellation marketplace route", async () => {
+  const path = "marketplace/orders/11111111-1111-4111-8111-111111111111/cancel";
+  fetcher.mockResolvedValueOnce(Response.json({ item: { status: "CANCELLED" } }));
+  const result = await handle(req(path, "ll_customer_access=valid", "POST"), context(path));
+  expect(result.status).toBe(200);
+  expect(String(fetcher.mock.calls[0]![0])).toContain(`/v1/${path}`);
+  expect((await handle(req("marketplace/listings"), context("marketplace/listings"))).status).toBe(404);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

@@ -1,3 +1,6 @@
+import { storeMedia, readMedia, deleteMedia } from "../services/storage/private-media.js";
+import { imageType } from "./produce-photos.js";
+import { mode } from "../services/payments.js";
 import { orderFulfillment } from "@leetlogic/contracts";
 import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
@@ -19,7 +22,7 @@ import {
   storedDeliveryInput,
 } from "../services/delivery-quote.js";
 import { lockDeliveryRequestAddresses } from "../services/addresses.js";
-import { Router, type Request } from "express";
+import { Router, raw, type Request } from "express";
 import { z } from "zod";
 import { prisma, type Prisma } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
@@ -168,6 +171,8 @@ customerDeliveryRouter.get("/", async (req, res) => {
       status: true,
       deliveryConfirmedAt: true,
       financialHold: true,
+      farmerDecision: true,
+      handedOverAt: true,
       totalMinor: true,
       reservationExpiresAt: true,
       quantity: true,
@@ -177,7 +182,7 @@ customerDeliveryRouter.get("/", async (req, res) => {
     orderBy: { createdAt: "desc" },
     take: 50,
   });
-  res.json(serialize({items:items.map(item=>({...item,delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
+  res.json(serialize({items:items.map(item=>({...item,delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({farmerDecision:item.farmerDecision,handedOver:!!item.handedOverAt,review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
 });
 // Buyer collection uses no courier quote or shipping charge.
 customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
@@ -330,6 +335,8 @@ async function fulfillmentView(
     (await hasDeliverySettlement(order.id, tx)) ||
     ["CANCELLED", "RETURNING", "RETURNED", "BOOKING_UNCERTAIN"].includes(d?.status || "");
   return orderFulfillment({
+    farmerDecision: order.farmerDecision,
+    handedOver: !!order.handedOverAt,
     review: !!disputed,
     orderStatus: order.status,
     paid: ["FUNDED", "DELIVERED", "COMPLETED"].includes(order.status),
@@ -403,6 +410,73 @@ customerDeliveryRouter.post("/:id/delivery/ready", async (req, res) => {
   res.json({ ready: true });
 });
 
+// Farmer decisions and receipt evidence use the same order lock as disputes and money operations.
+customerDeliveryRouter.post("/:id/delivery/decision", async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.farmerProfile.userId !== req.auth!.sub) throw new AppError(403, "FARMER_REQUIRED", "Only the farmer can decide this order.");
+  const input = z.object({ accept: z.boolean(), reason: z.string().trim().min(5).max(500).optional() }).strict().parse(req.body);
+  if (!input.accept && !input.reason) throw new AppError(422, "REASON_REQUIRED", "Tell the buyer why you cannot fulfill this order.");
+  await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
+    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true } });
+    const decision = input.accept ? "ACCEPTED" : "REJECTED";
+    if (current.farmerDecision === decision) return;
+    if (!(await fulfillmentView(current, false, true, tx)).canAccept || !current.delivery)
+      throw new AppError(409, "ORDER_DECISION_CLOSED", "Refresh this order. It can no longer be accepted or declined.");
+    await assertFulfillmentOpen(tx, order.id);
+    await tx.tradeOrder.update({ where: { id: order.id }, data: { farmerDecision: decision, farmerDecidedAt: new Date(), rejectionReason: input.accept ? null : input.reason } });
+    await deliveryEvent(tx, current.delivery.id, input.accept ? "ORDER_ACCEPTED" : "ORDER_REJECTED", "farmer", `${current.delivery.id}:decision`, req.auth!.sub);
+    if (!input.accept) {
+      await tx.supportTicket.create({ data: { orderId: order.id, userId: order.buyerId, kind: "SUPPORT", subject: "Farmer declined order — refund required", priority: "HIGH", messages: { create: { authorId: req.auth!.sub, body: input.reason! } } } });
+      await tx.fulfillmentDeadline.updateMany({ where: { orderId: order.id, state: "ACTIVE" }, data: { state: "REFUND_DUE", nextRunAt: new Date() } });
+    }
+    await audit(req, { action: input.accept ? "order.farmer.accepted" : "order.farmer.rejected", entityType: "order", entityId: order.id, after: { reason: input.reason } }, tx);
+  });
+  res.json({ saved: true });
+});
+customerDeliveryRouter.post("/:id/delivery/handover", async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.farmerProfile.userId !== req.auth!.sub) throw new AppError(403, "FARMER_REQUIRED", "Only the farmer can record handover.");
+  await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
+    const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true } });
+    if (current.handedOverAt) return;
+    await assertFulfillmentOpen(tx, order.id);
+    if (!(await fulfillmentView(current, false, true, tx)).canHandover) throw new AppError(409, "HANDOVER_NOT_READY", "Mark the goods ready before handing them to the buyer.");
+    await tx.tradeOrder.update({ where: { id: order.id }, data: { handedOverAt: new Date() } });
+    await deliveryEvent(tx, current.delivery!.id, "BUYER_COLLECTED", "farmer", `${current.delivery!.id}:handover`, req.auth!.sub);
+    await audit(req, { action: "order.buyer.handover", entityType: "order", entityId: order.id }, tx);
+  });
+  res.json({ handedOver: true });
+});
+customerDeliveryRouter.post("/:id/delivery/receipt-photo", raw({ type: ["image/jpeg", "image/png"], limit: "10mb" }), async (req, res) => {
+  const order = await orderAccess(req);
+  if (order.buyerId !== req.auth!.sub) throw new AppError(403, "BUYER_REQUIRED", "Only the buyer can add a receipt photo.");
+  if (!Buffer.isBuffer(req.body) || req.body.length < 16 || imageType(req.body) !== req.get("content-type"))
+    throw new AppError(422, "INVALID_PHOTO", "Choose a JPEG or PNG photo smaller than 10 MB.");
+  const key = await storeMedia(req.body, req.get("content-type")!, `receipt/${order.id}/${randomUUID()}`);
+  let previous: string | null = null;
+  try {
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${order.id}::uuid FOR UPDATE`;
+      const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { delivery: true } });
+      if (!(await fulfillmentView(current, true, false, tx)).canConfirm) throw new AppError(409, "RECEIPT_NOT_READY", "Receipt photos can only be added when the order is ready for confirmation.");
+      previous = current.receiptPhotoKey;
+      await tx.tradeOrder.update({ where: { id: order.id }, data: { receiptPhotoKey: key, receiptPhotoMime: req.get("content-type")!, receiptPhotoAt: new Date() } });
+      await audit(req, { action: "order.receipt.photo.saved", entityType: "order", entityId: order.id }, tx);
+    });
+  } catch (error) { await deleteMedia(key).catch(() => {}); throw error; }
+  if (previous) await deleteMedia(previous).catch(() => {});
+  res.status(201).json({ saved: true });
+});
+for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
+  router.get("/:id/delivery/receipt-photo", async (req, res) => {
+    const order = await orderAccess(req);
+    if (!order.receiptPhotoKey) throw new AppError(404, "PHOTO_NOT_FOUND", "No receipt photo has been saved.");
+    res.set({ "Content-Type": order.receiptPhotoMime || "image/jpeg", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }).send(await readMedia(order.receiptPhotoKey));
+  });
+}
+
 for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
   router.get("/:id/delivery", async (req, res) => {
     res.set("Cache-Control", "private, no-store");
@@ -427,10 +501,19 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     }) || [];
     res.json(
       serialize({
+        money: {
+          heldMinor: order.heldMinor, releasedMinor: order.releasedMinor, refundedMinor: order.refundedMinor,
+          release: await prisma.moneyOperation.findFirst({ where: { orderId: order.id, mode: mode(), kind: "RELEASE" }, orderBy: { createdAt: "desc" }, select: { status: true, failureCode: true, updatedAt: true } }),
+        },
         fulfillment: await readFulfillment(order.id),
         progress: await fulfillmentView(order,order.buyerId===req.auth!.sub,req.auth!.subject!=="admin"&&order.farmerProfile.userId===req.auth!.sub),
         order: {
           id: order.id,
+          journeyVersion: order.journeyVersion,
+          farmerDecision: order.farmerDecision,
+          rejectionReason: order.rejectionReason,
+          handedOverAt: order.handedOverAt,
+          receiptPhoto: order.receiptPhotoAt ? { uploadedAt: order.receiptPhotoAt, url: `/orders/${order.id}/delivery/receipt-photo` } : null,
           reference: order.reference,
           status: order.status,
           deliveryConfirmedAt: order.deliveryConfirmedAt,
@@ -1053,6 +1136,10 @@ customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
       include: { delivery: { include: { parcels: true } } },
     });
     if(current.deliveryConfirmedAt)return;
+    if (current.journeyVersion >= 2 && (!current.receiptPhotoKey || req.body?.acknowledged !== true))
+      throw new AppError(422, "RECEIPT_EVIDENCE_REQUIRED", "Add a receipt photo and confirm that you inspected all the goods.");
+    if (["PENDING", "REJECTED"].includes(current.farmerDecision))
+      throw new AppError(409, "FARMER_ACCEPTANCE_REQUIRED", "The farmer must accept this order first.");
     await unlockedCheckout(tx,order.id);
     await assertFulfillmentOpen(tx,order.id);
     await assertNoDeliverySettlement(tx,order.id);

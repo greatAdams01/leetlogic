@@ -1,4 +1,6 @@
 export const icons = {
+  receiptClipboard: require("../assets/figma/receipt-clipboard.svg"),
+  orderPacking: require("../assets/figma/order-packing.svg"),
   listingKeyboard: require("../assets/figma/listing-keyboard.svg"),
   listingVoiceMic: require("../assets/figma/listing-voice/microphone.svg"),
   listingVoicePlay: require("../assets/figma/listing-voice/play.svg"),

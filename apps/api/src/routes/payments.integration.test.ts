@@ -1783,6 +1783,10 @@ suite("provider-backed payment safeguards", () => {
         courier: "Test courier",
         shippingMinor: part.requestToken === firstToken ? 1200n : 1800n,
       }));
+    const farmerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+    const farmerAuth = { Authorization: `Bearer ${farmerToken}` };
+    expect((await request(app).post(`/v1/orders/${orderId}/delivery/decision`).set(farmerAuth).send({ accept: true })).status).toBe(200);
+    expect((await request(app).post(`/v1/orders/${orderId}/delivery/ready`).set(farmerAuth).send({})).status).toBe(200);
     await runDeliveryJobs();
     expect(book).toHaveBeenCalledTimes(2);
     const delivery = await prisma.delivery.findUniqueOrThrow({
@@ -1812,8 +1816,10 @@ suite("provider-backed payment safeguards", () => {
       courier: "Test courier",
     }));
     await applyTracking(delivery.id, await trackSplitDelivery(shippingProvider, delivery.id));
+    vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`receipt/${randomUUID()}`);
+    expect((await request(app).post(`/v1/orders/${orderId}/delivery/receipt-photo`).set(buyerAuth).set("Content-Type", "image/jpeg").send(Buffer.from([255,216,255,...Array(20).fill(0)]))).status).toBe(201);
     expect(
-      (await request(app).post(`/v1/orders/${orderId}/delivery/confirm`).set(buyerAuth).send({}))
+      (await request(app).post(`/v1/orders/${orderId}/delivery/confirm`).set(buyerAuth).send({ acknowledged: true }))
         .status,
     ).toBe(200);
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe(
@@ -2238,6 +2244,43 @@ suite("provider-backed payment safeguards", () => {
     expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/dispatch`).set(auth).send({})).status).toBe(200);
     expect((await prisma.delivery.findUniqueOrThrow({where:{id:f.d.id}})).status).toBe("MANUAL_ASSIGNED");
     expect((await request(app).get(`/v1/orders/${f.o.id}/delivery`).set(customerAuth())).body.progress.status).toBe("Dispatched");
+  });
+
+  it("automatically queues one protected release for a photographed buyer confirmation and waits for disputes", async () => {
+    const { o, d } = await order();
+    await prisma.tradeOrder.update({ where: { id: o.id }, data: { journeyVersion: 2, farmerDecision: "PENDING" } });
+    const payment = await checkout(o.id); mockReceipt(payment); await reconcilePayment(payment.id);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("PAID");
+    await expect(requestRelease(o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
+    await prisma.tradeOrder.update({ where: { id: o.id }, data: { farmerDecision: "ACCEPTED", handedOverAt: new Date() } });
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "DELIVERED", providerShipmentId: `fixture-${o.id}` } });
+    expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(0);
+    vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`receipt/${randomUUID()}`);
+    const upload = await request(app).post(`/v1/orders/${o.id}/delivery/receipt-photo`).set("Authorization", `Bearer ${token}`).set("Content-Type", "image/jpeg").send(Buffer.from([255,216,255,...Array(20).fill(0)]));
+    expect(upload.status).toBe(201);
+    const confirm = await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({ acknowledged: true });
+    expect(confirm.status).toBe(200);
+    await prisma.paymentAttempt.update({ where: { id: payment.id }, data: { mode: "live" } });
+    await expect(requestRelease(o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
+    await runPaymentJobs();
+    expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(0);
+    await prisma.paymentAttempt.update({ where: { id: payment.id }, data: { mode: "sandbox" } });
+    const ticket = await prisma.supportTicket.create({ data: { orderId: o.id, userId: buyer, kind: "DISPUTE", subject: "QUALITY" } });
+    await runPaymentJobs();
+    expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(0);
+    await prisma.supportTicket.update({ where: { id: ticket.id }, data: { status: "RESOLVED" } });
+    vi.spyOn(bachs, "account").mockResolvedValue({ id: `acct_${seller}`, parent_organization_id: "org_fixture", enabled_capabilities: ["transfers", "payouts"] });
+    vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "100000.00" }]);
+    vi.spyOn(bachs, "call").mockImplementation(async (path, body: any) => {
+      if (path === "/transfers") return { id: `journey-transfer-${o.id}`, status: "paid", currency: "NGN", amount: body.amount, destination: `acct_${seller}` };
+      throw new Error("Unexpected provider request");
+    });
+    await runPaymentJobs(); await runPaymentJobs();
+    const saved = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } });
+    expect(saved.status).toBe("COMPLETED"); expect(saved.heldMinor).toBe(0n); expect(saved.releasedMinor).toBe(10000n);
+    expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(1);
+    expect(await prisma.escrowEntry.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(1);
+    expect(await prisma.deliveryEvent.count({ where: { deliveryId: d.id, status: "PAYMENT_RELEASED" } })).toBe(1);
   });
 
 });

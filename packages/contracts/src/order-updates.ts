@@ -103,6 +103,11 @@ export function recoveryExperience(record: RecoveryRecord, now = new Date()) {
 export function orderUpdateCopy(messageKey: string, buyer: boolean) {
   const state = messageKey.replace(/^status\./, "");
   const recovery: Record<string, [string, string]> = {
+    ORDER_ACCEPTED: ["Order accepted", "The farmer is preparing your goods."],
+    ORDER_REJECTED: ["Order declined", "The farmer cannot fulfill this order. Follow the refund status in your order."],
+    BUYER_COLLECTED: ["Goods handed over", "The buyer should inspect the goods and confirm receipt."],
+    PAYMENT_RELEASE_FAILED: ["Payment needs attention", "The farmer’s payment could not be completed. Support will review it."],
+    PAYMENT_RELEASED: ["Payment released", "The farmer’s payment is confirmed. Open the order for details."],
     RECOVERY_REQUIRED: [
       buyer ? "Your payment needs order recovery" : "Stock confirmation needed",
       buyer

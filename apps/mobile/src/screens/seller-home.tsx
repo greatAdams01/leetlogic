@@ -44,7 +44,7 @@ export function SellerHome() {
   const paymentAction = sellerPaymentAction(financial.data);
   const state = sellerMenuState(a.user?.farmerProfile, "SELLER");
   const approved = state === "approved";
-  const { active, lowStock, toPack } = sellerSummary(
+  const { active, lowStock, toPack, newOrders } = sellerSummary(
     listings.data?.items || [],
     orders.data?.items || [],
   );
@@ -383,13 +383,13 @@ export function SellerHome() {
           </Section>
           <Section
             title="New orders"
-            action={a.ui("{count} ready to pack", { count: toPack.length })}
+            action={a.ui("{count} orders need attention", { count: toPack.length + newOrders.length })}
             onPress={() => a.reset("orders")}
           >
-            {!orders.loading && toPack.length === 0 && (
-              <Empty text="No paid orders waiting to be packed." />
+            {!orders.loading && toPack.length + newOrders.length === 0 && (
+              <Empty text="No orders need your attention." />
             )}
-            {toPack.slice(0, 3).map((order) => (
+            {[...newOrders, ...toPack].slice(0, 3).map((order) => (
               <Card key={order.id} style={styles.card}>
                 <View style={styles.between}>
                   <Label style={styles.itemTitle}>{order.reference}</Label>
@@ -400,7 +400,7 @@ export function SellerHome() {
                 <Label style={styles.muted}>
                   {order.listing.title} · {money(order.totalMinor)}
                 </Label>
-                <SmallAction title="Review order" onPress={() => a.go("delivery", order.id)} />
+                <SmallAction title={order.farmerDecision === "PENDING" ? "Review New Order" : "Review order"} onPress={() => a.go("delivery", order.id)} />
               </Card>
             ))}
           </Section>

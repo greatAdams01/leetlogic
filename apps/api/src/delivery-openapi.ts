@@ -56,6 +56,14 @@ export const deliveryOpenApiPaths: Record<string, unknown> = {
       parameters: [{ name: "view", in: "query", schema: { enum: ["buyer", "seller"] } }],
     },
   },
+  "/orders/{id}/delivery/decision": {
+    post: operation("Farmer accepts or declines a funded order; declines require a reason", object({ accept: { type: "boolean" }, reason: { type: "string", minLength: 5, maxLength: 500 } }, ["accept"])),
+  },
+  "/orders/{id}/delivery/handover": { post: operation("Farmer records buyer pickup; never confirms receipt or releases payment") },
+  "/orders/{id}/delivery/receipt-photo": {
+    get: operation("Read private receipt evidence as an order participant"),
+    post: { ...operation("Buyer saves receipt evidence before confirmation"), requestBody: { required: true, content: { "image/jpeg": { schema: { type: "string", format: "binary" } }, "image/png": { schema: { type: "string", format: "binary" } } } } },
+  },
   "/orders/notifications": {
     get: operation("List private delivery notifications", undefined, false),
   },
@@ -172,7 +180,7 @@ for (const prefix of ["/orders", "/admin/delivery-orders"]) {
     };
 }
 deliveryOpenApiPaths["/orders/{id}/delivery/confirm"] = {
-  post: operation("Buyer confirms receipt; escrow is not released automatically", object({})),
+  post: operation("Buyer confirms inspected receipt; new orders require a saved photo and acknowledgment before trusted release processing", object({ acknowledged: { type: "boolean" } })),
 };
 const staff = "/admin/delivery-orders/{id}/delivery";
 for (const [action, summary, schema] of [

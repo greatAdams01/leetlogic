@@ -353,27 +353,60 @@ export function Intro() {
 export function Role() {
   const a = useApp();
   const [creating, setCreating] = useState(a.route.query === "register");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submitting = useRef(false);
+  const register = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await a.selectRole(a.role);
+    } catch (e) {
+      setError(a.error(e));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
   const { width, height } = useWindowDimensions();
   const logoSize = Math.min(176, Math.max(104, height * 0.21), width * 0.42);
   return (
     <Page
-      title="WELCOME TO LEETLOGIC"
+      title={creating ? "Create Account" : "WELCOME TO LEETLOGIC"}
+      back={creating && !busy ? () => setCreating(false) : undefined}
       green
       contentStyle={creating ? undefined : { justifyContent: "center", alignItems: "center" }}
       footer={
         <>
-          <Button title="Log In" onPress={a.startLogin} />
-          {!creating && <Button title="Create Account" onPress={() => setCreating(true)} />}
-          {creating && <Button
-            title={a.role === "SELLER" ? "Create Seller Account" : "Create Buyer Account"}
-            onPress={() => void a.selectRole(a.role)}
-          />}
-          <Button title="Change language" secondary onPress={() => a.openLanguage()} />
+          {creating ? (
+            <Button
+              title={a.role === "SELLER" ? "Create Seller Account" : "Create Buyer Account"}
+              disabled={busy}
+              loading={busy}
+              onPress={() => void register()}
+            />
+          ) : (
+            <>
+              <Button title="Log In" onPress={a.startLogin} />
+              <Button title="Create Account" onPress={() => setCreating(true)} />
+              <Button title="Change language" secondary onPress={() => a.openLanguage()} />
+            </>
+          )}
         </>
       }
     >
       {!creating && (
-        <View style={{ width: "100%", maxWidth: 380, alignItems: "center", gap: 24, paddingVertical: 16 }}>
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 380,
+            alignItems: "center",
+            gap: 24,
+            paddingVertical: 16,
+          }}
+        >
           <Image
             source={require("../../assets/brand-logo.png")}
             style={{ width: logoSize, height: logoSize }}
@@ -381,7 +414,10 @@ export function Role() {
             accessibilityLabel="LeetLogic"
           />
           <View style={{ alignItems: "center", gap: 12 }}>
-            <Text accessibilityRole="header" style={[s.heading, { textAlign: "center", color: colors.green }]}>
+            <Text
+              accessibilityRole="header"
+              style={[s.heading, { textAlign: "center", color: colors.green }]}
+            >
               Welcome to LeetLogic
             </Text>
             <Label muted style={{ textAlign: "center", lineHeight: 26 }}>
@@ -390,50 +426,54 @@ export function Role() {
           </View>
         </View>
       )}
-      {creating && <>
-      <Heading>Create Account</Heading>
-      <Label muted>New here? Choose Buyer or Seller to create your account.</Label>
-      {(["SELLER", "BUYER"] as const).map((r) => (
-        <Pressable
-          key={r}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: a.role === r }}
-          onPress={() => a.setRole(r)}
-          style={[
-            {
-              borderWidth: 1,
-              borderColor: colors.line,
-              borderRadius: 16,
-              overflow: "hidden",
-              backgroundColor: "white",
-            },
-            a.role === r && { borderWidth: 2, borderColor: colors.green },
-          ]}
-        >
-          <Image
-            source={
-              r === "SELLER"
-                ? require("../../assets/figma/cb68b.png")
-                : require("../../assets/figma/cd1b3.png")
-            }
-            style={{ width: "100%", height: 176 }}
-          />
-          <View style={{ padding: 16, gap: 8 }}>
-            <View style={s.between}>
-              <Label style={{ fontFamily: "NotoBold", fontSize: 20 }}>
-                {r === "SELLER" ? "I want to sell" : "I want to buy"}
-              </Label>
-              <Icon name={a.role === r ? "check" : "circle"} />
-            </View>
-            <Label muted style={s.small}>
-              {r === "SELLER"
-                ? "List harvest with a photo, set your price in ₦."
-                : "Source directly from verified farmers at local rates."}
-            </Label>
-          </View>
-        </Pressable>
-      ))}
-      </>}
+      {creating && (
+        <>
+          <Heading>Create Account</Heading>
+          <Label muted>New here? Choose Buyer or Seller to create your account.</Label>
+          {!!error && <Notice text={error} error />}
+          {(["SELLER", "BUYER"] as const).map((r) => (
+            <Pressable
+              key={r}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: a.role === r }}
+              disabled={busy}
+              onPress={() => a.setRole(r)}
+              style={[
+                {
+                  borderWidth: 1,
+                  borderColor: colors.line,
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  backgroundColor: "white",
+                },
+                a.role === r && { borderWidth: 2, borderColor: colors.green },
+              ]}
+            >
+              <Image
+                source={
+                  r === "SELLER"
+                    ? require("../../assets/figma/cb68b.png")
+                    : require("../../assets/figma/cd1b3.png")
+                }
+                style={{ width: "100%", height: 176 }}
+              />
+              <View style={{ padding: 16, gap: 8 }}>
+                <View style={s.between}>
+                  <Label style={{ fontFamily: "NotoBold", fontSize: 20 }}>
+                    {r === "SELLER" ? "I want to sell" : "I want to buy"}
+                  </Label>
+                  <Icon name={a.role === r ? "check" : "circle"} />
+                </View>
+                <Label muted style={s.small}>
+                  {r === "SELLER"
+                    ? "List harvest with a photo, set your price in ₦."
+                    : "Source directly from verified farmers at local rates."}
+                </Label>
+              </View>
+            </Pressable>
+          ))}
+        </>
+      )}
     </Page>
   );
 }

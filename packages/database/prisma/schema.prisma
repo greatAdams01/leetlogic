@@ -609,6 +609,16 @@ model IdempotencyRecord {
 }
 
 model TradeOrder {
+  // Existing orders retain their original fulfillment rules; new orders opt in at creation.
+  journeyVersion Int @default(1) @map("journey_version")
+  farmerDecision String @default("LEGACY") @map("farmer_decision") @db.VarChar(20)
+  farmerDecidedAt DateTime? @map("farmer_decided_at") @db.Timestamptz(6)
+  rejectionReason String? @map("rejection_reason") @db.VarChar(500)
+  handedOverAt DateTime? @map("handed_over_at") @db.Timestamptz(6)
+  receiptPhotoKey String? @map("receipt_photo_key")
+  receiptPhotoMime String? @map("receipt_photo_mime") @db.VarChar(40)
+  receiptPhotoAt DateTime? @map("receipt_photo_at") @db.Timestamptz(6)
+
   packagingSnapshot Json? @map("packaging_snapshot")
   fundsProvider String? @map("funds_provider") @db.VarChar(20)
   reservationExpiresAt DateTime? @map("reservation_expires_at") @db.Timestamptz(6)
@@ -944,6 +954,9 @@ model ProducePhoto {
 
 
 model DeliveryNotification {
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(6)
+  attempts Int @default(0)
+  nextRunAt DateTime @default(now()) @map("next_run_at") @db.Timestamptz(6)
   id String @id @default(uuid()) @db.Uuid
   eventId String @db.Uuid
   userId String @db.Uuid

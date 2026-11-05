@@ -53,6 +53,8 @@ export async function createBuyerOrder(
   const item = await tx.tradeOrder.create({
     data: {
       reference,
+      journeyVersion: 2,
+      farmerDecision: "PENDING",
       buyerId: buyerId,
       farmerProfileId: listing.farmerProfileId,
       listingId: listing.id,

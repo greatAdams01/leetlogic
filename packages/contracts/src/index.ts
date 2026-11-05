@@ -99,3 +99,5 @@ export { paymentIsConfirmed, paymentNeedsConfirmation } from "./payment-state.js
 export * from "./order-updates.js";
 export * from "./order-fulfillment.js";
 export * from "./farmer-order.js";
+
+export * from "./order-journey.js";

@@ -1,3 +1,4 @@
+import { sendOrderUpdateNotifications } from "./order-notifications.js";
 import { assertFulfillmentOpen, markFulfillmentSecured } from "./fulfillment-deadline.js";
 import { bookSplitDelivery, recordedSplitBooking, trackSplitDelivery } from "./split-delivery.js";
 import { prisma, type Delivery, type DeliveryQuote, type Prisma, type TradeOrder } from "@leetlogic/database";
@@ -12,7 +13,7 @@ export const shippingProvider = new Shipbubble();
 export const hashInput = (input: unknown) =>
   createHash("sha256").update(JSON.stringify(input)).digest("hex");
 export function serialize(value: unknown) {
-  return JSON.parse(JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v)));
+  return JSON.parse(JSON.stringify(value, (key, v) => key === "receiptPhotoKey" ? undefined : (typeof v === "bigint" ? v.toString() : v)));
 }
 export async function deliveryEvent(
   tx: Prisma.TransactionClient,
@@ -66,7 +67,11 @@ export async function queueBooking(orderId: string) {
       where: { id: orderId }, include: { ...shippingOrderInclude, delivery: true },
     });
     const d = order.delivery;
+    if (order.farmerDecision === "PENDING" || order.farmerDecision === "REJECTED")
+      throw new AppError(409, "FARMER_ACCEPTANCE_REQUIRED", "Wait for the farmer to accept the order.");
     if (!d) throw new AppError(409, "QUOTE_REQUIRED", "Choose delivery first");
+    if (order.journeyVersion >= 2 && !(await tx.deliveryEvent.count({ where: { deliveryId: d.id, status: "READY_FOR_PICKUP" } })))
+      throw new AppError(409, "FARMER_PREPARATION_REQUIRED", "Wait for the farmer to pack the goods.");
     await assertNoDeliverySettlement(tx, orderId);
     await assertFulfillmentOpen(tx, orderId);
     if (["BOOKING_QUEUED", "BOOKING", "BOOKING_UNCERTAIN", "BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"].includes(d.status)) return;
@@ -90,6 +95,7 @@ export async function queuePaidDelivery(orderId: string) {
     await queueBooking(orderId);
   } catch (error) {
     const reason = error instanceof AppError ? error.code : "BOOKING_NOT_READY";
+    if (["FARMER_ACCEPTANCE_REQUIRED", "FARMER_PREPARATION_REQUIRED"].includes(reason)) return;
     await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const changed = await tx.delivery.updateMany({ where: {
@@ -258,7 +264,7 @@ export async function runDeliveryJobs() {
         quote.expiresAt <= new Date() ||
         d.paidMinor < quote.amountMinor ||
         order.status !== "FUNDED" ||
-        order.financialHold
+        order.financialHold || ["PENDING", "REJECTED"].includes(order.farmerDecision)
       ) {
         await prisma.delivery.update({
           where: { id: d.id },
@@ -330,8 +336,10 @@ export async function runDeliveryJobs() {
       const checkBeforeBooking = async (tx: Prisma.TransactionClient) => {
         await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${d.orderId}::uuid FOR UPDATE`;
         const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: d.orderId }, include: { ...shippingOrderInclude, delivery: true } });
-        if (current.status !== "FUNDED" || current.financialHold || !current.delivery || current.delivery.status !== "BOOKING" || current.delivery.cancelRequestedAt || current.delivery.paidMinor < quote.amountMinor)
+        if (["PENDING", "REJECTED"].includes(current.farmerDecision) || current.status !== "FUNDED" || current.financialHold || !current.delivery || current.delivery.status !== "BOOKING" || current.delivery.cancelRequestedAt || current.delivery.paidMinor < quote.amountMinor)
           throw new AppError(409, "BOOKING_NOT_READY", "Order changed before booking.");
+        if (current.journeyVersion >= 2 && !(await tx.deliveryEvent.count({ where: { deliveryId: d.id, status: "READY_FOR_PICKUP" } })))
+          throw new AppError(409, "FARMER_PREPARATION_REQUIRED", "The farmer must mark the goods ready.");
         await assertNoDeliverySettlement(tx, d.orderId);
         await assertFulfillmentOpen(tx, d.orderId);
         assertCurrentDeliveryQuote(current, current.delivery, quote, { booking: true });
@@ -424,7 +432,15 @@ export async function runDeliveryJobs() {
 }
 export function startDeliveryWorker() {
   let running = false;
+  let notifying = false;
   const timer = setInterval(() => {
+    // Push gateway latency must never delay booking or tracking reconciliation.
+    if (!notifying) {
+      notifying = true;
+      void sendOrderUpdateNotifications()
+        .catch(() => logger.warn("Order notification worker will retry"))
+        .finally(() => { notifying = false; });
+    }
     if (running) return;
     running = true;
     runDeliveryJobs()

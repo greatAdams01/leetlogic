@@ -602,6 +602,13 @@ export async function assertRelease(tx: Prisma.TransactionClient, orderId: strin
     !["FUNDED", "DELIVERED"].includes(order.status) ||
     order.heldMinor !== order.totalMinor ||
     !order.deliveryConfirmedAt ||
+    (order.journeyVersion >= 2 && (
+      !order.receiptPhotoKey || order.farmerDecision !== "ACCEPTED" ||
+      !(await tx.paymentAttempt.count({ where: {
+        orderId, mode: mode(), kind: "ORDER", status: "SUCCEEDED",
+        confirmedAt: { not: null }, produceMinor: order.totalMinor,
+      } }))
+    )) ||
     (order.delivery && !deliveryReceiptReady(order.delivery)) ||
     order.financialHold ||
     (await tx.supportTicket.count({

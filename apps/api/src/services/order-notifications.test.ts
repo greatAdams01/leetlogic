@@ -1,11 +1,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
+  deliveryNotification: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   paidOrderNotification: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   mobilePushDevice: { findMany: vi.fn(), deleteMany: vi.fn() },
   session: { findFirst: vi.fn() },
 }));
 vi.mock("@leetlogic/database", () => ({ prisma: db }));
-import { sendPaidOrderNotifications } from "./order-notifications.js";
+import { sendPaidOrderNotifications, sendOrderUpdateNotifications } from "./order-notifications.js";
 const fetchMock = vi.fn();
 beforeEach(() => {
   vi.resetAllMocks();
@@ -57,4 +58,19 @@ describe("paid order push outbox", () => {
       where: { token: "ExpoPushToken[device]", sessionFamilyId: "family" },
     });
   });
+});
+
+it("sends an account-scoped buyer acceptance update and saves the successful outbox delivery", async () => {
+  db.deliveryNotification.findMany.mockResolvedValue([{ id: "update", userId: "buyer", orderId: "order", messageKey: "status.ORDER_ACCEPTED", event: { delivery: { order: { buyerId: "buyer" } } } }]);
+  db.deliveryNotification.updateMany.mockResolvedValue({ count: 1 });
+  await sendOrderUpdateNotifications();
+  const payload = JSON.parse(fetchMock.mock.calls[0]![1].body);
+  expect(payload.title).toBe("Order accepted");
+  expect(payload.data).toEqual({ kind: "order-update", orderId: "order", userId: "buyer" });
+  expect(db.deliveryNotification.update).toHaveBeenCalledWith({ where: { id: "update" }, data: { sentAt: expect.any(Date) } });
+});
+it("does not send an order update already claimed by another worker", async () => {
+  db.deliveryNotification.findMany.mockResolvedValue([{ id: "claimed", event: {} }]);
+  db.deliveryNotification.updateMany.mockResolvedValue({ count: 0 });
+  await sendOrderUpdateNotifications(); expect(fetchMock).not.toHaveBeenCalled();
 });

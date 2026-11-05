@@ -1,4 +1,4 @@
-import { FarmerOrder } from "../components/farmer-order";
+import { GuidedOrder } from "../components/guided-order";
 import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
 import { orderTabs, type OrderTab } from "../../../../packages/contracts/src/order-fulfillment";
 import { PaymentRecovery } from "../components/payment-recovery";
@@ -456,6 +456,13 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         </View>
       </Card>
       {error && <Notice text={error} error />}
+      {!data.order.checkoutActive && <Button title="Cancel unpaid order" secondary disabled={busy} onPress={() => a.alert("Cancel this order?", "The reserved produce will become available again. No payment or refund is processed.", [{ text: "Keep order", style: "cancel" }, { text: "Cancel order", onPress: async () => {
+        if (running.current) return;
+        running.current = true; setBusy(true); setError("");
+        try { await api(`/marketplace/orders/${data.order.id}/cancel`, { method: "POST" }); await reload(); }
+        catch (e) { setError(a.error(e)); }
+        finally { running.current = false; setBusy(false); }
+      } }])} />}
       {!collection && <Label style={checkout.liveBadge}>Live hub routing active</Label>}
       {!collection && (
         <Label>
@@ -524,7 +531,7 @@ export function Delivery() {
             run: () => void run("ready"),
           }
         : null;
-  if(data && !data.order.isBuyer)return <FarmerOrder data={data} busy={busy} error={error||r.error} onRefresh={r.reload} onReady={()=>void run("ready")} onDispatch={()=>a.alert("Has the rider collected everything?","Only confirm after handing every package to the rider.",[{text:"Cancel",style:"cancel"},{text:"Rider has collected it",onPress:()=>void run("dispatch")}])}/>;
+  if (data && data.order.status !== "AWAITING_PAYMENT") return <GuidedOrder key={data.order.id} data={data} error={error || r.error} onRefresh={r.reload} />;
   if (data?.order.isBuyer && data.order.status === "AWAITING_PAYMENT")
     return <BuyerCheckout data={data} reload={r.reload} />;
   return (

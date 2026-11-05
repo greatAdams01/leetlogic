@@ -1009,3 +1009,53 @@ main img[src$=".svg"] {
 .farmer-help { display:flex; justify-content:space-between; align-items:center; margin-top:24px; gap:16px; }
 .farmer-help button { min-height:48px; padding:12px 20px; }
 .farmer-order :focus-visible { outline:3px solid #27844c; outline-offset:3px; }
+
+/* Guided order journey: Figma paper, green, cards and typography, with a single reachable action. */
+.order-journey { max-width:680px; padding:24px 20px 140px; background:#faf7f0; color:#1c1c1c; border-radius:24px; }
+.journey-header,.journey-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.journey-header { color:#66736b; font-size:14px; margin-bottom:24px; }
+.order-journey a { color:#14532d; text-underline-offset:4px; }
+.journey-status { background:#e5f1e9; border-radius:20px; padding:24px; margin-bottom:20px; }
+.journey-emblem { display:flex; align-items:center; justify-content:center; width:52px; height:52px; background:white; border-radius:16px; margin-bottom:16px; }
+.journey-status h1 { font-size:clamp(25px,5vw,34px); line-height:1.25; margin:8px 0 12px; color:#14532d; }
+.journey-status p { margin:0; line-height:1.6; }
+.journey-eyebrow { font-size:12px; font-weight:700; letter-spacing:.08em; color:#66736b; }
+.journey-card { background:#fff; border:1px solid #e6e3da; border-radius:16px; padding:20px; margin:16px 0; box-shadow:0 1px 2px #0000000d; }
+.order-journey h2 { font-size:18px; line-height:1.4; margin:0 0 12px; }
+.journey-card p { line-height:1.6; margin:8px 0; }
+.journey-price { color:#6b4a2f; font-size:26px; }
+.journey-row { margin:14px 0 0; }
+.journey-row img { flex-shrink:0; }
+.journey-progress { padding:8px 0; margin:0; list-style:none; display:flex; gap:6px; }
+.journey-progress li { flex:1; text-align:center; color:#66736b; min-width:0; }
+.journey-progress li>span { display:flex; align-items:center; justify-content:center; width:34px; height:34px; margin:0 auto 8px; border:2px solid #e6e3da; border-radius:50%; font-weight:700; }
+.journey-progress li.reached>span { background:#14532d; color:white; border-color:#14532d; }
+.journey-progress li[aria-current=step]>span { box-shadow:0 0 0 4px #e5f1e9; }
+.journey-progress small { font-size:12px; overflow-wrap:anywhere; }
+.journey-payment { display:flex; align-items:flex-start; gap:16px; }
+.journey-payment h2 { color:#14532d; margin-bottom:4px; }
+.journey-payment p { font-size:14px; color:#66736b; margin:0; }
+.order-journey details { border-bottom:1px solid #e6e3da; padding:4px 0; }
+.order-journey summary { min-height:56px; padding:16px 4px; cursor:pointer; font-weight:600; }
+.order-journey details>p { padding-inline:8px; line-height:1.6; }
+.order-journey button { min-height:52px; border-radius:14px; font-size:16px; font-weight:700; background:#14532d; }
+.order-journey button.secondary { background:transparent; border:1px solid #d4ded6; color:#14532d; }
+.journey-action { position:sticky; bottom:0; z-index:5; margin:24px -20px -120px; padding:16px 20px max(16px,env(safe-area-inset-bottom)); background:#faf7f0f5; border-top:1px solid #e6e3da; display:grid; gap:8px; }
+.journey-action button { width:100%; margin:0; }
+.journey-action small { text-align:center; color:#66736b; font-size:13px; }
+.journey-receipt { width:min(580px,calc(100% - 24px)); max-height:90dvh; overflow:auto; border:1px solid #e6e3da; border-radius:24px; background:#faf7f0; color:#1c1c1c; padding:24px; }
+.journey-receipt::backdrop { background:#0c241ccc; }
+.journey-receipt label { margin:20px 0; line-height:1.6; }
+.journey-receipt-emblem { display:flex; align-items:center; justify-content:center; background:#14532d; width:92px; height:92px; border:12px solid #e5f1e9; box-sizing:content-box; border-radius:50%; margin:0 auto 24px; }
+.journey-receipt .journey-photo { width:100%; height:220px; object-fit:contain; border-radius:16px; background:#fff; }
+.journey-receipt .journey-checkbox { display:flex; align-items:flex-start; gap:12px; }
+.journey-checkbox input { width:24px; height:24px; flex-shrink:0; accent-color:#14532d; }
+.journey-receipt button { width:100%; min-height:52px; border:0; border-radius:14px; padding:14px; font:inherit; font-weight:700; color:white; background:#14532d; margin-top:12px; }
+.journey-receipt button.secondary { color:#14532d; background:#e5f1e9; }
+.journey-receipt button:disabled { opacity:.5; }
+.order-journey :focus-visible,.journey-receipt :focus-visible { outline:3px solid #2e9e4f; outline-offset:4px; }
+.journey-feedback { padding:16px; background:#fff0e8; border:1px solid #9b401e; border-radius:12px; }
+.journey-history { display:grid; gap:16px; padding:0 24px; }
+@media(max-width:600px) { .order-journey { margin:0; border-radius:0; padding-top:16px; } .journey-status { padding:20px; } .journey-card { padding:16px; } }
+
+.journey-receipt input[type=file] { display:block; width:100%; box-sizing:border-box; font-size:14px; }

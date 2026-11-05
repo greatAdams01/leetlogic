@@ -16,13 +16,15 @@ import {
   paymentAccount,
   refreshAccount,
   assertRelease,
+  requestRelease,
+  requestRefund,
   reconcilePayment,
   paymentCheckReason,
   systemRequest,
   createOperation,
 } from "./payments.js";
 import { audit } from "./audit.js";
-import { assertNoDeliverySettlement, shippingProvider } from "./delivery.js";
+import { assertNoDeliverySettlement, shippingProvider, deliveryEvent } from "./delivery.js";
 import { assertPaymentShipment, shippingOrderInclude } from "./delivery-quote.js";
 import { deliveryRefundReady } from "./delivery-policy.js";
 function providerId(value: any) {
@@ -148,7 +150,13 @@ async function complete(op: MoneyOperation, result: any) {
         encryptedPayload: null,
       },
     });
-    if (failed) return;
+    if (failed) {
+      if (op.kind === "RELEASE" && op.orderId) {
+        const delivery = await tx.delivery.findUnique({ where: { orderId: op.orderId } });
+        if (delivery) await deliveryEvent(tx, delivery.id, "PAYMENT_RELEASE_FAILED", "system", `${op.id}:release-failed`);
+      }
+      return;
+    }
     if (op.kind === "RELEASE") {
       const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: op.orderId! } });
       if (order.heldMinor !== op.amountMinor + op.feeMinor) throw new Error("HELD_FUNDS_CHANGED");
@@ -181,6 +189,8 @@ async function complete(op: MoneyOperation, result: any) {
           reason: "Provider-confirmed seller transfer",
         },
       });
+      const delivery = await tx.delivery.findUnique({ where: { orderId: order.id } });
+      if (delivery) await deliveryEvent(tx, delivery.id, "PAYMENT_RELEASED", "system", `${order.id}:payment-released`);
       await tx.farmerWallet.upsert({
         where: { farmerProfileId: order.farmerProfileId },
         create: { farmerProfileId: order.farmerProfileId, balanceMinor: op.amountMinor },
@@ -1068,6 +1078,27 @@ export async function runPaymentJobs() {
     data: { status: "UNKNOWN", failureCode: "WORKER_INTERRUPTED", leaseUntil: null },
   });
   await reconcileUncertainRefunds();
+  // Durable confirmation is the retry source; never queue a release from farmer handover.
+  const candidates = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT o.id FROM trade_orders o
+    WHERE o.journey_version >= 2 AND o.funds_provider = 'bachs'
+      AND o.status IN ('FUNDED', 'DELIVERED') AND NOT o.financial_hold
+      AND EXISTS (SELECT 1 FROM payment_attempts p WHERE p."orderId" = o.id AND p.mode = ${mode()} AND p.kind = 'ORDER' AND p.status = 'SUCCEEDED' AND p."confirmedAt" IS NOT NULL AND p."produceMinor" = o."totalMinor")
+      AND ((o."deliveryConfirmedAt" IS NOT NULL AND o.receipt_photo_key IS NOT NULL AND o.farmer_decision = 'ACCEPTED') OR o.farmer_decision = 'REJECTED')
+      AND NOT EXISTS (SELECT 1 FROM support_tickets t WHERE t."orderId" = o.id AND t.kind = 'DISPUTE' AND t.status <> 'RESOLVED')
+      AND NOT EXISTS (SELECT 1 FROM money_operations m WHERE m."orderId" = o.id AND m.mode = ${mode()} AND m.kind IN ('RELEASE', 'REFUND', 'REFUND_TRANSFER', 'REFUND_PAYOUT'))
+    ORDER BY o."updatedAt" ASC LIMIT 20`;
+  const journeys = await prisma.tradeOrder.findMany({ where: { id: { in: candidates.map(row => row.id) } } });
+  for (const order of journeys) {
+    const kind = order.farmerDecision === "REJECTED" ? "REFUND" : "RELEASE";
+    // Failed operations require staff review; do not generate endless new financial writes.
+    if (await prisma.moneyOperation.count({ where: { orderId: order.id, mode: mode(), kind: { in: kind === "REFUND" ? ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] : ["RELEASE"] } } })) continue;
+    const req = systemRequest();
+    req.auth = { sub: order.buyerId, subject: "customer" } as typeof req.auth;
+    req.body = { reason: kind === "RELEASE" ? "Buyer inspected goods and confirmed receipt with a private photo" : "Farmer declined the order before fulfillment" };
+    try { if (kind === "RELEASE") await requestRelease(order.id, req); else await requestRefund(order.id, req); }
+    catch (error) { if (!(error instanceof AppError)) logger.warn({ orderId: order.id }, "Order payment action will retry"); }
+  }
   const operations = await prisma.moneyOperation.findMany({
     where: {
       mode: mode(),

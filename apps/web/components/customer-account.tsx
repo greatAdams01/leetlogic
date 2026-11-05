@@ -262,13 +262,14 @@ export function CustomerAccount() {
             orders.map((order) => (
               <article key={order.id}>
                 <Link href={`/orders/${order.id}`}>
-                  {order.reference} — {order.listing.title}
+                  {order.listing.title} · {order.quantity || 1} {order.listing.unitCode}
                 </Link>
                 <p>
-                  {order.fulfillmentStatus ? ui(locale,order.fulfillmentStatus) : order.delivery
+                  {order.farmerDecision === "PENDING" ? ui(locale, "New Order") : order.fulfillmentStatus ? ui(locale,order.fulfillmentStatus) : order.delivery
                     ? t(`status.${order.delivery.status}` as any) || order.delivery.status
                     : order.status}
                 </p>
+                <Link href={`/orders/${order.id}`}>{ui(locale, order.farmerDecision === "PENDING" && user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? "Review New Order" : "Follow your order")} →</Link>
               </article>
             ))
           ) : (

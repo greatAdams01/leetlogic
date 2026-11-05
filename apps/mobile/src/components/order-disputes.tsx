@@ -16,7 +16,7 @@ type Dispute = {
   messages: { id: string; body: string }[];
   evidence: { id: string }[];
 };
-function EvidencePhoto({ path }: { path: string }) {
+export function EvidencePhoto({ path }: { path: string }) {
   const [uri, setUri] = useState<string | null>(null),
     [error, setError] = useState("");
   const a = useApp();
@@ -65,7 +65,7 @@ const reasons = [
   { value: "QUANTITY", label: "Incorrect quantity" },
   { value: "OTHER", label: "Other issue" },
 ];
-export function OrderDisputes({ orderId }: { orderId: string }) {
+export function OrderDisputes({ orderId, onChanged }: { orderId: string; onChanged?: () => Promise<unknown> }) {
   const a = useApp(),
     r = useResource<{ items: Dispute[]; canOpen: boolean }>(`/orders/${orderId}/disputes`);
   const [open, setOpen] = useState(false),
@@ -103,6 +103,7 @@ export function OrderDisputes({ orderId }: { orderId: string }) {
       setOpen(false);
       setDescription("");
       await r.reload();
+      await onChanged?.();
     } catch (e) {
       setError(a.error(e));
     } finally {

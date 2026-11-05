@@ -39,9 +39,10 @@ function refreshSession(base: string, refreshToken: string) {
 }
 export async function handle(req: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
+  const unpaidCancellation = path.length === 4 && path[0] === "marketplace" && path[1] === "orders" && /^[0-9a-f-]{36}$/i.test(path[2]) && path[3] === "cancel";
   if (
     path.some((x) => !/^[\w-]+$/.test(x)) ||
-    ![
+    !unpaidCancellation && ![
       "auth",
       "me",
       "orders",

@@ -2,7 +2,8 @@
 import { orderUpdateCopy } from "../../../packages/contracts/src/order-updates";
 import { orderTabs, type OrderTab } from "../../../packages/contracts/src/order-fulfillment";
 import { CustomerOrderIssues } from "./customer-order-issues";
-import { FarmerOrder } from "./farmer-order";
+import { CancelUnpaidOrder } from "./cancel-unpaid-order";
+import { GuidedOrder } from "./guided-order";
 import { CustomerRecovery } from "./customer-recovery";
 import { CustomerPayment } from "./customer-payments";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -252,7 +253,7 @@ export function CustomerDelivery({
         <Link href="/account">{t("auth.required")}</Link>
       </section>
     );
-  if(!staff && !data.order.isBuyer)return <FarmerOrder data={data} busy={busy} notice={notice} onRefresh={load} onAction={action}/>;
+  if (!staff && data.order.status !== "AWAITING_PAYMENT") return <GuidedOrder key={data.order.id} data={data} notice={notice} onRefresh={load} />;
   const d = data.delivery;
   const packing = data.order.packageSuggestion;
   const selected = d?.quotes.find((quote: any) => quote.id === d.selectedQuoteId);
@@ -300,6 +301,7 @@ export function CustomerDelivery({
     <section className="customer-panel order-workspace">
       <h1>{data.order.title}</h1>
       <p>{data.order.reference}</p>
+      {!staff && data.order.status === "AWAITING_PAYMENT" && !data.order.checkoutActive && <CancelUnpaidOrder orderId={data.order.id} onChanged={load} />}
       {data.progress && (
         <div className="order-summary">
           <strong>

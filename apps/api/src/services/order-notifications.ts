@@ -1,3 +1,4 @@
+import { orderUpdateCopy } from "@leetlogic/contracts";
 import { sendFarmerPush } from "./push-notifications.js";
 import { logger } from "../lib/logger.js";
 import { prisma } from "@leetlogic/database";
@@ -36,5 +37,19 @@ export async function sendPaidOrderNotifications() {
       );
       // A failed gateway request must never roll back a payment; retry after the lease.
     }
+  }
+}
+
+/** Delivery events already create account-scoped inbox records transactionally. */
+export async function sendOrderUpdateNotifications() {
+  const rows = await prisma.deliveryNotification.findMany({ where: { sentAt: null, attempts: { lt: 12 }, nextRunAt: { lte: new Date() } }, take: 20, orderBy: { createdAt: "asc" }, include: { event: { include: { delivery: { select: { order: { select: { buyerId: true } } } } } } } });
+  for (const row of rows) {
+    const claim = await prisma.deliveryNotification.updateMany({ where: { id: row.id, sentAt: null, nextRunAt: { lte: new Date() } }, data: { attempts: { increment: 1 }, nextRunAt: new Date(Date.now() + 120000) } });
+    if (!claim.count) continue;
+    const copy = orderUpdateCopy(row.messageKey, row.userId === row.event.delivery.order.buyerId);
+    try {
+      const retry = await sendFarmerPush({ userId: row.userId, title: copy.title, body: copy.body, channelId: "paid-orders", data: { kind: "order-update", orderId: row.orderId, userId: row.userId } });
+      if (!retry) await prisma.deliveryNotification.update({ where: { id: row.id }, data: { sentAt: new Date() } });
+    } catch { logger.warn({ notificationId: row.id }, "Order update push will retry"); }
   }
 }

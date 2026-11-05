@@ -80,3 +80,14 @@ describe("seller dashboard and navigation", () => {
 });
 
 it("does not keep dispatched orders in the farmer packing queue",()=>{expect(sellerSummary([], [{...order("FUNDED","BOOKED"),fulfillmentStatus:"Dispatched"}]).toPack).toHaveLength(0);});
+
+it("separates new decisions from packing and removes declined or handed-over orders", () => {
+  const summary = sellerSummary([], [
+    { ...order("FUNDED", "PICKUP_PREPARING"), farmerDecision: "PENDING" },
+    { ...order("FUNDED", "PICKUP_PREPARING"), farmerDecision: "ACCEPTED" },
+    { ...order("FUNDED", "PICKUP_PREPARING"), farmerDecision: "REJECTED" },
+    { ...order("FUNDED", "PICKUP_READY"), farmerDecision: "ACCEPTED", handedOverAt: "2026-11-05T12:00:00Z" },
+  ]);
+  expect(summary.newOrders).toHaveLength(1);
+  expect(summary.toPack).toHaveLength(1);
+});

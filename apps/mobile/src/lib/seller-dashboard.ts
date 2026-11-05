@@ -9,7 +9,7 @@ export function sellerSummary(listings: Listing[], orders: Order[]) {
   // Unpaid orders must never be presented as orders ready to pack.
   const toPack = orders.filter(
     (order) =>
-      order.status === "FUNDED" && !order.financialHold && !["Dispatched","In Transit","Picked Up","Completed"].includes(order.fulfillmentStatus || "") &&
+      order.status === "FUNDED" && order.farmerDecision !== "PENDING" && order.farmerDecision !== "REJECTED" && !order.handedOverAt && !order.financialHold && !["Dispatched","In Transit","Picked Up","Completed"].includes(order.fulfillmentStatus || "") &&
       ![
         "PICKED_UP",
         "IN_TRANSIT",
@@ -21,7 +21,8 @@ export function sellerSummary(listings: Listing[], orders: Order[]) {
         "RETURNING",
       ].includes(order.delivery?.status || ""),
   );
-  return { active, lowStock, toPack };
+  const newOrders = orders.filter(order => order.status === "FUNDED" && order.farmerDecision === "PENDING" && !order.financialHold);
+  return { active, lowStock, toPack, newOrders };
 }
 export function sellerGreeting(hour: number) {
   return hour < 12

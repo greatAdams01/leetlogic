@@ -11,7 +11,6 @@ export function OrderPush() {
   useEffect(() => {
     if (
       !a.user ||
-      a.role !== "SELLER" ||
       Platform.OS === "web" ||
       Constants.appOwnership === "expo"
     )
@@ -41,7 +40,7 @@ export function OrderPush() {
           }
           if (
             active &&
-            data?.kind === "paid-order" &&
+            (data?.kind === "paid-order" || data?.kind === "order-update") &&
             data.userId === a.user!.id &&
             typeof data.orderId === "string"
           ) {

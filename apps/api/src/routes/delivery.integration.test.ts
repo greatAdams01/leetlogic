@@ -186,6 +186,7 @@ suite("delivery and language database workflows", () => {
     });
     c.DELIVERY_ALLOWED_CATEGORIES = categoryId;
   });
+
   afterAll(async () => {
     vi.restoreAllMocks();
     await redis().quit();
@@ -1954,4 +1955,64 @@ suite("delivery and language database workflows", () => {
       }),
     ).toBeGreaterThan(0);
   });
+  async function journeyOrder() {
+    const original = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    const o = await prisma.tradeOrder.create({ data: { reference: `JOURNEY-${randomUUID()}`, buyerId: original.buyerId, farmerProfileId: farmerId, listingId, quantity: "1", totalMinor: 10000n, heldMinor: 10000n, status: "FUNDED", journeyVersion: 2, farmerDecision: "PENDING", fundsProvider: "bachs" } });
+    await prisma.escrowEntry.create({ data: { orderId: o.id, kind: "FUND", amountMinor: 10000n, mutationKey: randomUUID(), actorId: o.buyerId, reason: "Journey fixture" } });
+    await prisma.delivery.create({ data: { orderId: o.id, status: "PICKUP_PREPARING", pickup: contact, destination: contact, package: input.parcel } });
+    return o;
+  }
+  it("guides acceptance, preparation and pickup handover without releasing held funds", async () => {
+    const o = await journeyOrder(), farmer = { Authorization: `Bearer ${seller}` };
+    const post = (path: string, body = {}, auth = farmer) => request(app).post(`/v1/orders/${o.id}/delivery/${path}`).set(auth).send(body);
+    expect((await post("ready")).status).toBe(409);
+    expect((await post("decision", { accept: true }, customer())).status).toBe(403);
+    expect((await post("decision", { accept: true })).status).toBe(200);
+    expect((await post("decision", { accept: true })).status).toBe(200);
+    expect((await post("handover")).status).toBe(409);
+    expect((await post("ready")).status).toBe(200);
+    expect((await post("dispatch")).status).toBe(409);
+    expect((await post("handover")).status).toBe(200);
+    expect((await post("handover")).status).toBe(200);
+    const saved = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } });
+    expect(saved.handedOverAt).toBeTruthy(); expect(saved.deliveryConfirmedAt).toBeNull(); expect(saved.heldMinor).toBe(10000n);
+    expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(0);
+    expect((await post("confirm", { acknowledged: true }, customer())).body.error.code).toBe("RECEIPT_EVIDENCE_REQUIRED");
+  });
+  it("requires private receipt evidence, restricts access and confirms only after explicit inspection", async () => {
+    const o = await journeyOrder();
+    await prisma.tradeOrder.update({ where: { id: o.id }, data: { farmerDecision: "ACCEPTED" } });
+    const d = await prisma.delivery.update({ where: { orderId: o.id }, data: { status: "PICKUP_READY" } });
+    const bytes = Buffer.from([255,216,255,224,0,16,74,70,73,70,0,1,1,0,0,1,0,1,0,0]);
+    const storage = await import("../services/storage/private-media.js");
+    const store = vi.spyOn(storage, "storeMedia").mockResolvedValue(`receipt/test-${randomUUID()}`);
+    const read = vi.spyOn(storage, "readMedia").mockResolvedValue(bytes);
+    const endpoint = `/v1/orders/${o.id}/delivery/receipt-photo`;
+    try {
+      expect((await request(app).post(endpoint).set({ Authorization: `Bearer ${seller}`, "Content-Type": "image/jpeg" }).send(bytes)).status).toBe(403);
+      expect((await request(app).post(endpoint).set({ ...customer(), "Content-Type": "image/jpeg" }).send(Buffer.from("invalid image contents"))).status).toBe(422);
+      expect((await request(app).post(endpoint).set({ ...customer(), "Content-Type": "image/jpeg" }).send(bytes)).status).toBe(201);
+      expect((await request(app).get(endpoint).set({ Authorization: `Bearer ${outsider}` })).status).toBe(404);
+      expect((await request(app).get(endpoint).set(customer())).headers["cache-control"]).toBe("private, no-store");
+      expect((await request(app).get(`/v1/orders/${o.id}/delivery`).set(customer())).text).not.toContain("receiptPhotoKey");
+      expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set(customer()).send({})).status).toBe(422);
+      await prisma.tradeOrder.update({ where: { id: o.id }, data: { financialHold: true } });
+      expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set(customer()).send({ acknowledged: true })).status).toBe(409);
+      await prisma.tradeOrder.update({ where: { id: o.id }, data: { financialHold: false } });
+      for (let attempt=0; attempt<2; attempt++) expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set(customer()).send({ acknowledged: true })).status).toBe(200);
+      expect(await prisma.deliveryEvent.count({ where: { deliveryId: d.id, status: "BUYER_RECEIPT_CONFIRMED" } })).toBe(1);
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(10000n);
+    } finally { store.mockRestore(); read.mockRestore(); }
+  });
+  it("records rejection once, requires a reason and prevents later preparation", async () => {
+    const o = await journeyOrder(), auth = { Authorization: `Bearer ${seller}` };
+    const endpoint = `/v1/orders/${o.id}/delivery/decision`;
+    expect((await request(app).post(endpoint).set(auth).send({ accept: false })).status).toBe(422);
+    for (let attempt=0; attempt<2; attempt++) expect((await request(app).post(endpoint).set(auth).send({ accept: false, reason: "The harvest is damaged" })).status).toBe(200);
+    expect((await request(app).post(endpoint).set(auth).send({ accept: true })).status).toBe(409);
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/ready`).set(auth).send({})).status).toBe(409);
+    expect(await prisma.supportTicket.count({ where: { orderId: o.id } })).toBe(1);
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(10000n);
+  });
+
 });

@@ -22,6 +22,7 @@ vi.mock("../../mobile/src/lib/localization", () => ({
   localizedError: (_locale: string, value: any) => value?.code || value?.message || "Request failed",
   localizedStatus: (_locale: string, status: string) => status,
 }));
+import { CancelUnpaidOrder } from "../components/cancel-unpaid-order";
 import { CustomerPayment } from "../components/customer-payments";
 import { CustomerDelivery } from "../components/customer-delivery";
 
@@ -73,6 +74,8 @@ function unselected() {
   Object.assign(h.payment, { checkoutReady: false, payableMinor: null });
 }
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
   vi.resetAllMocks();
   vi.stubGlobal("location", { assign: h.open });
   h.changed.mockResolvedValue(undefined);
@@ -600,19 +603,16 @@ it("offers a new purchase route for a cancelled expired order",async()=>{
   expect(screen.getByRole("link",{name:"View produce"}).getAttribute("href")).toBe("/produce/produce");
 });
 
-it("organizes a paid order into accessible tabs while keeping buyer confirmation available",async()=>{
+it("opens receipt inspection without confirming before a photo is supplied",async()=>{
   Object.assign(h.delivery.order,{status:"FUNDED",quantity:"2",unitCode:"BAG"});
   h.delivery.delivery.status="DELIVERED";
   h.delivery.progress={method:"Delivery",status:"Awaiting buyer confirmation",next:"Confirm only after collecting and inspecting your produce.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:3,canReady:false,canDispatch:false,canConfirm:true,confirmed:false};
   await mountDelivery();
-  expect(screen.getByRole("tab",{name:"Order Details"}).getAttribute("aria-selected")).toBe("true");
-  expect(screen.queryByText("Payment provider fees are shown before confirmation.")).toBeNull();
-  await act(async()=>fireEvent.click(screen.getByRole("tab",{name:"Activity History"})));
-  expect(screen.getByRole("tab",{name:"Activity History"}).getAttribute("aria-selected")).toBe("true");
-  await click("Confirm Delivery Received");
+  expect(screen.queryByRole("tab")).toBeNull();
+  await click("Confirm Receipt");
+  expect(screen.getByText("Inspect your goods")).toBeDefined();
   expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/delivery/confirm"))).toBe(false);
-  await click("I received it");
-  expect(h.api).toHaveBeenCalledWith("orders/order/delivery/confirm",{});
+  expect(screen.getAllByRole("button",{name:"Confirm Receipt"}).some(b => (b as HTMLButtonElement).disabled)).toBe(true);
 });
 it("gives farmers one clear preparation action without order tabs",async()=>{
   Object.assign(h.delivery.order,{status:"FUNDED",isBuyer:false});
@@ -620,8 +620,8 @@ it("gives farmers one clear preparation action without order tabs",async()=>{
   await mountDelivery();
   expect(button("Confirm Delivery Received")).toBeNull();
   expect(screen.queryByRole("tab")).toBeNull();
-  expect(screen.getByRole("button",{name:"Money"}).getAttribute("aria-expanded")).toBe("false");
-  await click("Order is ready");
+  expect(screen.getByText("Payment and receipt").tagName).toBe("SUMMARY");
+  await click("Ready for Rider Pickup");
   expect(h.api).toHaveBeenCalledWith("orders/order/delivery/ready",{});
 });
 
@@ -630,8 +630,9 @@ it("offers the existing dispute process instead of forcing buyer receipt confirm
   h.delivery.progress={method:"Delivery",status:"Awaiting buyer confirmation",next:"Confirm only after collecting and inspecting your produce.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:3,canReady:false,canDispatch:false,canConfirm:true,confirmed:false};
   let saved=false;const original=h.api.getMockImplementation()!;
   h.api.mockImplementation(async(path:string,body:any)=>{if(path.endsWith("/disputes")){if(body){saved=true;h.delivery.progress.canConfirm=false;return {id:"issue"};}return {canOpen:true,items:saved?[{id:"issue",subject:"Order not received",status:"OPEN",messages:[]}]:[]};}return original(path,body);});
-  await mountDelivery();await click("Report an issue");
-  expect(screen.getByRole("tab",{name:"Fulfillment"}).getAttribute("aria-selected")).toBe("true");
+  await mountDelivery();
+  await act(async()=>fireEvent.click(screen.getByText("Report a Problem")));
+  await click("Report an issue");
   await act(async()=>fireEvent.change(screen.getByLabelText("Describe the issue"),{target:{value:"The buyer has not received the produce"}}));
   await click("Submit issue");
   expect(h.api).toHaveBeenCalledWith("orders/order/disputes",{reason:"NOT_RECEIVED",description:"The buyer has not received the produce",sourceLocale:"en"});
@@ -644,11 +645,20 @@ it("uses a plain handoff question before a farmer reports rider collection",asyn
   const original=h.api.getMockImplementation()!;
   h.api.mockImplementation(async(path:string,body:any)=>{if(path.endsWith("/delivery/dispatch")){h.delivery.progress={...h.delivery.progress,status:"Dispatched",canDispatch:false};return {};}return original(path,body);});
   await mountDelivery();
-  await click("Rider has collected it");
+  await click("Rider Collected Goods");
   expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/delivery/dispatch"))).toBe(false);
-  expect(screen.getByText("Has the rider collected everything?")).toBeTruthy();
-  await click("Rider has collected it");
+  expect(screen.getByText("Have all goods been handed over?")).toBeTruthy();
+  await click("Rider Collected Goods");
   expect(h.api).toHaveBeenCalledWith("orders/order/delivery/dispatch",{});
   expect(screen.getByText("Waiting for buyer confirmation")).toBeTruthy();
-  expect(button("Rider has collected it")).toBeNull();
+  expect(button("Rider Collected Goods")).toBeNull();
+});
+
+it("requires an explicit second action before cancelling an unpaid order", async () => {
+  await act(async () => { render(<CancelUnpaidOrder orderId="order" onChanged={h.changed} />); });
+  await click("Cancel unpaid order");
+  expect(h.api).not.toHaveBeenCalled();
+  await click("Cancel order");
+  expect(h.api).toHaveBeenCalledWith("marketplace/orders/order/cancel", {});
+  expect(h.changed).toHaveBeenCalledOnce();
 });

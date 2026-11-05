@@ -1,3 +1,6 @@
+vi.mock("../components/receipt-confirmation", () => ({ ReceiptConfirmation: "ReceiptConfirmation" }));
+vi.mock("./produce-photo", () => ({ choosePhoto: vi.fn(), photoBody: vi.fn() }));
+vi.mock("../components/app-sheet", () => ({ AppSheet: () => null }));
 vi.mock("../components/order-disputes", () => ({ OrderDisputes: "OrderDisputes" }));
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -410,8 +413,9 @@ it.each(["PICKUP_PREPARING", "PICKUP_READY"])("allows the farmer call action aft
   Object.assign(h.data.order,{isBuyer:true,status:"FUNDED",reference:"order",title:"Beans",totalMinor:"10000",pickupContactAvailable:true});
   h.data.order.suggestedPickup.phone="+2348098765432";
   h.data.delivery={status,events:[],quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
+  h.data.progress={method:"Pickup",status:"Preparing for Pickup"};
   await act(async()=>{tree=create(<Delivery/>);});
-  await act(async()=>tree.root.findAllByType("Pressable" as any).find(n=>n.props.accessibilityLabel==="Fulfillment")!.props.onPress());
+
   expect(tree.root.findAllByType("Button" as any).some(n=>n.props.title==="Call farmer")).toBe(true);
 });
 
@@ -422,26 +426,61 @@ it("offers a safe route back to the produce when an unpaid reservation expired",
   expect(action).toBeDefined();action!.props.onPress();expect(h.go).toHaveBeenCalledWith("product","produce");
 });
 
-it("keeps farmer readiness visible with optional money details and no tabs",async()=>{
+it("keeps farmer readiness visible while expanding payment details",async()=>{
   Object.assign(h.data.order,{id:"order",isBuyer:false,status:"FUNDED",reference:"ORDER",title:"Beans",totalMinor:"10000"});
   h.data.delivery={status:"BOOKED",events:[],quotes:[],shippingMinor:"1000",paidMinor:"1000",selectedQuoteId:"q"};
   h.data.progress={method:"Delivery",status:"Preparing for Pickup",next:"Prepare the produce, then mark it ready.",steps:["Payment confirmed","Preparing","Dispatched","In Transit","Completed"],stage:1,canReady:true,canDispatch:false,canConfirm:false,confirmed:false};
   await act(async()=>{tree=create(<Delivery/>);});
   expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(0);
   expect(tree.root.findAllByType("Pressable" as any).filter(n=>n.props.accessibilityRole==="tab")).toHaveLength(0);
-  await act(async()=>tree.root.findAllByType("Pressable" as any).find(n=>n.props.accessibilityLabel==="Money")!.props.onPress());
+  await act(async()=>tree.root.findAllByType("Pressable" as any).find(n=>n.props.accessibilityLabel==="Payment and receipt")!.props.onPress());
   expect(tree.root.findAllByType("OrderPayment" as any)).toHaveLength(1);
-  const press=tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Order is ready")!.props.onPress;
+  const press=tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Ready for Rider Pickup")!.props.onPress;
   await act(async()=>{await Promise.all([press(),press()]);});
   expect(h.api.mock.calls.filter(([path])=>path==="/orders/order/delivery/ready")).toHaveLength(1);
 });
-it("asks the buyer to inspect the produce before confirming pickup",async()=>{
+it("opens photo inspection without prematurely confirming buyer pickup",async()=>{
   Object.assign(h.data.order,{id:"order",isBuyer:true,status:"FUNDED",reference:"ORDER",title:"Beans",totalMinor:"10000"});
-  h.data.delivery={status:"PICKUP_READY",events:[],quotes:[],shippingMinor:"0",paidMinor:"0",selectedQuoteId:null};
-  h.data.progress={method:"Pickup",status:"Ready for Pickup",next:"Confirm only after collecting and inspecting your produce.",steps:["Payment confirmed","Preparing","Ready for Pickup","Collected","Completed"],stage:2,canReady:false,canDispatch:false,canConfirm:true,confirmed:false};
+  h.data.delivery={status:"PICKUP_READY",events:[],quotes:[]};
+  h.data.progress={method:"Pickup",status:"Ready for Pickup",canConfirm:true,confirmed:false};
   await act(async()=>{tree=create(<Delivery/>);});
-  await act(async()=>tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Confirm Pickup")!.props.onPress());
+  await act(async()=>tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Confirm Receipt")!.props.onPress());
   expect(h.api).not.toHaveBeenCalled();
-  await act(async()=>{await h.alert.mock.calls[0]![2].find((b:any)=>b.text==="I received it").onPress();});
-  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/confirm",{method:"POST",body:{}});
+  expect(tree.root.findByType("ReceiptConfirmation" as any).props.visible).toBe(true);
 });
+
+it.each(["Pickup", "Delivery"])(
+  "shows no obsolete farmer actions while awaiting confirmation (%s)",
+  async (method) => {
+    Object.assign(h.data.order, {
+      id: "order",
+      isBuyer: false,
+      reference: "ORDER",
+      title: "Beans",
+      totalMinor: "10000",
+    });
+    h.data.delivery = {
+      status: method === "Pickup" ? "PICKUP_READY" : "IN_TRANSIT",
+      events: [],
+      quotes: [],
+    };
+    h.data.progress = {
+      method,
+      status: method === "Pickup" ? "Ready for Pickup" : "In Transit",
+      canReady: false,
+      canDispatch: false,
+      confirmed: false,
+    };
+    await act(async () => {
+      tree = create(<Delivery />);
+    });
+    const actions = tree.root.findAllByType("Button" as any).map((n) => n.props.title);
+    expect(actions).not.toContain("Mark as Ready for Pickup");
+    expect(actions).not.toContain("Mark as Dispatched");
+    expect(
+      tree.root
+        .findAllByType("Pressable" as any)
+        .filter((n) => n.props.accessibilityRole === "tab"),
+    ).toHaveLength(0);
+  },
+);
