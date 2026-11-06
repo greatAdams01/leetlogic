@@ -1,3 +1,4 @@
+vi.mock("../components/checkout-delivery-address", () => ({ CheckoutDeliveryAddress: "CheckoutDeliveryAddress" }));
 vi.mock("../components/receipt-confirmation", () => ({ ReceiptConfirmation: "ReceiptConfirmation" }));
 vi.mock("./produce-photo", () => ({ choosePhoto: vi.fn(), photoBody: vi.fn() }));
 vi.mock("../components/app-sheet", () => ({ AppSheet: () => null }));
@@ -72,9 +73,10 @@ const submit = () =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.query = undefined;
+  h.api.mockReset();
   h.api.mockResolvedValue({ items: [] });
   h.reload.mockResolvedValue(undefined);
-  h.user = { addresses: [], profile: {}, phoneE164: "+2348012345678" };
+  h.user = { addresses: [{id:"default-home",label:"Home",line1:"25 Buyer Avenue",city:"Ikeja",lga:"Ikeja",state:"Lagos",isDefaultDelivery:true}], profile: {fullName:"Buyer",email:"buyer@example.test"}, phoneE164: "+2348012345678" };
   h.data = {
     order: {
       id: "order",
@@ -281,10 +283,10 @@ it("clears a saved map pin when the buyer edits the delivery address", async () 
       .find((node) => node.props.title === "Edit delivery details")!
       .props.onPress(),
   );
-  await act(async () => field("Delivery address").props.onChangeText("New delivery address Abuja"));
+  await act(async () => tree.root.findByType("CheckoutDeliveryAddress" as any).props.onSaved({id:"edited",label:"Home",line1:"New delivery address Abuja",city:"Kubwa",lga:"Bwari",state:"FCT"}));
   await act(async () => submit());
   const body = h.api.mock.calls.at(-1)![1].body;
-  expect(body.destination.address).toBe("New delivery address Abuja");
+  expect(body.destination.address).toBe("New delivery address Abuja, Kubwa, Bwari");
   expect(body.destination.latitude).toBeUndefined();
   expect(body.destination.longitude).toBeUndefined();
 });
@@ -364,7 +366,7 @@ it("updates server-owned packing on reload without discarding local destination 
   h.data.delivery = { destination: { name: "Buyer", phone: "+2348012345678", email: "buyer@example.test", address: "Old buyer address Lagos", state: "Lagos", country: "NG" } };
   await act(async () => { tree = create(<Quotes />); });
   await act(async () => tree.root.findAllByType("Button" as any).find((node) => node.props.title === "Edit delivery details")!.props.onPress());
-  await act(async () => field("Delivery address").props.onChangeText("New buyer address Lagos"));
+  await act(async () => tree.root.findByType("CheckoutDeliveryAddress" as any).props.onSaved({id:"edited",label:"Home",line1:"New buyer address Lagos",city:"Ikeja",lga:"Ikeja",state:"Lagos"}));
   const date = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
   await act(async () => field("Pickup date · YYYY-MM-DD").props.onChangeText(date));
   h.data = { ...h.data, order: { ...h.data.order, packageSuggestion: { ...h.data.order.packageSuggestion, packageCount: 3, weightKg: 151.5, length: 60 } } };
@@ -372,7 +374,7 @@ it("updates server-owned packing on reload without discarding local destination 
   h.api.mockResolvedValueOnce({ items: [{ id: "new-rate" }] });
   await act(async () => submit());
   expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/quotes", expect.objectContaining({ body: expect.objectContaining({
-    destination: expect.objectContaining({ address: "New buyer address Lagos" }),
+    destination: expect.objectContaining({ address: "New buyer address Lagos, Ikeja, Ikeja" }),
     parcel: expect.objectContaining({ packageCount: 3, weightKg: 151.5, length: 60, pickupDate: date }),
   }) }));
 });
@@ -484,3 +486,168 @@ it.each(["Pickup", "Delivery"])(
     ).toHaveLength(0);
   },
 );
+
+it("blocks Step 1 until an address is saved and carries that exact address into delivery review", async () => {
+  h.user.addresses = [];
+  h.data.order = { ...h.data.order, isBuyer:true, status:"AWAITING_PAYMENT", totalMinor:"10000" };
+  await act(async()=>{tree=create(<Delivery/>);});
+  const deliveryChoice=tree.root.findAllByType("Pressable" as any).filter(node=>node.props.accessibilityRole==="button")[1]!;
+  await act(async()=>deliveryChoice.props.onPress());
+  const next=()=>tree.root.findAllByType("Button" as any).find(node=>node.props.title==="Continue")!;
+  expect(next().props.disabled).toBe(true);
+  await act(async()=>next().props.onPress());expect(h.go).not.toHaveBeenCalled();
+  const saved={id:"new-home",label:"Home",line1:"25 Market Road",city:"Ikeja",state:"Lagos",lga:"Ikeja"};
+  await act(async()=>tree.root.findByType("CheckoutDeliveryAddress" as any).props.onSaved(saved));
+  expect(next().props.disabled).toBe(false);
+  expect(h.go).not.toHaveBeenCalled();
+  await act(async()=>next().props.onPress());
+  expect(h.go).toHaveBeenCalledWith("quotes","order","new-home");
+});
+it("prefers the saved address selected in Step 1 over a previous delivery destination",async()=>{
+  const saved={id:"selected-home",label:"Office",line1:"25 Market Road",city:"Ikeja",state:"Lagos",lga:"Ikeja"};
+  h.user.addresses=[saved];h.query=saved.id;
+  h.data.delivery={status:"QUOTED",destination:{name:"Buyer",phone:"+2348000000000",email:"buyer@test.com",address:"Old destination",state:"Abuja"},quotes:[]};
+  await act(async()=>{tree=create(<Quotes/>);});
+  expect(JSON.stringify(tree.toJSON())).toContain("25 Market Road");
+  expect(JSON.stringify(tree.toJSON())).not.toContain("Old destination");
+});
+
+it("advances to delivery review immediately after the current map location is saved",async()=>{
+  h.data.order={...h.data.order,isBuyer:true,status:"AWAITING_PAYMENT",totalMinor:"10000"};
+  await act(async()=>{tree=create(<Delivery/>);});
+  await act(async()=>tree.root.findAllByType("Pressable" as any).filter(node=>node.props.accessibilityRole==="button")[1]!.props.onPress());
+  const saved={id:"map-home",label:"Delivery location",line1:"25 Market Road",city:"Ikeja",state:"Lagos",lga:"Ikeja"};
+  await act(async()=>tree.root.findByType("CheckoutDeliveryAddress" as any).props.onLocationSaved(saved));
+  expect(h.go).toHaveBeenCalledWith("quotes","order","map-home");
+});
+it("waits for a selected address that hydrates after the order instead of using a different default",async()=>{
+  h.query="selected-late";
+  h.user.addresses=[{id:"wrong",label:"Old home",line1:"An old delivery street",city:"Ikeja",state:"Lagos",lga:"Ikeja",isDefaultDelivery:true}];
+  h.data.order.packageSuggestion={...h.data.order.packageSuggestion,length:20,width:15,height:10};
+  await act(async()=>{tree=create(<Quotes/>);});
+  expect(JSON.stringify(tree.toJSON())).not.toContain("An old delivery street");
+  expect(tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Continue to delivery options")!.props.disabled).toBe(true);
+  h.user={...h.user,addresses:[...h.user.addresses,{id:"selected-late",label:"New home",line1:"25 Newly Selected Road",city:"Ikeja",state:"Lagos",lga:"Ikeja",latitude:6.6,longitude:3.3,postalCode:null,line2:"Use side gate"}]};
+  await act(async()=>tree.update(<Quotes/>));
+  h.api.mockResolvedValueOnce({items:[{id:"rate"}]});await act(async()=>submit());
+  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/quotes",expect.objectContaining({body:expect.objectContaining({destination:expect.objectContaining({addressId:"selected-late",latitude:6.6,longitude:3.3,postalCode:null,instructions:"Use side gate"})})}));
+});
+it("requests only the missing contact email after a location is already captured",async()=>{
+  h.user.profile={fullName:"Buyer"};
+  h.data.order.packageSuggestion={...h.data.order.packageSuggestion,length:20,width:15,height:10};
+  await act(async()=>{tree=create(<Quotes/>);});
+  expect(field("Email")).toBeTruthy();expect(field("Full name")).toBeUndefined();expect(field("Phone")).toBeUndefined();expect(field("Delivery address")).toBeUndefined();
+  expect(tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Continue to delivery options")!.props.disabled).toBe(true);
+  await act(async()=>field("Email").props.onChangeText("delivery@example.test"));
+  h.api.mockResolvedValueOnce({items:[{id:"rate"}]});await act(async()=>submit());
+  expect(h.api).toHaveBeenCalledWith("/orders/order/delivery/quotes",expect.objectContaining({body:expect.objectContaining({destination:expect.objectContaining({addressId:"default-home",email:"delivery@example.test"})})}));
+});
+it("keeps missing contact fields editable after their values first become valid", async () => {
+  h.user.profile = { fullName: "Buyer" };
+  h.user.phoneE164 = "";
+  await act(async () => { tree = create(<Quotes />); });
+  await act(async () => field("Phone").props.onChangeText("0801234567"));
+  expect(field("Phone")).toBeDefined();
+  await act(async () => field("Phone").props.onChangeText("08012345678"));
+  await act(async () => field("Email").props.onChangeText("buyer@example.co"));
+  expect(field("Email")).toBeDefined();
+  await act(async () => field("Email").props.onChangeText("buyer@example.com"));
+  expect(field("Phone").props.value).toBe("08012345678");
+  expect(field("Email").props.value).toBe("buyer@example.com");
+});
+it("retains contact entered before the order and saved address finish loading", async () => {
+  h.user.profile = { fullName: "Buyer" };
+  const loaded = { ...h.data, order: { ...h.data.order,
+    packageSuggestion: { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 } } };
+  h.data = null;
+  await act(async () => { tree = create(<Quotes />); });
+  await act(async () => field("Email").props.onChangeText("local-contact@example.test"));
+  h.data = loaded;
+  await act(async () => tree.update(<Quotes />));
+  expect(field("Email").props.value).toBe("local-contact@example.test");
+  h.api.mockResolvedValueOnce({ items: [{ id: "rate" }] });
+  await act(async () => submit());
+  expect(h.api.mock.calls.at(-1)![1].body.destination.email).toBe("local-contact@example.test");
+});
+it.each([null, {}, { items: "rate" }, { items: { length: 1 } }, { items: [null] }])(
+  "does not advance on a malformed quote response (%j)", async response => {
+    h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+    h.api.mockResolvedValueOnce(response);
+    await act(async () => { tree = create(<Quotes />); });
+    await act(async () => submit());
+    expect(h.returnTo).not.toHaveBeenCalled();
+    expect(h.reload).toHaveBeenCalledOnce();
+    expect(tree.root.findAllByType("Notice" as any).some(node => node.props.error)).toBe(true);
+  },
+);
+it("keeps edited contact and pickup date while changing the selected saved destination", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+  h.user.addresses = [...h.user.addresses, { id: "office", label: "Office", line1: "42 Office Road",
+    city: "Abuja", lga: "Bwari", state: "Federal Capital Territory", latitude: "9.08", longitude: "7.4",
+    postalCode: "FC-02-A09-DB-09", line2: "Use reception", landmark: "Blue building" }];
+  await act(async () => { tree = create(<Quotes />); });
+  await act(async () => tree.root.findAllByType("Button" as any)
+    .find(node => node.props.title === "Edit delivery details")!.props.onPress());
+  await act(async () => field("Email").props.onChangeText("  delivery-contact@example.test  "));
+  const date = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  await act(async () => field("Pickup date · YYYY-MM-DD").props.onChangeText(date));
+  h.query = "office";
+  await act(async () => tree.update(<Quotes />));
+  h.api.mockResolvedValueOnce({ items: [{ id: "rate" }] });
+  await act(async () => submit());
+  expect(h.api.mock.calls.at(-1)![1].body).toMatchObject({ destination: {
+    addressId: "office", address: "42 Office Road, Abuja, Bwari", state: "Federal Capital Territory",
+    latitude: 9.08, longitude: 7.4, postalCode: "FC-02-A09-DB-09",
+    instructions: "Use reception · Landmark: Blue building", email: "delivery-contact@example.test",
+  }, parcel: { pickupDate: date } });
+});
+it("ignores a late quote response for a superseded saved destination", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+  let finish!: (value: unknown) => void;
+  h.api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => { tree = create(<Quotes />); });
+  const oldSubmit = tree.root.findAllByType("Button" as any)
+    .find(node => node.props.title === "Continue to delivery options")!.props.onPress;
+  let pending!: Promise<void>;
+  await act(async () => { pending = oldSubmit(); });
+  h.user.addresses = [...h.user.addresses, { ...h.user.addresses[0], id: "new-destination", line1: "42 Newly Selected Street" }];
+  h.query = "new-destination";
+  await act(async () => tree.update(<Quotes />));
+  await act(async () => oldSubmit());
+  await act(async () => { finish({ items: [{ id: "old-rate" }] }); await pending; });
+  expect(h.api).toHaveBeenCalledOnce();
+  expect(h.returnTo).not.toHaveBeenCalled();
+  expect(h.reload).not.toHaveBeenCalled();
+  expect(tree.root.findAllByType("Button" as any)
+    .find(node => node.props.title === "Continue to delivery options")!.props.disabled).toBe(false);
+});
+it.each(["success", "failure"])("ignores quote %s after leaving review", async outcome => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+  let finish!: (value: unknown) => void;
+  let fail!: (error: Error) => void;
+  h.api.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+  await act(async () => { tree = create(<Quotes />); });
+  let pending!: Promise<void>;
+  await act(async () => { pending = submit(); });
+  await act(async () => tree.unmount());
+  await act(async () => {
+    if (outcome === "success") finish({ items: [{ id: "rate" }] });
+    else fail(new Error("Late provider failure"));
+    await pending;
+  });
+  expect(h.returnTo).not.toHaveBeenCalled();
+  expect(h.reload).not.toHaveBeenCalled();
+});
+it("does not advance a late quote once checkout is locked", async () => {
+  h.data.order.packageSuggestion = { ...h.data.order.packageSuggestion, length: 20, width: 15, height: 10 };
+  let finish!: (value: unknown) => void;
+  h.api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => { tree = create(<Quotes />); });
+  let pending!: Promise<void>;
+  await act(async () => { pending = submit(); });
+  h.data = { ...h.data, order: { ...h.data.order, checkoutActive: true } };
+  await act(async () => tree.update(<Quotes />));
+  await act(async () => { finish({ items: [{ id: "rate" }] }); await pending; });
+  expect(h.returnTo).not.toHaveBeenCalled();
+  expect(h.api).toHaveBeenCalledOnce();
+});

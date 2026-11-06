@@ -55,16 +55,32 @@ export async function captureFarmPosition(context: "farm" | "buyer" = "farm") {
 
 export async function describePosition(point: FarmPoint) {
   const [place] = await Location.reverseGeocodeAsync(point);
-  const state = place?.region ? normalizeNigerianState(place.region) : undefined;
+  const state = place?.region
+    ? normalizeNigerianState(place.region.trim().replace(/\s+state$/i, ""))
+    : undefined;
   const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-  const candidate = place?.district || place?.subregion;
-  const lga = state && candidate ? localGovernments(state).find((name) => normalize(name) === normalize(candidate)) : undefined;
+  const candidates = [place?.district, place?.subregion, place?.city].filter(Boolean) as string[];
+  const lga = state
+    ? candidates
+        .map((candidate) =>
+          localGovernments(state).find((name) => normalize(name) ===
+            normalize(candidate.trim().replace(/\s+(?:lga|local government(?: area)?)$/i, ""))),
+        )
+        .find(Boolean)
+    : undefined;
+  const street = place?.street
+    ? [place.streetNumber, place.street].filter(Boolean).join(" ").trim()
+    : "";
+  const line1 = street || place?.name;
   return place
     ? {
-        ...([place.name, place.street].filter(Boolean).length ? { line1: [place.name, place.street].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(", ") } : {}),
+        ...(line1 ? { line1 } : {}),
         ...(place.city || place.subregion ? { city: place.city || place.subregion! } : {}),
         ...(lga ? { lga } : {}),
         ...(state ? { state } : {}),
+        ...(place.postalCode && /^\d{6}$/.test(place.postalCode.trim())
+          ? { postalCode: place.postalCode.trim() }
+          : {}),
       }
     : null;
 }

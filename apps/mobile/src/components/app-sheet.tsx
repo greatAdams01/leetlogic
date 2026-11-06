@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -20,6 +20,7 @@ export function AppSheet({
   subtitle,
   onClose,
   onShow,
+  onDismiss,
   busy = false,
   footer,
   children,
@@ -33,6 +34,7 @@ export function AppSheet({
   subtitle?: string;
   onClose: () => void;
   onShow?: () => void;
+  onDismiss?: () => void;
   busy?: boolean;
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -43,8 +45,22 @@ export function AppSheet({
 }) {
   const insets = useSafeAreaInsets();
   const tr = useUI();
+  const [rendered, setRendered] = useState(visible);
+  const shown = useRef(visible);
+  const current = useRef({ visible, onDismiss });
+  current.current = { visible, onDismiss };
+  const dismissed = () => {
+    if (current.current.visible || !shown.current) return;
+    shown.current = false;
+    setRendered(false);
+    current.current.onDismiss?.();
+  };
   useEffect(() => {
-    if (visible) Keyboard.dismiss();
+    if (visible) {
+      shown.current = true;
+      setRendered(true);
+      Keyboard.dismiss();
+    } else if (Platform.OS !== "ios") dismissed();
   }, [visible]);
   const close = () => {
     if (!busy) {
@@ -52,15 +68,17 @@ export function AppSheet({
       onClose();
     }
   };
-  if (!visible) return null;
+  // iOS emits onDismiss only while Modal is mounted. Keep it until the native exit finishes.
+  if (!visible && !rendered) return null;
   return (
     <Modal
-      visible
+      visible={visible}
       transparent
       animationType="slide"
       statusBarTranslucent
       onRequestClose={close}
       onShow={onShow}
+      onDismiss={dismissed}
       testID={testID}
     >
       <KeyboardAvoidingView

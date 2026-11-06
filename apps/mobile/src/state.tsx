@@ -329,7 +329,7 @@ export function useApp() {
     locale: Locale;
     changeLocale: (l: Locale) => Promise<void>;
     user: Customer | null;
-    setUser: (u: Customer | null) => void;
+    setUser: React.Dispatch<React.SetStateAction<Customer | null>>;
     loadUser: (publish?: boolean) => Promise<Customer>;
     ready: boolean;
     authIntent: "LOGIN" | "REGISTER";

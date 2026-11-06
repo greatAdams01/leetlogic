@@ -1,7 +1,7 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ close: vi.fn(), dismiss: vi.fn() }));
+const h = vi.hoisted(() => ({ close: vi.fn(), dismiss: vi.fn(), completed: vi.fn(), platform: { OS: "ios" } }));
 vi.mock("react-native", () => ({
   Modal: "Modal",
   View: "View",
@@ -9,7 +9,7 @@ vi.mock("react-native", () => ({
   ScrollView: "ScrollView",
   KeyboardAvoidingView: "KeyboardAvoidingView",
   Keyboard: { dismiss: h.dismiss },
-  Platform: { OS: "ios" },
+  Platform: h.platform,
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
 }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -28,6 +28,7 @@ let renderer: ReactTestRenderer;
 afterEach(async () => {
   await act(async () => renderer?.unmount());
   vi.clearAllMocks();
+  h.platform.OS = "ios";
 });
 describe("shared modal sheet", () => {
   it("dismisses consistently from its close button, backdrop, and Android back", async () => {
@@ -86,6 +87,28 @@ describe("shared modal sheet", () => {
         </AppSheet>,
       ),
     );
+    expect(renderer.root.findByType("Modal" as never).props.visible).toBe(false);
+    await act(async () => renderer.root.findByType("Modal" as never).props.onDismiss());
     expect(renderer.root.findAllByType("Modal" as never)).toHaveLength(0);
+  });
+  it.each(["ios", "android"])("notifies %s dismissal exactly once after hiding the sheet", async platform => {
+    h.platform.OS = platform;
+    await act(async () => {
+      renderer = create(<AppSheet visible title="Test" onClose={h.close} onDismiss={h.completed}><span /></AppSheet>);
+    });
+    const nativeDismiss = renderer.root.findByType("Modal" as never).props.onDismiss;
+    expect(h.completed).not.toHaveBeenCalled();
+    await act(async () => renderer.update(
+      <AppSheet visible={false} title="Test" onClose={h.close} onDismiss={h.completed}><span /></AppSheet>,
+    ));
+    if (platform === "ios") {
+      expect(h.completed).not.toHaveBeenCalled();
+      expect(renderer.root.findByType("Modal" as never).props.visible).toBe(false);
+      await act(async () => nativeDismiss());
+    }
+    expect(h.completed).toHaveBeenCalledOnce();
+    expect(renderer.root.findAllByType("Modal" as never)).toHaveLength(0);
+    await act(async () => nativeDismiss());
+    expect(h.completed).toHaveBeenCalledOnce();
   });
 });

@@ -17,12 +17,18 @@ export function FarmPin({
   disabled = false,
   context = "farm",
   autoLocate = false,
+  compact = false,
+  onConfirmationClosed,
+  onBusyChange,
 }: {
   value?: FarmPoint;
   onConfirm: (point: FarmPoint) => void | Promise<void>;
   disabled?: boolean;
   context?: "farm" | "buyer";
   autoLocate?: boolean;
+  compact?: boolean;
+  onConfirmationClosed?: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const a = useApp();
   const [busy, setBusy] = useState(false),
@@ -32,6 +38,7 @@ export function FarmPin({
   const [candidate, setCandidate] = useState<FarmPoint | undefined>(value);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const map = useRef<MapView>(null);
   const mapReady = useRef(false),
     pendingRegion = useRef<Region | null>(null);
@@ -41,11 +48,25 @@ export function FarmPin({
   const generation = useRef(0),
     gesture = useRef(false);
   const autoStarted = useRef(false);
+  const confirmed = useRef(false);
+  const controls = useRef({ disabled, onConfirm, dismissing });
+  controls.current = { disabled, onConfirm, dismissing };
+  const notifyClosed = () => {
+    if (active.current) setDismissing(false);
+    if (confirmed.current) {
+      confirmed.current = false;
+      if (active.current) onConfirmationClosed?.();
+    }
+  };
+  useEffect(() => {
+    onBusyChange?.(busy || saving || open || dismissing);
+  }, [busy, saving, open, dismissing, onBusyChange]);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
       generation.current++;
+      onBusyChange?.(false);
     };
   }, []);
   const centreOn = (point: FarmPoint, precision: number | null = null) => {
@@ -60,22 +81,25 @@ export function FarmPin({
     }
   };
   const locate = async () => {
-    if (running.current || confirming.current) return;
+    if (!active.current || running.current || confirming.current || confirmed.current ||
+      controls.current.disabled || controls.current.dismissing) return;
     const request = ++generation.current;
     running.current = true;
     setBusy(true);
     setError("");
     try {
       const captured = await captureFarmPosition(context);
-      if (active.current && request === generation.current) {
+      if (active.current && request === generation.current && !controls.current.disabled) {
         centreOn(captured.point, captured.accuracy);
         setOpen(true);
       }
     } catch (e) {
       if (active.current && request === generation.current) setError(a.error(e));
     } finally {
-      running.current = false;
-      if (active.current) setBusy(false);
+      if (active.current && request === generation.current) {
+        running.current = false;
+        setBusy(false);
+      }
     }
   };
   useEffect(() => {
@@ -84,28 +108,34 @@ export function FarmPin({
     void locate();
   }, [autoLocate, value]);
   const close = () => {
-    if (confirming.current) return;
+    if (!active.current || confirming.current || controls.current.dismissing) return;
     generation.current++;
+    running.current = false;
+    setBusy(false);
     mapReady.current = false;
     pendingRegion.current = null;
+    setDismissing(true);
     setOpen(false);
     setError("");
     setMoving(false);
     gesture.current = false;
   };
   const confirm = async () => {
-    if (!candidate || busy || moving || confirming.current) return;
+    if (!active.current || !candidate || busy || moving || running.current || confirming.current ||
+      confirmed.current || controls.current.disabled || controls.current.dismissing) return;
     confirming.current = true;
     setSaving(true);
     setError("");
     try {
-      await onConfirm({
+      await controls.current.onConfirm({
         latitude: Number(candidate.latitude.toFixed(6)),
         longitude: Number(candidate.longitude.toFixed(6)),
       });
       if (active.current) {
         mapReady.current = false;
         pendingRegion.current = null;
+        confirmed.current = true;
+        setDismissing(true);
         setOpen(false);
       }
     } catch (e) {
@@ -115,42 +145,68 @@ export function FarmPin({
       if (active.current) setSaving(false);
     }
   };
+  const Container = compact ? View : Card;
   return (
-    <Card>
-      <Heading>{context === "buyer" ? "Delivery location" : "Map location"}</Heading>
-      <Label>
-        {context === "buyer"
-          ? "Your current location is selected by default. Confirm the pin or move it to the exact delivery point."
-          : "Use your current location at the pickup point, then confirm the pin. Your address is still needed for delivery."}
-      </Label>
-      {value && <Notice text="Location pin confirmed." success />}
+    <Container>
+      {!compact && (
+        <>
+          <Heading>{context === "buyer" ? "Delivery location" : "Map location"}</Heading>
+          <Label>
+            {context === "buyer"
+              ? "Your current location is selected by default. Confirm the pin or move it to the exact delivery point."
+              : "Use your current location at the pickup point, then confirm the pin. Your address is still needed for delivery."}
+          </Label>
+          {value && <Notice text="Location pin confirmed." success />}
+        </>
+      )}
       <Button
-        title={busy ? "Finding your location…" : "Use my current location"}
+        title={
+          busy
+            ? "Finding your location…"
+            : compact
+              ? "Use current location"
+              : "Use my current location"
+        }
         loading={busy}
-        disabled={disabled || busy}
+        disabled={disabled || busy || saving || dismissing}
         onPress={() => void locate()}
       />
-      <Button
-        title={value ? "View or adjust pin" : context === "buyer" ? "Choose delivery point on map" : "Choose location on map"}
-        secondary
-        disabled={disabled || busy}
-        onPress={() => {
-          mapReady.current = false;
-          pendingRegion.current = null;
-          setError("");
-          setCandidate(value);
-          setAccuracy(null);
-          setMoving(false);
-          gesture.current = false;
-          setOpen(true);
-        }}
-      />
+      {!compact && (
+        <Button
+          title={
+            value
+              ? "View or adjust pin"
+              : context === "buyer"
+                ? "Choose delivery point on map"
+                : "Choose location on map"
+          }
+          secondary
+          disabled={disabled || busy || saving || dismissing}
+          onPress={() => {
+            if (!active.current || running.current || confirming.current || confirmed.current ||
+              controls.current.disabled || controls.current.dismissing) return;
+            mapReady.current = false;
+            pendingRegion.current = null;
+            setError("");
+            setCandidate(value);
+            setAccuracy(null);
+            setMoving(false);
+            gesture.current = false;
+            setOpen(true);
+          }}
+        />
+      )}
       {error && !open && <Notice text={error} error />}
       <AppSheet
         visible={open}
         title="Confirm map location"
-        subtitle={context === "buyer" ? "Move the map to place the pin on your delivery point." : "Move the map to place the pin on your pickup point."}
+        subtitle={
+          context === "buyer"
+            ? "Move the map to place the pin on your delivery point."
+            : "Move the map to place the pin on your pickup point."
+        }
         onClose={close}
+        onDismiss={notifyClosed}
         busy={saving}
         scroll={false}
         testID="farm-pin"
@@ -172,13 +228,13 @@ export function FarmPin({
               title={busy ? "Finding your location…" : "Use my current location"}
               secondary
               loading={busy}
-              disabled={busy || saving}
+              disabled={disabled || busy || saving || dismissing}
               onPress={() => void locate()}
             />
             <Button
               title={saving ? "Saving…" : "Confirm location pin"}
               loading={saving}
-              disabled={!candidate || saving || busy || moving}
+              disabled={disabled || !candidate || saving || busy || moving || dismissing}
               onPress={() => void confirm()}
             />
           </>
@@ -243,7 +299,7 @@ export function FarmPin({
           </View>
         </View>
       </AppSheet>
-    </Card>
+    </Container>
   );
 }
 const styles = StyleSheet.create({

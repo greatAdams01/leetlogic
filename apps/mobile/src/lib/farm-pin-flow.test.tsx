@@ -1,8 +1,16 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ capture: vi.fn(), confirm: vi.fn(), animate: vi.fn() }));
+const h = vi.hoisted(() => ({
+  capture: vi.fn(),
+  confirm: vi.fn(),
+  animate: vi.fn(),
+  closed: vi.fn(),
+  busy: vi.fn(),
+  platform: { OS: "ios" },
+}));
 vi.mock("react-native", () => ({
+  Platform: h.platform,
   Modal: "Modal",
   View: "View",
   Pressable: "Pressable",
@@ -74,11 +82,46 @@ const button = (title: string) =>
   renderer.root.findAllByType("Button" as never).find((node) => node.props.title === title)!;
 beforeEach(() => {
   vi.clearAllMocks();
+  h.platform.OS = "ios";
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
 });
 describe("farm map confirmation", () => {
+  it("waits until the iOS map sheet is dismissed before showing missing address details", async () => {
+    h.capture.mockResolvedValue({ point: { latitude: 6.52, longitude: 3.37 }, accuracy: 10 });
+    await act(async () => {
+      renderer = create(
+        <FarmPin compact context="buyer" onConfirm={h.confirm} onConfirmationClosed={h.closed} />,
+      );
+    });
+    await act(async () => button("Use current location").props.onPress());
+    const dismissed = renderer.root.findByType("AppSheet" as never).props.onDismiss;
+    await act(async () => button("Confirm location pin").props.onPress());
+    expect(h.closed).not.toHaveBeenCalled();
+    await act(async () => dismissed());
+    expect(h.closed).toHaveBeenCalledOnce();
+    await act(async () => dismissed());
+    expect(h.closed).toHaveBeenCalledOnce();
+  });
+
+  it("opens the current location map from one checkout button without an extra location card", async () => {
+    h.capture.mockResolvedValue({ point: { latitude: 6.52, longitude: 3.37 }, accuracy: 10 });
+    await act(async () => {
+      renderer = create(<FarmPin compact context="buyer" onConfirm={h.confirm} />);
+    });
+    expect(renderer.root.findAllByType("Card" as never)).toHaveLength(0);
+    expect(renderer.root.findAllByType("Heading" as never)).toHaveLength(0);
+    expect(button("Use current location")).toBeTruthy();
+    expect(button("Choose delivery point on map")).toBeUndefined();
+    await act(async () => button("Use current location").props.onPress());
+    expect(renderer.root.findByType("MapView" as never).props.initialRegion.latitude).toBe(6.52);
+    expect(h.confirm).not.toHaveBeenCalled();
+    await act(async () => button("Confirm location pin").props.onPress());
+    expect(h.confirm).toHaveBeenCalledWith({ latitude: 6.52, longitude: 3.37 });
+    expect(renderer.root.findAllByType("AppSheet" as never)).toHaveLength(0);
+  });
+
   it("requests no location on mount and saves only after explicit confirmation", async () => {
     h.capture.mockResolvedValue({ point: { latitude: 6.52, longitude: 3.37 }, accuracy: 10 });
     await act(async () => {
@@ -172,5 +215,63 @@ describe("farm map confirmation", () => {
         ),
     ).toBe(true);
     expect(button("Choose location on map").props.disabled).toBe(false);
+  });
+  it("keeps cancelled-map interaction locked until native dismissal finishes", async () => {
+    await act(async () => {
+      renderer = create(<FarmPin onConfirm={h.confirm} onConfirmationClosed={h.closed} onBusyChange={h.busy} />);
+    });
+    await act(async () => button("Choose location on map").props.onPress());
+    const dismissed = renderer.root.findByType("AppSheet" as never).props.onDismiss;
+    await act(async () => renderer.root.findByType("AppSheet" as never).props.onClose());
+    expect(h.busy).toHaveBeenLastCalledWith(true);
+    await act(async () => dismissed());
+    expect(h.busy).toHaveBeenLastCalledWith(false);
+    expect(h.closed).not.toHaveBeenCalled();
+  });
+  it("ignores a repeated confirmation while its native sheet is dismissing", async () => {
+    h.capture.mockResolvedValue({ point: { latitude: 6.52, longitude: 3.37 }, accuracy: 10 });
+    await act(async () => { renderer = create(<FarmPin onConfirm={h.confirm} />); });
+    await act(async () => button("Use my current location").props.onPress());
+    const confirm = button("Confirm location pin").props.onPress;
+    await act(async () => confirm());
+    await act(async () => confirm());
+    expect(h.confirm).toHaveBeenCalledOnce();
+  });
+  it("does not let old adjustment or GPS handlers reopen a disabled map", async () => {
+    const point = { latitude: 6.52, longitude: 3.37 };
+    await act(async () => { renderer = create(<FarmPin value={point} onConfirm={h.confirm} />); });
+    const adjust = button("View or adjust pin").props.onPress;
+    const locate = button("Use my current location").props.onPress;
+    await act(async () => renderer.update(<FarmPin value={point} disabled onConfirm={h.confirm} />));
+    await act(async () => { adjust(); locate(); });
+    expect(h.capture).not.toHaveBeenCalled();
+    expect(renderer.root.findAllByType("AppSheet" as never)).toHaveLength(0);
+  });
+  it("does not start GPS from a handler retained after unmounting", async () => {
+    await act(async () => { renderer = create(<FarmPin onConfirm={h.confirm} />); });
+    const locate = button("Use my current location").props.onPress;
+    await act(async () => renderer.unmount());
+    await act(async () => locate());
+    expect(h.capture).not.toHaveBeenCalled();
+  });
+  it("releases cancelled GPS and prevents its late result from clearing a newer request", async () => {
+    let first!: (value: unknown) => void;
+    let second!: (value: unknown) => void;
+    h.capture.mockImplementationOnce(() => new Promise(resolve => { first = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { second = resolve; }));
+    await act(async () => { renderer = create(<FarmPin onConfirm={h.confirm} onBusyChange={h.busy} />); });
+    await act(async () => button("Choose location on map").props.onPress());
+    const dismissed = renderer.root.findByType("AppSheet" as never).props.onDismiss;
+    await act(async () => button("Use my current location").props.onPress());
+    await act(async () => renderer.root.findByType("AppSheet" as never).props.onClose());
+    await act(async () => dismissed());
+    expect(h.busy).toHaveBeenLastCalledWith(false);
+    await act(async () => button("Use my current location").props.onPress());
+    expect(h.capture).toHaveBeenCalledTimes(2);
+    await act(async () => first({ point: { latitude: 6, longitude: 3 }, accuracy: 10 }));
+    expect(h.busy).toHaveBeenLastCalledWith(true);
+    await act(async () => second({ point: { latitude: 7, longitude: 4 }, accuracy: 10 }));
+    await act(async () => button("Confirm location pin").props.onPress());
+    expect(h.confirm).toHaveBeenCalledWith({ latitude: 7, longitude: 4 });
   });
 });

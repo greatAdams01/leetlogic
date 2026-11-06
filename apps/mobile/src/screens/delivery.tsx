@@ -1,14 +1,13 @@
+import { CheckoutDeliveryAddress, type CheckoutAddressDraft } from "../components/checkout-delivery-address";
 import { GuidedOrder } from "../components/guided-order";
 import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
 import { orderTabs, type OrderTab } from "../../../../packages/contracts/src/order-fulfillment";
 import { PaymentRecovery } from "../components/payment-recovery";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
-import { checkoutAddress } from "../lib/checkout-address";
-import { postcodeStatus } from "../../../../packages/contracts/src/addresses";
+import { checkoutAddress, validCheckoutAddress, missingDeliveryContact, deliveryDestinationReady, deliveryLocationReady } from "../lib/checkout-address";
 import { OrderDisputes } from "../components/order-disputes";
 import { OrderPayment } from "../components/order-payment";
 import { Select } from "../components/Select";
-import { nigeriaStates } from "../lib/locations";
 import { LocalizedText as Text } from "../localization";
 import React, { useEffect, useRef, useState } from "react";
 import { View, Pressable, Linking, StyleSheet } from "react-native";
@@ -26,7 +25,7 @@ import {
   colors,
 } from "../components/ui";
 import { api } from "../lib/api";
-import { money, safeHttps, type DeliveryData, type Contact } from "../lib/domain";
+import { money, safeHttps, type Address, type DeliveryData, type Contact } from "../lib/domain";
 
 function CheckoutHeader({ title, step, back }: { title: string; step?: string; back: () => void }) {
   return (
@@ -47,12 +46,16 @@ function CheckoutHeader({ title, step, back }: { title: string; step?: string; b
 
 function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Promise<unknown> }) {
   const a = useApp();
+  const addressQuery = a.route.query && !["delivery-review", "delivery-carriers"].includes(a.route.query)
+    ? a.route.query : undefined;
   const [stage, setStage] = useState<"address" | "scope" | "carrier" | "summary" | "review">(
-    a.route.query === "delivery-review" || data.delivery?.status === "MANUAL_REVIEW"
+    a.route.query === "delivery-review" || (!addressQuery && data.delivery?.status === "MANUAL_REVIEW")
       ? "review"
       : data.order.checkoutActive
         ? "summary"
-      : a.route.query === "delivery-carriers"
+       : addressQuery
+         ? "address"
+       : a.route.query === "delivery-carriers"
         ? "carrier"
         : data.delivery?.status === "PICKUP_PENDING"
           ? "summary"
@@ -61,11 +64,22 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
             : "scope",
   );
   const [busy, setBusy] = useState(false);
+  const [addressBusy, setAddressBusy] = useState(false);
+  const [addressDraft, setAddressDraft] = useState<CheckoutAddressDraft>();
   const [error, setError] = useState("");
   const running = useRef(false);
   const d = data.delivery;
-  const address =
-    a.user?.addresses.find((candidate) => candidate.isDefaultDelivery) || a.user?.addresses[0];
+  const [chosenAddress, setChosenAddress] = useState<Address>();
+  const address = chosenAddress || (addressQuery
+    ? a.user?.addresses.find(candidate => candidate.id === addressQuery)
+    : a.user?.addresses.find(candidate => candidate.isDefaultDelivery && validCheckoutAddress(candidate)) ||
+      a.user?.addresses.find(validCheckoutAddress));
+  const reviewAddress = (saved?: Address) => {
+    if (!validCheckoutAddress(saved) || busy || addressBusy || data.order.checkoutActive) return;
+    // Keep the selection on the owning route too, so Back cannot substitute another default.
+    a.returnTo("delivery", data.order.id, saved.id);
+    a.go("quotes", data.order.id, saved.id);
+  };
   const collection = d?.status === "PICKUP_PENDING";
   const selected = d?.quotes.find((quote) => quote.id === d.selectedQuoteId);
   const [now, setNow] = useState(Date.now());
@@ -137,47 +151,31 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
     return (
       <Page
         header={
-          <CheckoutHeader title="Delivery" step="Step 2 of 3" back={() => setStage("scope")} />
+          <CheckoutHeader title="Pickup & Delivery" step="STEP 1 OF 3" back={() => { if (!busy && !addressBusy) setStage("scope"); }} />
         }
         contentStyle={checkout.body}
         footer={
           <Button
             title="Continue"
-            disabled={!address}
-            onPress={() => a.go("quotes", data.order.id)}
+            disabled={!validCheckoutAddress(address) || busy || addressBusy || data.order.checkoutActive}
+            onPress={() => reviewAddress(address)}
           />
         }
       >
         <Heading>Delivery</Heading>
         <Label muted>Shipping cost is shown before you pay.</Label>
-        <View style={s.between}>
-          <Label style={checkout.overline}>DESTINATION ADDRESS</Label>
-          <Pressable onPress={() => a.go("addresses")}>
-            <Label style={s.link}>Change</Label>
-          </Pressable>
-        </View>
-        <Card style={checkout.selectedAddress}>
-          <View style={{ flex: 1, gap: 7 }}>
-            <View style={s.between}>
-              <Label style={checkout.addressName}>
-                {a.user?.profile?.fullName || "Delivery contact"}
-              </Label>
-              <Label style={s.badge}>{address?.label || "Home"}</Label>
-            </View>
-            <Label style={checkout.addressLine}>{address?.line1 || "Add a delivery address"}</Label>
-            <Label muted>
-              {address
-                ? `${address.city}, ${address.state} State`
-                : "Choose an address to continue"}
-            </Label>
-            <Label muted>{a.user?.phoneE164}</Label>
-            {address?.postalCode && <Label>{address.postalCode}</Label>}
-            {address && <Label muted>{a.ui(postcodeStatus(address))}</Label>}
-          </View>
-          <View style={checkout.check}>
-            <Label style={{ color: "white", fontFamily: "NotoBold" }}>✓</Label>
-          </View>
-        </Card>
+        <CheckoutDeliveryAddress address={address} disabled={busy || data.order.checkoutActive}
+          draft={addressDraft} onDraftChange={setAddressDraft} onBusyChange={setAddressBusy}
+          onSaved={saved => {
+            if (!validCheckoutAddress(saved) || busy || data.order.checkoutActive) return;
+            setChosenAddress(saved);
+            setAddressBusy(false);
+            a.returnTo("delivery", data.order.id, saved.id);
+          }}
+          onLocationSaved={saved => {
+            if (validCheckoutAddress(saved) && !busy && !data.order.checkoutActive)
+              a.go("quotes", data.order.id, saved.id);
+          }} />
         <Card style={checkout.softCard}>
           <View style={s.between}>
             <Label muted>Items</Label>
@@ -1195,8 +1193,33 @@ export function Quotes() {
     }),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [addressBusy, setAddressBusy] = useState(false);
   const initialized = useRef<string | null>(null);
   const submitting = useRef(false);
+  const quoteRequest = useRef(0);
+  const active = useRef(true);
+  const contextKey = `${a.user?.id || ""}:${a.route.id || ""}:${a.route.query || ""}`;
+  const orderContext = `${a.user?.id || ""}:${a.route.id || ""}:`;
+  const contactEdited = useRef(new Set<"name" | "phone" | "email">());
+  const contactContext = useRef(orderContext);
+  const current = useRef({ contextKey, locked: !!r.data?.order.checkoutActive, busy, addressBusy });
+  current.current = { contextKey, locked: !!r.data?.order.checkoutActive, busy, addressBusy };
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; quoteRequest.current++; };
+  }, []);
+  useEffect(() => {
+    if (contactContext.current !== orderContext) {
+      contactContext.current = orderContext;
+      contactEdited.current.clear();
+      setEditDestination(false);
+      setPickupEmail("");
+      setError("");
+    }
+    quoteRequest.current++;
+    submitting.current = false;
+    setBusy(false);
+  }, [contextKey, orderContext]);
   useEffect(() => {
     if (!r.data) return;
     const firstLoad = initialized.current !== r.data.order.id;
@@ -1214,22 +1237,65 @@ export function Quotes() {
       notes: source?.notes || "",
       ...(firstLoad ? { pickupDate: saved?.pickupDate || new Date(Date.now() + 86400000).toISOString().slice(0, 10) } : {}),
     }));
-    if (!firstLoad) return;
-    initialized.current = r.data.order.id;
-    if (r.data.delivery?.destination && r.data.delivery.status !== "PICKUP_PENDING") {
-      const savedDestination = a.user?.addresses.find((address) => address.id === r.data!.delivery?.destination.addressId);
-      setDestination({ ...r.data.delivery.destination, ...(savedDestination ? checkoutAddress(savedDestination) : {}) });
-    }
-    else {
-      const address =
-        a.user?.addresses.find((item) => item.isDefaultDelivery) || a.user?.addresses[0];
-      if (address)
-        setDestination((current) => ({
-          ...current,
-           ...checkoutAddress(address),
-        }));
-    }
+    if (firstLoad) initialized.current = r.data.order.id;
   }, [r.data]);
+  const destinationContext = useRef("");
+  const pendingContext = useRef("");
+  const profileAddresses = a.user?.addresses;
+  useEffect(() => {
+    if (!r.data || r.data.order.id !== a.route.id || destinationContext.current === contextKey) return;
+    const previousKey = destinationContext.current || pendingContext.current;
+    const sameOrder = previousKey.startsWith(orderContext);
+    const previous = r.data.delivery?.status !== "PICKUP_PENDING" ? r.data.delivery?.destination : undefined;
+    const requestedAddress = profileAddresses?.find(item => item.id === a.route.query && validCheckoutAddress(item));
+    // Wait for the explicitly selected saved address; never silently substitute a default.
+    const saved = requestedAddress || (!a.route.query ?
+      profileAddresses?.find(item => item.id === previous?.addressId && validCheckoutAddress(item)) ||
+      (!previous?.address ? profileAddresses?.find(item => item.isDefaultDelivery && validCheckoutAddress(item)) ||
+        profileAddresses?.find(validCheckoutAddress) : undefined) : undefined);
+    if ((a.route.query && !requestedAddress) || (!saved && !previous?.address)) {
+      if (pendingContext.current !== contextKey) {
+        pendingContext.current = contextKey;
+        setDestination(value => ({ ...empty,
+          name: sameOrder ? value.name : a.user?.profile?.fullName || "",
+          phone: sameOrder ? value.phone : a.user?.phoneE164 || "",
+          email: sameOrder ? value.email : a.user?.profile?.email || "",
+        }));
+      }
+      return;
+    }
+    destinationContext.current = contextKey;
+    pendingContext.current = "";
+    setDestination(value => ({ ...(sameOrder ? value : empty), ...previous,
+      ...(saved ? checkoutAddress(saved) : {}),
+      ...(saved && previous?.addressId === saved.id && previous.instructions ? {instructions:previous.instructions} : {}),
+      name: contactEdited.current.has("name") || sameOrder ? value.name : previous?.name || a.user?.profile?.fullName || "",
+      phone: contactEdited.current.has("phone") || sameOrder ? value.phone : previous?.phone || a.user?.phoneE164 || "",
+      email: contactEdited.current.has("email") || sameOrder ? value.email : previous?.email || a.user?.profile?.email || "",
+    }));
+  }, [r.data, profileAddresses, contextKey, orderContext, a.route.id, a.route.query, a.user?.profile, a.user?.phoneE164]);
+  // Missing profile contact values may arrive after the order; retain all local edits.
+  useEffect(() => {
+    setDestination(value => ({ ...value,
+      name: contactEdited.current.has("name") ? value.name : value.name || a.user?.profile?.fullName || "",
+      phone: contactEdited.current.has("phone") ? value.phone : value.phone || a.user?.phoneE164 || "",
+      email: contactEdited.current.has("email") ? value.email : value.email || a.user?.profile?.email || "",
+    }));
+  }, [a.user?.profile?.fullName, a.user?.profile?.email, a.user?.phoneE164]);
+  useEffect(() => {
+    setDestination(value => {
+      const saved = profileAddresses?.find(item => item.id === value.addressId && validCheckoutAddress(item));
+      return saved ? { ...value, ...checkoutAddress(saved) } : value;
+    });
+  }, [profileAddresses]);
+  const contextReady = destinationContext.current === contextKey;
+  const reviewedDestination = contextReady ? destination : empty;
+  const savedDestination = profileAddresses?.find(item => item.id === reviewedDestination.addressId);
+  const contactMissing = missingDeliveryContact(destination);
+  const contactFields = (["name", "phone", "email"] as const).filter(key =>
+    editDestination || contactMissing.includes(key) || contactEdited.current.has(key));
+  const destinationReady = contextReady && deliveryDestinationReady(destination);
+  const locationReady = contextReady && deliveryLocationReady(destination);
   return (
     <Page
       title="Delivery"
@@ -1238,11 +1304,16 @@ export function Quotes() {
       footer={
         <Button
           title={busy ? "Checking couriers…" : "Continue to delivery options"}
-            disabled={busy || r.data?.order.checkoutActive || !r.data?.order.packageSuggestion}
+            disabled={busy || addressBusy || r.data?.order.checkoutActive || !r.data?.order.packageSuggestion || !destinationReady}
           loading={busy}
           onPress={async () => {
-            if (submitting.current || r.data?.order.checkoutActive || !r.data?.order.packageSuggestion) return;
+            if (!active.current || current.current.contextKey !== contextKey || submitting.current ||
+              current.current.locked || current.current.addressBusy || !r.data?.order.packageSuggestion ||
+              r.data.order.id !== a.route.id) return;
+            if (!destinationReady) { setError("Complete the missing delivery details before continuing."); return; }
             submitting.current = true;
+            const request = ++quoteRequest.current;
+            const isCurrent = () => active.current && request === quoteRequest.current && current.current.contextKey === contextKey;
             setBusy(true);
             setError("");
             try {
@@ -1273,7 +1344,9 @@ export function Quotes() {
                 method: "POST",
                 body: {
                   pickup: { ...p, email: p.email || pickupEmail, country: "NG" },
-                  destination,
+                  destination: { ...destination, name: destination.name.trim(), phone: destination.phone.trim(),
+                    email: destination.email.trim(), address: destination.address.trim(), state: destination.state.trim(),
+                    ...(destination.instructions !== undefined ? { instructions: destination.instructions.trim() } : {}) },
                   parcel: {
                     ...parcel,
                     packageCount: Number(parcel.packageCount),
@@ -1284,17 +1357,25 @@ export function Quotes() {
                   },
                 },
               });
-              if (!result.items?.length)
+              if (!isCurrent() || current.current.locked) return;
+              if (!Array.isArray(result?.items) || result.items.some((item: { id?: unknown } | null) =>
+                typeof item?.id !== "string" || !item.id.trim()))
+                throw new Error("We couldn’t complete this action. Please try again or contact support if it continues.");
+              if (!result.items.length)
                 throw new Error(
                   "No delivery service is available for this shipment and date. Try another date or choose pickup.",
                 );
               a.returnTo("delivery", a.route.id, "delivery-carriers");
             } catch (e) {
-              setError(a.error(e));
-              await r.reload().catch(() => {});
+              if (isCurrent()) {
+                setError(a.error(e));
+                await r.reload().catch(() => {});
+              }
             } finally {
-              submitting.current = false;
-              setBusy(false);
+              if (isCurrent()) {
+                submitting.current = false;
+                setBusy(false);
+              }
             }
           }}
         />
@@ -1316,6 +1397,7 @@ export function Quotes() {
             <Field
               label="Farmer contact email"
               value={pickupEmail}
+              editable={!busy && !addressBusy && !r.data.order.checkoutActive}
               autoCapitalize="none"
               keyboardType="email-address"
               onChangeText={setPickupEmail}
@@ -1326,90 +1408,56 @@ export function Quotes() {
       <Card>
         <Label style={{ fontFamily: "NotoBold" }}>Delivery Destination</Label>
         <Label>
-          {destination.address || "Choose a delivery address"}
-          {destination.state ? `, ${destination.state}` : ""}
+          {reviewedDestination.address || "Choose a delivery address"}
+          {reviewedDestination.state ? `, ${reviewedDestination.state}` : ""}
         </Label>
         <Label muted>
-          {destination.name} · {destination.phone}
+          {reviewedDestination.name} · {reviewedDestination.phone}
         </Label>
-        <Label muted>{destination.email}</Label>
-        {destination.postalCode && <Label>{destination.postalCode}</Label>}
-        {destination.addressId && <Label muted>{a.ui(postcodeStatus(a.user?.addresses.find((address) => address.id === destination.addressId) || {}))}</Label>}
-        {destination.instructions && <Label muted>{destination.instructions}</Label>}
+        <Label muted>{reviewedDestination.email}</Label>
+        {reviewedDestination.postalCode && <Label>{reviewedDestination.postalCode}</Label>}
+        {reviewedDestination.address && !reviewedDestination.postalCode && <Label muted>A digital code is optional. We’ll use the delivery address you provided.</Label>}
+        {reviewedDestination.latitude != null && reviewedDestination.longitude != null && <Label muted>Location pin confirmed.</Label>}
+        {reviewedDestination.instructions && <Label muted>{reviewedDestination.instructions}</Label>}
         <Button
           title={editDestination ? "Done" : "Edit delivery details"}
           secondary
-          disabled={busy}
-          onPress={() => setEditDestination((value) => !value)}
+          disabled={busy || addressBusy || r.data?.order.checkoutActive}
+          onPress={() => {
+            if (current.current.busy || current.current.addressBusy || current.current.locked) return;
+            if (editDestination) contactEdited.current.clear();
+            setEditDestination(value => !value);
+          }}
         />
       </Card>
-      {(editDestination || !destination.address) && (
-        <>
-          <Text style={s.sectionTitle}>Your saved addresses</Text>
-          <View style={{ gap: 8 }}>
-            {a.user?.addresses.map((ad) => (
-              <Pressable
-                key={ad.id}
-                disabled={busy}
-                onPress={() =>
-                  setDestination((d) => ({
-                    ...d,
-                     ...checkoutAddress(ad),
-                  }))
-                }
-              >
-                <Card>
-                  <Label>
-                    {ad.label} · {ad.line1}, {ad.state}
-                  </Label>
-                  {ad.postalCode && <Label>{ad.postalCode}</Label>}
-                  <Label muted>{a.ui(postcodeStatus(ad))}</Label>
-                </Card>
-              </Pressable>
-            ))}
-          </View>
-          <Button title="Add or verify a delivery address" secondary disabled={busy} onPress={() => a.go("addresses")} />
-          <Card>
-            {(["name", "phone", "email", "address"] as const).map((k) => (
-              <Field
-                key={k}
-                label={
-                  {
-                    name: "Full name",
-                    phone: "Phone",
-                    email: "Email",
-                    address: "Delivery address",
-                    state: "State",
-                  }[k]
-                }
-                value={destination[k]}
-                editable={!busy}
-                autoCapitalize={k === "email" ? "none" : "sentences"}
-                keyboardType={
-                  k === "phone" ? "phone-pad" : k === "email" ? "email-address" : "default"
-                }
-                onChangeText={(v) =>
-                  setDestination((d) => ({
-                    ...d,
-                    [k]: v,
-                    ...(k === "address" ? { addressId: undefined, latitude: undefined, longitude: undefined } : {}),
-                  }))
-                }
-              />
-            ))}
-            <Select
-              label="State"
-              value={destination.state}
-              options={nigeriaStates}
-              disabled={busy}
-              onChange={(state) =>
-                setDestination((d) => ({ ...d, state, addressId: undefined, latitude: undefined, longitude: undefined }))
-              }
-            />
-            {!destination.addressId && <Field label="Additional directions (optional)" value={destination.instructions || ""} maxLength={700} editable={!busy} onChangeText={(instructions) => setDestination((d) => ({ ...d, instructions }))} />}
-          </Card>
-        </>
+      {(editDestination || !locationReady) && (
+        <CheckoutDeliveryAddress address={savedDestination} disabled={busy || r.data?.order.checkoutActive}
+          onBusyChange={setAddressBusy}
+          onSaved={address => {
+            if (current.current.locked || current.current.busy || !validCheckoutAddress(address)) return;
+            destinationContext.current = contextKey;
+            setDestination(current => ({ ...current, ...checkoutAddress(address) }));
+            setEditDestination(false);
+            setAddressBusy(false);
+            a.returnTo("delivery", a.route.id, address.id);
+            a.go("quotes", a.route.id, address.id);
+          }} />
       )}
+      {contactFields.length > 0 && <Card>
+        {contactMissing.length > 0 && <Notice text="Only the missing delivery contact details are needed." />}
+        {contactFields.map(key =>
+          <Field key={key} label={{name:"Full name",phone:"Phone",email:"Email"}[key]}
+            value={destination[key]} editable={!busy && !addressBusy && !r.data?.order.checkoutActive}
+            maxLength={key === "name" ? 120 : key === "phone" ? 16 : undefined}
+            autoCapitalize={key === "email" ? "none" : "sentences"}
+            keyboardType={key === "email" ? "email-address" : key === "phone" ? "phone-pad" : "default"}
+            onChangeText={value => {
+              if (current.current.busy || current.current.addressBusy || current.current.locked) return;
+              contactEdited.current.add(key);
+              setDestination(current => ({ ...current, [key]:value }));
+            }} />)}
+      </Card>}
+      {!destinationReady && <Notice text="Complete the missing delivery details before continuing." />}
       {!r.data?.order.packageSuggestion && (
         <Notice text="The farmer must complete shipping measurements before delivery is available. You can choose pickup instead." />
       )}
@@ -1453,6 +1501,7 @@ export function Quotes() {
       <Field
         label="Pickup date · YYYY-MM-DD"
         value={parcel.pickupDate}
+        editable={!busy && !addressBusy && !r.data?.order.checkoutActive}
         onChangeText={(pickupDate) => setParcel((current) => ({ ...current, pickupDate }))}
       />
     </Page>
