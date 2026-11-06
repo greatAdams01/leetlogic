@@ -1,4 +1,5 @@
 "use client";
+import { userFacingError } from "../../lib/user-facing-error";
 import { formatMoney } from "../../../../packages/contracts/src/money";
 import { Categories } from "./categories";
 import { SidebarNavigation } from "./sidebar-navigation";
@@ -48,11 +49,11 @@ async function api(path: string, method = "GET", body?: Row, retry = true): Prom
   }
   if (!response.ok) {
     const message = data.error?.fieldErrors
-      ? Object.entries(data.error.fieldErrors)
-          .map(([field, errors]) => `${field}: ${(errors as string[]).join(", ")}`)
-          .join("; ")
+      ? "Please check the details you entered and try again."
       : data.error?.message;
-    const error = new Error(message || "Request failed") as Error & { status: number };
+    const error = new Error(
+      userFacingError(message || "We couldn’t complete that request. Please try again."),
+    ) as Error & { status: number };
     error.status = response.status;
     throw error;
   }
@@ -237,7 +238,7 @@ function Auth({ route }: { route: string }) {
         else router.replace("/admin");
       }
     } catch (failure) {
-      setError((failure as Error).message);
+      setError(userFacingError(failure));
     } finally {
       setBusy(false);
     }
@@ -432,7 +433,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
         setSelected((records.items || []).find((row: Row) => row.id === recordId));
     } catch (failure) {
       if ((failure as Error & { status?: number }).status === 401) router.replace("/admin/login");
-      else setError((failure as Error).message);
+      else setError(userFacingError(failure));
     } finally {
       setBusy(false);
     }
@@ -454,7 +455,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
             current ? records.items.find((row: Row) => row.id === current.id) : undefined,
           );
         })
-        .catch((failure) => setError((failure as Error).message));
+        .catch((failure) => setError(userFacingError(failure)));
     }, 15000);
     return () => clearInterval(timer);
   }, [resource, endpoint, page, query, status, staff, action]);
@@ -483,7 +484,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
       );
       setAction({ label, path, fields: resolved, ...options });
     } catch (failure) {
-      setError((failure as Error).message);
+      setError(userFacingError(failure));
     } finally {
       setBusy(false);
     }
@@ -511,7 +512,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
       setAction(undefined);
       await load();
     } catch (failure) {
-      setError((failure as Error).message);
+      setError(userFacingError(failure));
     } finally {
       setBusy(false);
     }
@@ -556,7 +557,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
         setSelected(result.verification);
       } else setSelected(row);
     } catch (failure) {
-      setError((failure as Error).message);
+      setError(userFacingError(failure));
     }
   }
   function rowLabel(row: Row) {
@@ -604,7 +605,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                 await api("auth/logout", "POST", {});
                 router.replace("/admin/login");
               } catch (failure) {
-                setError((failure as Error).message);
+                setError(userFacingError(failure));
               }
             }}
           >

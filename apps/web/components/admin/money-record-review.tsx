@@ -1,4 +1,5 @@
 "use client";
+import { userFacingError } from "../../lib/user-facing-error";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -54,7 +55,7 @@ export function MoneyRecordReview({
     const refresh = () => {
       if (document.visibilityState !== "hidden")
         void load().catch((e) => {
-          if (active) setError(e.message);
+          if (active) setError(userFacingError(e));
         });
     };
     refresh();
@@ -99,7 +100,7 @@ export function MoneyRecordReview({
           {error}
           <button
             className="secondary"
-            onClick={() => void load().catch((e) => setError(e.message))}
+            onClick={() => void load().catch((e) => setError(userFacingError(e)))}
           >
             Try again
           </button>

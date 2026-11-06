@@ -23,7 +23,8 @@ vi.mock("next/link", () => ({
 vi.mock("../components/admin/money-actions", () => ({
   MoneyActions: () => <p>Authorized record controls</p>,
 }));
-import { financeRequest } from "../components/admin/finance-ui";
+import { financeRequest, financeLabel, financeDate, FinanceStatus } from "../components/admin/finance-ui";
+import { MoneyRecordReview } from "../components/admin/money-record-review";
 import { MoneyOperations } from "../components/admin/money-operations";
 const id = "11111111-1111-4111-8111-111111111111";
 const row = {
@@ -219,4 +220,26 @@ describe("finance request safety", () => {
     );
     expect(h.request).toHaveBeenCalledOnce();
   });
+});
+
+it("renders the payment review when both optional issue codes are null", async () => {
+  h.request.mockResolvedValue({ ok: true, json: async () => ({ ...row, failureCode: null, exceptionCode: null }) });
+  render(<MoneyRecordReview recordType="payments" recordId={id} />);
+  await screen.findByText("No issue recorded");
+  expect(screen.getByRole("heading", { name: "Review payment & refund" })).toBeTruthy();
+});
+it("renders missing finance values neutrally and tolerates malformed dates", () => {
+  expect(financeLabel(null)).toBe(""); expect(financeLabel(undefined)).toBe("");
+  expect(financeLabel({})).toBe(""); expect(financeLabel("PROVIDER_PENDING")).toBe("Provider pending");
+  expect(financeDate(null)).toBe("—"); expect(financeDate("invalid-date")).toBe("—");
+  render(<FinanceStatus value={null} />);
+  expect(screen.getByText("Not available").className).toBe("finance-badge neutral");
+});
+it("hides infrastructure and malformed response details in finance request failures", async () => {
+  h.request.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: { message: "Invalid prisma.tradeOrder query: column secret_key does not exist" } }) });
+  await expect(financeRequest("money/records")).rejects.toThrow("Something went wrong. Please try again.");
+  h.request.mockResolvedValueOnce({ ok: false, status: 502, json: async () => { throw new SyntaxError("Unexpected token < in JSON"); } });
+  await expect(financeRequest("money/records")).rejects.toThrow("Something went wrong. Please try again.");
+  h.request.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  await expect(financeRequest("money/records")).rejects.toThrow("Check your connection and try again.");
 });

@@ -1,53 +1,67 @@
 "use client";
+import { userFacingError } from "../../lib/user-facing-error";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 let refreshInFlight: Promise<Response> | undefined;
 export async function financeRequest(path: string, body?: unknown, retry = true): Promise<any> {
-  const response = await fetch(`/api/admin/${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  if (response.status === 401 && retry && !path.startsWith("auth/")) {
-    refreshInFlight ||= fetch("/api/admin/auth/refresh", {
-      method: "POST",
+  try {
+    const response = await fetch(`/api/admin/${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
-    }).finally(() => {
-      refreshInFlight = undefined;
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const refreshed = await refreshInFlight;
-    if (refreshed.ok) return financeRequest(path, body, false);
+    if (response.status === 401 && retry && !path.startsWith("auth/")) {
+      refreshInFlight ||= fetch("/api/admin/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }).finally(() => {
+        refreshInFlight = undefined;
+      });
+      const refreshed = await refreshInFlight;
+      if (refreshed.ok) return financeRequest(path, body, false);
+    }
+    const data = response.status === 204 ? {} : await response.json();
+    if (!response.ok)
+      throw new Error(data.error?.message || "Finance records are unavailable. Please retry.");
+    return data;
+  } catch (error) {
+    throw new Error(userFacingError(error));
   }
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(data.error?.message || "Finance records are unavailable. Please retry.");
-  return data;
 }
-export const financeDate = (value?: string | null) =>
-  value
-    ? new Intl.DateTimeFormat("en-NG", {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: "Africa/Lagos",
-      }).format(new Date(value))
-    : "—";
-export const financeLabel = (value: string = "") =>
-  value
-    .toLowerCase()
-    .replaceAll("_", " ")
-    .replace(/^./, (c) => c.toUpperCase());
-export function FinanceStatus({ value }: { value: string }) {
+export const financeDate = (value?: string | null) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Africa/Lagos",
+  }).format(date);
+};
+export const financeLabel = (value: unknown = "") =>
+  typeof value === "string"
+    ? value
+        .trim()
+        .toLowerCase()
+        .replaceAll("_", " ")
+        .replace(/^./, (c) => c.toUpperCase())
+    : "";
+export function FinanceStatus({ value }: { value?: string | null }) {
   const tone = ["SUCCEEDED", "REFUNDED", "SECURED", "VERIFIED", "AUTHORIZED", "COMPLETED"].includes(
-    value,
+    value || "",
   )
     ? "success"
-    : ["BLOCKED", "EXCEPTION", "FAILED", "REFUND_BLOCKED", "UNKNOWN", "REJECTED"].includes(value)
+    : ["BLOCKED", "EXCEPTION", "FAILED", "REFUND_BLOCKED", "UNKNOWN", "REJECTED"].includes(
+          value || "",
+        )
       ? "danger"
-      : ["REQUESTED", "REFUND_DUE", "REFUND_RECONCILIATION", "TRANSFER_RECORDED"].includes(value)
+      : ["REQUESTED", "REFUND_DUE", "REFUND_RECONCILIATION", "TRANSFER_RECORDED"].includes(
+            value || "",
+          )
         ? "warning"
         : "neutral";
-  return <span className={`finance-badge ${tone}`}>{financeLabel(value)}</span>;
+  return <span className={`finance-badge ${tone}`}>{financeLabel(value) || "Not available"}</span>;
 }
 export function FinanceDrawer({
   title,
@@ -93,7 +107,12 @@ export function FinanceDrawer({
           <p className="finance-eyebrow">FINANCIAL RECORD</p>
           <h2 id={id}>{title}</h2>
         </div>
-        <button type="button" className="secondary finance-close" aria-label="Close review" onClick={onClose}>
+        <button
+          type="button"
+          className="secondary finance-close"
+          aria-label="Close review"
+          onClick={onClose}
+        >
           <span aria-hidden="true">×</span>
         </button>
       </header>
@@ -131,7 +150,7 @@ export function useFinanceMutation(refresh: () => Promise<void>) {
       setNotice("Action recorded. Updated records are shown below.");
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      setError(userFacingError(e));
       throw e;
     } finally {
       lock.current = false;
