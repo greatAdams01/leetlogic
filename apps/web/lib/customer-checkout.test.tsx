@@ -3,6 +3,7 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen, type RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addressInstructions, addressText } from "../../../packages/contracts/src/addresses";
+import { orderFulfillment } from "../../../packages/contracts/src/order-fulfillment";
 import type { Address } from "../../mobile/src/lib/domain";
 
 const h = vi.hoisted(() => ({
@@ -613,6 +614,81 @@ it("opens receipt inspection without confirming before a photo is supplied",asyn
   expect(screen.getByText("Inspect your goods")).toBeDefined();
   expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/delivery/confirm"))).toBe(false);
   expect(screen.getAllByRole("button",{name:"Confirm Receipt"}).some(b => (b as HTMLButtonElement).disabled)).toBe(true);
+});
+it("refreshes the disabled receipt action into the existing photo-and-acknowledgment flow after delivery", async () => {
+  Object.assign(h.delivery.order, { status: "FUNDED", farmerDecision: "ACCEPTED" });
+  const progress = (status: string, receiptReady = false) => orderFulfillment({
+    buyer: true, farmer: false, paid: true, confirmed: false, blocked: false, collection: false,
+    farmerDecision: "ACCEPTED", orderStatus: "FUNDED", ready: true, dispatched: true, booked: true,
+    status, receiptReady,
+  });
+  h.delivery.progress = progress("BOOKED");
+  await mountDelivery();
+  for (const status of ["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"]) {
+    h.delivery.progress = progress(status);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(button("Confirm Receipt")?.disabled).toBe(true);
+    expect(screen.getByText("Available after the courier confirms delivery of every package.")).toBeTruthy();
+    await click("Confirm Receipt");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }
+  h.delivery.progress = progress("DELIVERED", true);
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(button("Confirm Receipt")?.disabled).toBe(false);
+  await click("Confirm Receipt");
+  const dialog = screen.getByRole("dialog");
+  const submit = () => dialog.querySelector("button")!;
+  expect(submit().disabled).toBe(true);
+  vi.stubGlobal("URL", class extends URL {
+    static createObjectURL() { return "blob:receipt"; }
+    static revokeObjectURL() {}
+  });
+  const upload = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ saved: true }) });
+  vi.stubGlobal("fetch", upload);
+  const original = h.api.getMockImplementation()!;
+  h.api.mockImplementation(async (path: string, body: any) => {
+    if (path.endsWith("/delivery/confirm")) {
+      h.delivery.progress = { ...h.delivery.progress, confirmed: true, canConfirm: false };
+      return { confirmed: true };
+    }
+    return original(path, body);
+  });
+  await act(async () => fireEvent.change(screen.getByLabelText("Add a receipt photo"), {
+    target: { files: [new File(["received goods"], "receipt.jpg", { type: "image/jpeg" })] },
+  }));
+  expect(submit().disabled).toBe(true);
+  await act(async () => fireEvent.click(dialog.querySelector('input[type="checkbox"]')!));
+  expect(submit().disabled).toBe(false);
+  await act(async () => { fireEvent.click(submit()); fireEvent.click(submit()); });
+  expect(upload).toHaveBeenCalledTimes(1);
+  expect(h.api.mock.calls.filter(([path]) => String(path).endsWith("/delivery/confirm"))).toEqual([
+    ["orders/order/delivery/confirm", { acknowledged: true }],
+  ]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(button("Confirm Receipt")).toBeNull();
+});
+it("closes receipt inspection when a dispute pauses confirmation and requires a deliberate reopening", async () => {
+  Object.assign(h.delivery.order, { status: "FUNDED", farmerDecision: "ACCEPTED" });
+  const ready = orderFulfillment({
+    buyer: true, farmer: false, paid: true, confirmed: false, blocked: false, collection: false,
+    farmerDecision: "ACCEPTED", orderStatus: "FUNDED", ready: true, dispatched: true, booked: true,
+    status: "DELIVERED", receiptReady: true,
+  });
+  h.delivery.progress = ready;
+  await mountDelivery();
+  await click("Confirm Receipt");
+  await act(async () => fireEvent.click(screen.getByRole("dialog").querySelector('input[type="checkbox"]')!));
+  h.delivery.progress = { ...ready, status: "Needs review", canConfirm: false };
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(button("Confirm Receipt")).toBeNull();
+  expect(h.api.mock.calls.some(([path]) => String(path).endsWith("/delivery/confirm"))).toBe(false);
+  h.delivery.progress = ready;
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(button("Confirm Receipt")?.disabled).toBe(false);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await click("Confirm Receipt");
+  expect((screen.getByRole("dialog").querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(false);
 });
 it("gives farmers one clear preparation action without order tabs",async()=>{
   Object.assign(h.delivery.order,{status:"FUNDED",isBuyer:false});

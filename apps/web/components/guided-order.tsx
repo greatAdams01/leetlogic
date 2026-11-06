@@ -54,9 +54,15 @@ export function GuidedOrder({
     return () => URL.revokeObjectURL(url);
   }, [file]);
   useEffect(() => {
-    if (confirm) confirmationRef.current?.showModal();
-    else confirmationRef.current?.close();
-  }, [confirm]);
+    if (confirm && guide.action === "confirm") confirmationRef.current?.showModal();
+    else {
+      confirmationRef.current?.close();
+      if (confirm) {
+        setConfirm(false);
+        setAck(false);
+      }
+    }
+  }, [confirm, guide.action]);
   const run = async (path: string, body: unknown = {}) => {
     if (running.current) return;
     running.current = true;
@@ -76,7 +82,7 @@ export function GuidedOrder({
     }
   };
   const submitReceipt = async () => {
-    if (running.current || !file || !ack) return;
+    if (running.current || !file || !ack || guide.action !== "confirm") return;
     running.current = true;
     setBusy(true);
     setError("");
@@ -105,6 +111,7 @@ export function GuidedOrder({
     }
   };
   const act = () => {
+    if (!guide.action || running.current) return;
     if (guide.action === "confirm") setConfirm(true);
     else if (guide.action === "accept") void run("decision", { accept: true });
     else if (guide.action === "ready") void run("ready");
@@ -316,9 +323,9 @@ export function GuidedOrder({
       >
         {say("Refresh order")}
       </button>
-      {guide.action && !reject && (
+      {(guide.action || guide.receiptPending) && !reject && (
         <footer className="journey-action">
-          {handoff ? (
+          {handoff && (guide.action === "dispatch" || guide.action === "handover") ? (
             <>
               <h2>{say("Have all goods been handed over?")}</h2>
               <p>{say("Buyer confirmation is still required before payment release.")}</p>
@@ -331,8 +338,8 @@ export function GuidedOrder({
             </>
           ) : (
             <>
-              <button disabled={busy} onClick={act}>
-                {say(busy ? "Saving…" : guide.label)}
+              <button disabled={busy || !guide.action} onClick={act}>
+                {say(busy ? "Saving…" : guide.receiptPending ? "Confirm Receipt" : guide.label)}
               </button>
               <small>{say(guide.after)}</small>
             </>
@@ -392,7 +399,7 @@ export function GuidedOrder({
         </label>
         {error && <p role="alert">{error}</p>}
         <button
-          disabled={busy || !file || !ack || !data.progress?.canConfirm}
+          disabled={busy || !file || !ack || guide.action !== "confirm"}
           onClick={() => void submitReceipt()}
         >
           {say(busy ? "Saving…" : "Confirm Receipt")}

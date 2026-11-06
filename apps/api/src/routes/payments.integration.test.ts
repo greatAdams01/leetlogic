@@ -2423,6 +2423,199 @@ suite("provider-backed payment safeguards", () => {
     expect(response.body.items[0].checkoutUrl).toBeNull();
   });
 
+  describe("buyer receipt and automatic release lifecycle", () => {
+    const receiptOrders: string[] = [];
+    beforeEach(async () => {
+      // Older tests retain their orders; keep their release operations out of
+      // this lifecycle's scheduler run so inventory assertions stay isolated.
+      await prisma.moneyOperation.updateMany({
+        where: { kind: "RELEASE", status: { notIn: ["SUCCEEDED", "FAILED"] } },
+        data: { nextRunAt: new Date("2099-01-01T00:00:00Z") },
+      });
+      vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`receipt/${randomUUID()}`);
+      vi.spyOn(mediaStorage, "deleteMedia").mockResolvedValue();
+      vi.spyOn(bachs, "account").mockResolvedValue({ id: `acct_${seller}`, parent_organization_id: "org_fixture", enabled_capabilities: ["transfers", "payouts"] });
+      vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "100000.00" }]);
+    });
+    afterEach(async () => {
+      vi.useRealTimers();
+      await prisma.delivery.updateMany({ where: { orderId: { in: receiptOrders.splice(0) } }, data: { nextSyncAt: new Date("2099-01-01T00:00:00Z") } });
+    });
+    async function receiptDelivery(quantity = 1) {
+      const f = await order(quantity);
+      receiptOrders.push(f.o.id);
+      const base = `/v1/orders/${f.o.id}/delivery`;
+      await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { journeyVersion: 2, farmerDecision: "PENDING" } });
+      const a = await checkout(f.o.id); mockReceipt(a); await reconcilePayment(a.id);
+      const farmerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+      const farmerAuth = { Authorization: `Bearer ${farmerToken}` };
+      expect((await request(app).post(`${base}/ready`).set(farmerAuth).send({})).status).toBe(409);
+      expect((await request(app).post(`${base}/decision`).set(farmerAuth).send({ accept: true })).status).toBe(200);
+      expect((await request(app).post(`${base}/ready`).set(farmerAuth).send({})).status).toBe(200);
+      vi.mocked(shippingProvider.book).mockImplementation(async input => ({
+        id: `SB-${input.requestToken}`, status: "pending", courier: f.q.courier, shippingMinor: 1000n,
+      }));
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({ status: "BOOKED" });
+      expect((await request(app).post(`${base}/dispatch`).set(farmerAuth).send({})).status).toBe(200);
+      return { ...f, a, base, farmerAuth };
+    }
+    async function trackReceipt(f: Awaited<ReturnType<typeof receiptDelivery>>, statuses: string[]) {
+      const parcels = await prisma.deliveryParcel.findMany({ where: { deliveryId: f.d.id }, orderBy: { parcelIndex: "asc" } });
+      const shipmentIds = parcels.length ? parcels.map(parcel => parcel.providerShipmentId!)
+        : [(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).providerShipmentId!];
+      vi.mocked(shippingProvider.track).mockImplementation(async id => ({
+        id, status: statuses[shipmentIds.indexOf(id)] || "pending", courier: f.q.courier,
+      }));
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
+      await runDeliveryJobs();
+    }
+    const uploadReceipt = (f: Awaited<ReturnType<typeof receiptDelivery>>, auth = customerAuth()) => request(app)
+      .post(`${f.base}/receipt-photo`).set(auth).set("Content-Type", "image/jpeg")
+      .send(Buffer.from([255, 216, 255, ...Array(20).fill(0)]));
+    async function acknowledgedRelease() {
+      const f = await receiptDelivery();
+      await trackReceipt(f, ["delivered"]);
+      expect((await uploadReceipt(f)).status).toBe(201);
+      expect((await request(app).post(`${f.base}/confirm`).set(customerAuth()).send({ acknowledged: true })).status).toBe(200);
+      return { ...f, op: await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "RELEASE" } }) };
+    }
+
+    it("waits for every courier parcel, accepts one buyer receipt, then settles one automatic release", async () => {
+      const f = await receiptDelivery(2);
+      const read = async () => (await request(app).get(f.base).set(customerAuth())).body;
+      expect((await read()).progress).toMatchObject({ status: "Dispatched", canConfirm: false });
+      expect((await uploadReceipt(f)).body.error.code).toBe("RECEIPT_NOT_READY");
+      for (const statuses of [["picked_up", "picked_up"], ["in_transit", "in_transit"], ["delivered", "in_transit"]]) {
+        await trackReceipt(f, statuses);
+        expect((await read()).progress.canConfirm).toBe(false);
+        expect((await uploadReceipt(f)).status).toBe(409);
+        expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(0);
+      }
+      await trackReceipt(f, ["delivered", "delivered"]);
+      expect((await read()).progress).toMatchObject({ status: "Awaiting buyer confirmation", canConfirm: true });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ deliveryConfirmedAt: null, heldMinor: 20000n, releasedMinor: 0n });
+      expect((await request(app).post(`${f.base}/confirm`).set(customerAuth()).send({ acknowledged: true })).body.error.code).toBe("RECEIPT_EVIDENCE_REQUIRED");
+      expect((await uploadReceipt(f, f.farmerAuth)).status).toBe(403);
+      expect((await request(app).post(`${f.base}/confirm`).set(f.farmerAuth).send({ acknowledged: true })).status).toBe(403);
+      expect((await uploadReceipt(f)).status).toBe(201);
+      expect((await request(app).post(`${f.base}/confirm`).set(customerAuth()).send({})).body.error.code).toBe("RECEIPT_EVIDENCE_REQUIRED");
+      const confirmations = await Promise.all([0, 1].map(() => request(app).post(`${f.base}/confirm`).set(customerAuth()).send({ acknowledged: true })));
+      expect(confirmations.map(response => response.status)).toEqual([200, 200]);
+      const operations = await prisma.moneyOperation.findMany({ where: { orderId: f.o.id, kind: "RELEASE" } });
+      expect(operations).toHaveLength(1);
+      const op = operations[0]!;
+      expect(op).toMatchObject({ status: "QUEUED", amountMinor: 18800n, feeMinor: 1200n });
+      expect(await prisma.deliveryEvent.count({ where: { deliveryId: f.d.id, status: "BUYER_RECEIPT_CONFIRMED" } })).toBe(1);
+      expect(await prisma.escrowEntry.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(0);
+      const inventory = await prisma.listing.findUniqueOrThrow({ where: { id: listing } });
+      vi.mocked(bachs.call).mockImplementation(async (path, body: any, key) => {
+        if (path !== "/transfers") throw new Error("Unexpected financial write");
+        return { id: `tr_${key}`, status: "pending", currency: "NGN", amount: body.amount, destination: `acct_${seller}` };
+      });
+      await Promise.all([runMoneyOperation(op.id), runMoneyOperation(op.id)]);
+      expect(vi.mocked(bachs.call).mock.calls.filter(([path, , key]) => path === "/transfers" && key === op.id)).toHaveLength(1);
+      expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: op.id } })).toMatchObject({ status: "PROVIDER_PENDING" });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "DELIVERED", heldMinor: 20000n, releasedMinor: 0n });
+      vi.spyOn(bachs, "operation").mockResolvedValue({ id: `tr_${op.id}`, status: "paid", currency: "NGN", amount: "188.00", destination: `acct_${seller}` });
+      await prisma.moneyOperation.update({ where: { id: op.id }, data: { nextRunAt: new Date() } });
+      await runPaymentJobs(); await runPaymentJobs();
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "COMPLETED", heldMinor: 0n, releasedMinor: 20000n });
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(1);
+      expect(await prisma.escrowEntry.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(1);
+      expect(await prisma.deliveryEvent.count({ where: { deliveryId: f.d.id, status: "PAYMENT_RELEASED" } })).toBe(1);
+      expect(vi.mocked(bachs.call).mock.calls.filter(([path, , key]) => path === "/transfers" && key === op.id)).toHaveLength(1);
+      const after = await prisma.listing.findUniqueOrThrow({ where: { id: listing } });
+      expect(inventory.availableQuantity.minus(after.availableQuantity).toString()).toBe("2");
+      expect(inventory.reservedQuantity.minus(after.reservedQuantity).toString()).toBe("2");
+      expect((await read()).progress).toMatchObject({ confirmed: true, canConfirm: false });
+    });
+
+    it.each([
+      ["financial hold", "ORDER_UNDER_REVIEW"], ["dispute", "ORDER_UNDER_REVIEW"],
+      ["cancelled order", "ORDER_NOT_FUNDED"], ["cancelled delivery", "DELIVERY_NOT_READY"],
+      ["returning delivery", "DELIVERY_NOT_READY"], ["farmer rejection", "FARMER_ACCEPTANCE_REQUIRED"],
+      ["refund", "PAYMENT_LOCKED"],
+    ])("blocks receipt and release after %s even with a saved receipt photo", async (change, code) => {
+      const f = await receiptDelivery();
+      await trackReceipt(f, ["delivered"]);
+      expect((await uploadReceipt(f)).status).toBe(201);
+      if (change === "financial hold") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { financialHold: true } });
+      if (change === "dispute") expect((await request(app).post(`/v1/orders/${f.o.id}/disputes`).set(customerAuth()).send({ reason: "QUALITY", description: "The received produce needs quality review" })).status).toBe(201);
+      if (change === "cancelled order") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { status: "CANCELLED" } });
+      if (change === "cancelled delivery" || change === "returning delivery") await prisma.delivery.update({ where: { id: f.d.id }, data: { status: change === "cancelled delivery" ? "CANCELLED" : "RETURNING" } });
+      if (change === "farmer rejection") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { farmerDecision: "REJECTED" } });
+      if (change === "refund") await prisma.moneyOperation.create({ data: { ownerId: buyer, orderId: f.o.id, mode: "sandbox", kind: "REFUND", status: "BLOCKED", amountMinor: f.o.totalMinor, mutationKey: randomUUID(), requestHash: randomUUID(), payload: {} } });
+      expect((await request(app).get(f.base).set(customerAuth())).body.progress.canConfirm).toBe(false);
+      const confirmation = await request(app).post(`${f.base}/confirm`).set(customerAuth()).send({ acknowledged: true });
+      expect(confirmation.status).toBe(409); expect(confirmation.body.error.code).toBe(code);
+      await runPaymentJobs();
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(0);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ deliveryConfirmedAt: null, heldMinor: f.o.totalMinor, releasedMinor: 0n });
+    });
+
+    it.each(["financial hold", "dispute", "cancelled order", "returning delivery", "receipt evidence", "payment verification"])(
+      "rechecks %s changed during the provider balance read before releasing any money", async change => {
+        const f = await acknowledgedRelease();
+        vi.mocked(bachs.balances).mockImplementationOnce(async () => {
+          if (change === "financial hold") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { financialHold: true } });
+          if (change === "dispute") await prisma.supportTicket.create({ data: { userId: buyer, orderId: f.o.id, kind: "DISPUTE", subject: "Provider review during release preflight" } });
+          if (change === "cancelled order") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { status: "CANCELLED" } });
+          if (change === "returning delivery") await prisma.delivery.update({ where: { id: f.d.id }, data: { status: "RETURNING" } });
+          if (change === "receipt evidence") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { receiptPhotoKey: null } });
+          if (change === "payment verification") await prisma.paymentAttempt.update({ where: { id: f.a.id }, data: { mode: "live" } });
+          return [{ currency: "NGN", available_balance: "100000.00" }];
+        });
+        vi.mocked(bachs.call).mockResolvedValue({ id: `tr_${f.op.id}`, status: "paid", currency: "NGN", amount: "94.00", destination: `acct_${seller}` });
+        await runMoneyOperation(f.op.id);
+        expect(bachs.call).not.toHaveBeenCalled();
+        expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: f.op.id } })).toMatchObject({ status: "BLOCKED", failureCode: "RELEASE_BLOCKED", providerRef: null });
+        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ heldMinor: 10000n, releasedMinor: 0n });
+        expect(await prisma.escrowEntry.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(0);
+      },
+    );
+    it("does not submit a release after its worker claim expired during the balance read", async () => {
+      const f = await acknowledgedRelease();
+      vi.mocked(bachs.balances).mockImplementationOnce(async () => {
+        await prisma.moneyOperation.update({ where: { id: f.op.id }, data: { leaseUntil: new Date(0) } });
+        return [{ currency: "NGN", available_balance: "100000.00" }];
+      });
+      await runMoneyOperation(f.op.id);
+      await runPaymentJobs();
+      expect(bachs.call).not.toHaveBeenCalled();
+      expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: f.op.id } })).toMatchObject({ status: "UNKNOWN", failureCode: "WORKER_INTERRUPTED", providerRef: null });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ heldMinor: 10000n, releasedMinor: 0n });
+    });
+    it("does not submit when its unchanged claim expires during a slow balance read", async () => {
+      const f = await acknowledgedRelease();
+      vi.mocked(bachs.balances).mockImplementationOnce(async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date(Date.now() + 90001));
+        return [{ currency: "NGN", available_balance: "100000.00" }];
+      });
+      await runMoneyOperation(f.op.id);
+      expect(bachs.call).not.toHaveBeenCalled();
+      expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: f.op.id } })).toMatchObject({ status: "BLOCKED", failureCode: "STALE_RECORD", providerRef: null });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ heldMinor: 10000n, releasedMinor: 0n });
+    });
+    it.each(["rejected", "uncertain"])("preserves receipt and held funds after a %s release without automatically creating another transfer", async result => {
+      const f = await acknowledgedRelease();
+      vi.mocked(bachs.call).mockRejectedValueOnce(result === "rejected"
+        ? new AppError(422, "PAYMENT_PROVIDER_REJECTED", "The transfer was definitely rejected")
+        : new AppError(503, "PAYMENT_RESULT_UNKNOWN", "The transfer response was lost"));
+      await runMoneyOperation(f.op.id);
+      for (let retry = 0; retry < 2; retry++) {
+        expect((await request(app).post(`${f.base}/confirm`).set(customerAuth()).send({ acknowledged: true })).status).toBe(200);
+        await runPaymentJobs();
+      }
+      expect(bachs.call).toHaveBeenCalledTimes(1);
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(1);
+      expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: f.op.id } })).toMatchObject({ status: result === "rejected" ? "FAILED" : "UNKNOWN" });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "DELIVERED", heldMinor: 10000n, releasedMinor: 0n, deliveryConfirmedAt: expect.any(Date) });
+      expect(await prisma.escrowEntry.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(0);
+    });
+  });
+
   describe("paid delivery quote renewal", () => {
     const renewalOrders: string[] = [];
     afterEach(async () => {

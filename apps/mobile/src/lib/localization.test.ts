@@ -14,6 +14,14 @@ import {
 } from "./localization";
 import { en } from "../../../../packages/localization/src/customer-messages";
 describe("complete mobile interface localization", () => {
+  it("localizes the reason buyer receipt is unavailable while courier delivery is pending", () => {
+    const copy = "Available after the courier confirms delivery of every package.";
+    for (const locale of localeOrder) {
+      expect(catalogue[copy]?.[locale]).toBeTruthy();
+      expect(ui(locale, copy)).toBe(catalogue[copy]![locale]);
+      if (locale !== "en") expect(ui(locale, copy)).not.toBe(copy);
+    }
+  });
   it("uses actionable customer messages without internal details and preserves cooldown details", () => {
     const invalid = localizedError("en", { code: "OTP_INVALID" });
     const expired = localizedError("en", { code: "OTP_EXPIRED" });

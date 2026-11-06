@@ -16,7 +16,6 @@ import {
   paymentAccount,
   refreshAccount,
   assertRelease,
-  requestRelease,
   queueReceiptRelease,
   requestRefund,
   reconcilePayment,
@@ -671,6 +670,17 @@ export async function runMoneyOperation(id: string) {
     if (op.kind === "RELEASE") {
       await prisma.$transaction((tx) => assertRelease(tx, op.orderId!));
       await checkFunds(op.amountMinor);
+      // Provider reads can outlive eligibility or our claim. Recheck both at
+      // the transfer boundary; an interrupted worker must not submit a write.
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${op.orderId!}::uuid FOR UPDATE`;
+        await assertRelease(tx, op.orderId!);
+        const current = await tx.moneyOperation.findUniqueOrThrow({ where: { id } });
+        if (current.status !== "PROCESSING" || current.providerRef || current.mode !== op.mode ||
+          current.attempts !== op.attempts || !current.leaseUntil ||
+          current.leaseUntil.getTime() !== op.leaseUntil?.getTime() || current.leaseUntil <= new Date())
+          throw new AppError(409, "STALE_RECORD", "This payment operation changed. Refresh to check its status.");
+      });
       const result = await submit(
         "/transfers",
         {

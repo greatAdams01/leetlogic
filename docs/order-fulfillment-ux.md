@@ -12,13 +12,16 @@ Both customer clients now use one shared `orderJourney` projection. The main scr
 | Accepted | Prepare goods; mark ready | Farmer preparing | Acceptance required on new orders |
 | Pickup ready | Confirm goods handed to buyer | Pickup details; inspect and confirm receipt | Farmer handover is an attestation, never buyer receipt |
 | Delivery ready | Wait for booked rider; confirm collection | Rider/tracking updates | Booking waits for acceptance and readiness; complete booking required for dispatch |
-| Handed over / dispatched | Await buyer confirmation | Receive and inspect goods | Courier delivery and all split-parcel checks still govern receipt eligibility |
+| Handed over / dispatched | Await buyer confirmation | Disabled Confirm Receipt explains waiting for courier delivery | Courier delivery and all split-parcel checks still govern receipt eligibility; buyer pickup retains its existing receipt action |
+| Courier delivery complete | Await buyer confirmation | Inspect goods; Confirm Receipt | Parent and every required matching parcel are `DELIVERED`; no hold, dispute, cancellation or settlement conflict |
 | Receipt confirmed | Payment processing | Order completed; payment processing | Private photo plus explicit inspection acknowledgment for new orders; no active dispute or hold |
 | Transfer confirmed | Payment released | Payment released | Existing trusted worker validates provider response and posts ledger once |
 | Declined | No preparation | Refund pending | Reason, audit, notification and support ticket saved atomically; existing refund worker/authorization checks apply |
 | Dispute/review | Actions paused | Resolve through Report a Problem | Existing dispute process blocks release; staff retain exceptional resolution authority |
 
 `deliveryConfirmedAt` still means buyer receipt. Internal `DELIVERED` can therefore precede the financial `COMPLETED` state. The UI reports payment processing, released, or requiring attention independently. A farmer’s readiness, pickup handover or dispatch does not release funds.
+
+The receipt action remains discoverable after rider pickup but is enabled only by the existing server eligibility projection. Both clients close inspection when eligibility is revoked and require a deliberate reopening after review. See [buyer receipt and automatic release](buyer-receipt-release.md) for the 6 November investigation, exact status conditions and release-boundary safeguards.
 
 ## API and durability
 

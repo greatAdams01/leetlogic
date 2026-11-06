@@ -39,6 +39,7 @@ export function orderJourney(input: {
     body = p?.next || "Checking the latest order update.",
     action: JourneyAction = null,
     label = "",
+    receiptPending = false,
     stage = 0;
   const closed =
     ["CANCELLED", "REFUNDED"].includes(input.orderStatus) || input.decision === "REJECTED";
@@ -84,6 +85,7 @@ export function orderJourney(input: {
     )
   ) {
     stage = 3;
+    receiptPending = buyer && p?.method === "Delivery";
     title = buyer
       ? pickup
         ? "Goods collected"
@@ -140,12 +142,15 @@ export function orderJourney(input: {
           ? "Next: buyer inspection and confirmation."
           : action === "confirm"
             ? "Next: verified payment release to the farmer."
-            : "";
+            : receiptPending
+              ? "Available after the courier confirms delivery of every package."
+              : "";
   return {
     title,
     body,
     action,
     label,
+    receiptPending,
     after,
     stage,
     payment,

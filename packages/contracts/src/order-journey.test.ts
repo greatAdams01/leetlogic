@@ -107,3 +107,37 @@ it.each(["PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "TOPUP_REQUIRED
     }
   },
 );
+it.each(["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"])(
+  "explains the disabled buyer receipt action while %s still lacks complete delivery evidence", status => {
+    const progress = orderFulfillment({
+      ...base, buyer: true, farmer: false, collection: false, farmerDecision: "ACCEPTED",
+      ready: true, dispatched: true, booked: true, status,
+    });
+    expect(orderJourney({ buyer: true, progress, orderStatus: "FUNDED" })).toMatchObject({
+      action: null, receiptPending: true,
+      after: "Available after the courier confirms delivery of every package.",
+    });
+    expect(orderJourney({ buyer: false, progress, orderStatus: "FUNDED" }).receiptPending).toBe(false);
+  },
+);
+it("enables the existing receipt action only when the server says confirmation is allowed", () => {
+  const progress = orderFulfillment({
+    ...base, buyer: true, farmer: false, collection: false, farmerDecision: "ACCEPTED",
+    ready: true, dispatched: true, booked: true, status: "DELIVERED", receiptReady: true,
+  });
+  expect(orderJourney({ buyer: true, progress, orderStatus: "FUNDED" })).toMatchObject({
+    action: "confirm", label: "Confirm Receipt", receiptPending: false,
+  });
+  for (const patch of [
+    { confirmed: true }, { blocked: true, review: true }, { orderStatus: "CANCELLED" },
+    { orderStatus: "REFUNDED" }, { farmerDecision: "REJECTED" }, { paid: false },
+  ]) {
+    const p = orderFulfillment({
+      ...base, buyer: true, farmer: false, collection: false, farmerDecision: "ACCEPTED",
+      ready: true, dispatched: true, booked: true, status: "DELIVERED", receiptReady: true, ...patch,
+    });
+    expect(orderJourney({ buyer: true, progress: p, orderStatus: patch.orderStatus || "FUNDED" })).toMatchObject({
+      action: null, receiptPending: false,
+    });
+  }
+});

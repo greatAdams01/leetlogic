@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { orderJourney } from "../../../../packages/contracts/src/order-journey";
 import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
@@ -42,6 +42,9 @@ export function GuidedOrder({
     null,
   );
   const running = useRef(false);
+  useEffect(() => {
+    if (guide.action !== "confirm" || loadError) setReceipt(false);
+  }, [guide.action, loadError]);
   const run = async (path: string, body: unknown = {}) => {
     if (running.current) return;
     running.current = true;
@@ -60,6 +63,7 @@ export function GuidedOrder({
     }
   };
   const act = () => {
+    if (!guide.action || running.current || loadError) return;
     if (guide.action === "confirm") {
       setReceipt(true);
       return;
@@ -94,12 +98,12 @@ export function GuidedOrder({
       title="Order"
       back={a.back}
       footer={
-        guide.action && !reject ? (
+        (guide.action || guide.receiptPending) && !reject ? (
           <View style={{ gap: 8 }}>
             <Button
-              title={guide.label}
+              title={guide.receiptPending ? "Confirm Receipt" : guide.label}
               loading={busy}
-              disabled={busy || !!loadError}
+              disabled={busy || !!loadError || !guide.action}
               onPress={act}
             />
             <Label muted style={{ textAlign: "center", fontSize: 13 }}>
@@ -391,7 +395,7 @@ export function GuidedOrder({
       <ReceiptConfirmation
         key={order.id}
         orderId={order.id}
-        visible={receipt && !!data.progress?.canConfirm}
+        visible={receipt && guide.action === "confirm" && !loadError}
         onClose={() => setReceipt(false)}
         onConfirmed={onRefresh}
       />

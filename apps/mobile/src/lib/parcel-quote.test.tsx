@@ -61,6 +61,7 @@ vi.mock("../state", () => ({
   useResource: () => ({ data: h.data, reload: h.reload, loading: false, error: "" }),
 }));
 import { Quotes, Delivery } from "../screens/delivery";
+import { orderFulfillment } from "../../../../packages/contracts/src/order-fulfillment";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer;
 const field = (label: string) =>
@@ -449,6 +450,41 @@ it("opens photo inspection without prematurely confirming buyer pickup",async()=
   await act(async()=>tree.root.findAllByType("Button" as any).find(n=>n.props.title==="Confirm Receipt")!.props.onPress());
   expect(h.api).not.toHaveBeenCalled();
   expect(tree.root.findByType("ReceiptConfirmation" as any).props.visible).toBe(true);
+});
+it("keeps receipt discoverable after rider pickup and enables it only after complete delivery", async () => {
+  Object.assign(h.data.order, { isBuyer: true, status: "FUNDED", farmerDecision: "ACCEPTED", reference: "ORDER", title: "Beans", totalMinor: "20000" });
+  const progress = (status: string, receiptReady = false) => orderFulfillment({
+    buyer: true, farmer: false, paid: true, confirmed: false, blocked: false, collection: false,
+    farmerDecision: "ACCEPTED", orderStatus: "FUNDED", ready: true, dispatched: true, booked: true,
+    status, receiptReady,
+  });
+  h.data.delivery = { status: "BOOKED", events: [], quotes: [] };
+  h.data.progress = progress("BOOKED");
+  await act(async () => { tree = create(<Delivery />); });
+  const receipt = () => tree.root.findAllByType("Button" as any).find(n => n.props.title === "Confirm Receipt")!;
+  for (const status of ["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"]) {
+    h.data.progress = progress(status);
+    await act(async () => tree.update(<Delivery />));
+    expect(receipt()).toBeDefined();
+    expect(receipt().props.disabled).toBe(true);
+    expect(JSON.stringify(tree.toJSON())).toContain("Available after the courier confirms delivery of every package.");
+    await act(async () => receipt().props.onPress());
+    expect(tree.root.findByType("ReceiptConfirmation" as any).props.visible).toBe(false);
+  }
+  h.data.progress = progress("DELIVERED", true);
+  await act(async () => tree.update(<Delivery />));
+  expect(receipt().props.disabled).toBe(false);
+  await act(async () => receipt().props.onPress());
+  expect(tree.root.findByType("ReceiptConfirmation" as any).props.visible).toBe(true);
+  expect(h.api).not.toHaveBeenCalled();
+  h.data.progress = { ...h.data.progress, status: "Needs review", canConfirm: false };
+  await act(async () => tree.update(<Delivery />));
+  expect(receipt()).toBeUndefined();
+  expect(tree.root.findByType("ReceiptConfirmation" as any).props.visible).toBe(false);
+  h.data.progress = progress("DELIVERED", true);
+  await act(async () => tree.update(<Delivery />));
+  expect(receipt().props.disabled).toBe(false);
+  expect(tree.root.findByType("ReceiptConfirmation" as any).props.visible).toBe(false);
 });
 
 it.each(["Pickup", "Delivery"])(
