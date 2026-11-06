@@ -185,7 +185,7 @@ export function CustomerPayment({
           <button disabled={busy} onClick={() => void act("refresh")}>
             {say("Check Payment")}
           </button>
-          <p>{say("Confirming your payment. Please don’t pay again. We check automatically; you can also check now.")}</p>
+          <p>{say(actions.pending.checkoutUnavailableReason || "Confirming your payment. Please don’t pay again. We check automatically; you can also check now.")}</p>
           {actions.canResume && (
             <button disabled={busy || disabled} onClick={() => void act("resume")}>
               {say("Continue payment")}

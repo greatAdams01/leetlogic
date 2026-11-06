@@ -77,7 +77,10 @@ async function checkRefundOrder(op: MoneyOperation) {
         throw new AppError(409, "REFUND_REVIEW_REQUIRED", "Reconcile fulfillment and financial holds before refunding.");
       return;
     }
-    if (order.financialHold || !["FUNDED", "DELIVERED"].includes(order.status) ||
+    if (order.financialHold || order.releasedMinor > 0n ||
+      order.heldMinor < BigInt((op.payload as any).produceMinor || "0") ||
+      await tx.moneyOperation.count({ where: { orderId: order.id, mode: mode(), kind: "RELEASE", status: { not: "FAILED" } } }) ||
+      !["FUNDED", "DELIVERED"].includes(order.status) ||
       (await tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } })))
       throw new AppError(409, "REFUND_BLOCKED", "Resolve the order review before requesting a refund.");
     if (!deliveryRefundReady(order.delivery))
@@ -150,6 +153,14 @@ async function complete(op: MoneyOperation, result: any) {
         failureCode: failed ? "PROVIDER_OPERATION_FAILED" : null,
         encryptedPayload: null,
       },
+    });
+    if (!failed) await tx.financeAlert.updateMany({
+      where: { key: `${mode()}:settlement:${op.id}`, resolvedAt: null }, data: { resolvedAt: new Date() },
+    });
+    else await tx.financeAlert.upsert({
+      where: { key: `${mode()}:settlement:${op.id}` },
+      create: { key: `${mode()}:settlement:${op.id}`, mode: mode(), orderId: op.orderId || undefined, code: "PROVIDER_OPERATION_FAILED" },
+      update: { code: "PROVIDER_OPERATION_FAILED", resolvedAt: null },
     });
     if (failed) {
       if (op.kind === "RELEASE" && op.orderId) {
@@ -323,7 +334,8 @@ async function complete(op: MoneyOperation, result: any) {
             data: { paidMinor: { decrement: shipping } },
           });
       }
-      void payment;
+      const delivery = await tx.delivery.findUnique({ where: { orderId: op.orderId! } });
+      if (delivery) await deliveryEvent(tx, delivery.id, "PAYMENT_REFUNDED", "system", `${op.id}:refund-confirmed`);
     }
     await audit(
       systemRequest(),
@@ -465,9 +477,15 @@ export async function runMoneyOperation(id: string) {
   if (!claimed.count) return;
   const op = await prisma.moneyOperation.findUniqueOrThrow({ where: { id } });
   const payload = op.payload as any;
+  let writeAttempted = false;
+  const submit = (...args: Parameters<typeof bachs.call>) => {
+    writeAttempted = true;
+    return bachs.call(...args);
+  };
   try {
     paymentReady(op.kind);
     if (op.kind === "CHECKOUT") {
+      if (op.providerRef) await bachs.assertNgnSettlement();
       const payment = await prisma.paymentAttempt.findUniqueOrThrow({
         where: { id: op.paymentId! },
       });
@@ -483,6 +501,7 @@ export async function runMoneyOperation(id: string) {
           assertPaymentShipment(order, current);
         });
       }
+      writeAttempted = !op.providerRef;
       const checkout = op.providerRef
         ? await bachs.checkoutState(op.providerRef)
         : await bachs.checkout({
@@ -535,7 +554,7 @@ export async function runMoneyOperation(id: string) {
       const knownAccount = account.providerAccountId || op.providerRef;
       const data = knownAccount
         ? await bachs.account(knownAccount)
-        : await bachs.call(
+        : await submit(
             "/accounts",
             {
               contact_email: input.email,
@@ -579,7 +598,7 @@ export async function runMoneyOperation(id: string) {
       const bank = op.encryptedPayload ? JSON.parse(decryptSecret(op.encryptedPayload)) : null;
       const result = op.providerRef
         ? await bachs.destination(op.providerRef, account.providerAccountId!)
-        : await bachs.call(
+        : await submit(
             "/payouts/destinations",
             {
               type: "bank_account",
@@ -652,7 +671,7 @@ export async function runMoneyOperation(id: string) {
     if (op.kind === "RELEASE") {
       await prisma.$transaction((tx) => assertRelease(tx, op.orderId!));
       await checkFunds(op.amountMinor);
-      const result = await bachs.call(
+      const result = await submit(
         "/transfers",
         {
           destination: account.providerAccountId,
@@ -669,6 +688,7 @@ export async function runMoneyOperation(id: string) {
       });
       await complete(op, result);
     } else if (op.kind === "PAYOUT" || op.kind === "REFUND_PAYOUT") {
+      if (op.kind === "REFUND_PAYOUT") await checkRefundOrder(op);
       const destination = await prisma.bankDestination.findFirst({
         where: { id: payload.destinationId, userId: op.ownerId, mode: mode(), usable: true },
       });
@@ -708,7 +728,7 @@ export async function runMoneyOperation(id: string) {
           "Your bank account is not ready for this payment.",
         );
       await checkFunds(op.amountMinor + op.feeMinor, account.providerAccountId!);
-      const result = await bachs.call(
+      const result = await submit(
         "/payouts",
         { destination: destination.providerId, amount: decimal(op.amountMinor), reference: op.id },
         op.id,
@@ -750,7 +770,7 @@ export async function runMoneyOperation(id: string) {
             "This payment needs a refund review. Contact support.",
           );
         await checkRefundOrder(op);
-        const result = await bachs.call(
+        const result = await submit(
           "/refunds",
           {
             charge_id: payment.chargeId,
@@ -815,7 +835,7 @@ export async function runMoneyOperation(id: string) {
         await prisma.moneyOperation.update({ where: { id }, data: { feeMinor: fee, amountMinor: transferAmount, payload: refundPayload } });
         await checkFunds(transferAmount);
         await checkRefundOrder(op);
-        const result = await bachs.call(
+        const result = await submit(
           "/transfers",
           {
             destination: account.providerAccountId,
@@ -834,30 +854,35 @@ export async function runMoneyOperation(id: string) {
       }
     }
   } catch (error) {
-    const code = error instanceof AppError ? error.code : "PAYMENT_RECONCILIATION_REQUIRED";
-    const blocked =
-      error instanceof AppError &&
-      [409, 503].includes(error.status) &&
-      !["PAYMENT_RESULT_UNKNOWN"].includes(error.code);
-    const definite = error instanceof AppError && error.code === "PAYMENT_PROVIDER_REJECTED";
-    // No automatic re-submission after an uncertain write. Reads with a known
-    // provider reference can safely reconcile on the next worker pass.
+    const code = !writeAttempted && !op.providerRef && error instanceof AppError && error.code === "PAYMENT_RESULT_UNKNOWN"
+      ? "PAYMENT_PREFLIGHT_UNAVAILABLE"
+      : error instanceof AppError ? error.code : "PAYMENT_RECONCILIATION_REQUIRED";
     const current = await prisma.moneyOperation.findUniqueOrThrow({ where: { id } });
-    await prisma.moneyOperation.update({
-      where: { id },
+    // A rejected reconciliation READ says nothing about the original write.
+    // Once a reference exists, preserve the obligation to reconcile it.
+    const definite = !current.providerRef && writeAttempted && error instanceof AppError &&
+      ["PAYMENT_PROVIDER_REJECTED", "PROVIDER_WALLET_MISMATCH"].includes(error.code);
+    const blocked = !current.providerRef && !writeAttempted;
+    const recorded = await prisma.moneyOperation.updateMany({
+      where: { id, status: "PROCESSING", leaseUntil: op.leaseUntil },
       data: {
-        status: definite
-          ? "FAILED"
-          : blocked
-            ? "BLOCKED"
-            : current.providerRef
-              ? "PROVIDER_PENDING"
-              : "UNKNOWN",
+        status: current.providerRef ? "PROVIDER_PENDING" : definite ? "FAILED" : blocked ? "BLOCKED" : "UNKNOWN",
         failureCode: code,
         leaseUntil: null,
         nextRunAt: new Date(Date.now() + 60000),
       },
     });
+    // A webhook or a newer lease may have completed this operation meanwhile.
+    if (!recorded.count) return;
+    if (["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT", "PAYOUT"].includes(op.kind)) {
+      await (await import("./fulfillment-deadline.js")).financeAlert(
+        prisma, `settlement:${op.id}`, mode(), code, op.orderId || undefined,
+      );
+      if (op.kind === "RELEASE" && op.orderId) {
+        const delivery = await prisma.delivery.findUnique({ where: { orderId: op.orderId } });
+        if (delivery) await deliveryEvent(prisma, delivery.id, "PAYMENT_RELEASE_PAUSED", "system", `${op.id}:paused:${code}`);
+      }
+    }
     if (payload.automaticDeadline && financeEnabled() && op.orderId) {
       await prisma.fulfillmentDeadline.updateMany({ where: { orderId: op.orderId, state: { notIn: ["REFUNDED", "SECURED"] } }, data: { state: "REFUND_BLOCKED", failureCode: code } });
       await (await import("./fulfillment-deadline.js")).financeAlert(prisma, `${op.orderId}:refund:${code}`, mode(), code, op.orderId);
@@ -1078,6 +1103,23 @@ export async function runPaymentJobs() {
     where: { mode: mode(), status: "PROCESSING", leaseUntil: { lt: new Date() } },
     data: { status: "UNKNOWN", failureCode: "WORKER_INTERRUPTED", leaseUntil: null },
   });
+  // Only these pre-submission checks are safe to retry automatically. Never
+  // requeue an unknown provider write, a terminal rejection, or an active lease.
+  await prisma.moneyOperation.updateMany({
+    where: { mode: mode(), kind: { in: ["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT", "PAYOUT"] },
+      status: "BLOCKED", providerRef: null, leaseUntil: null, attempts: { lt: 5 },
+      failureCode: { in: ["PROVIDER_BALANCE_LOW", "PAYMENT_BALANCE_UNAVAILABLE", "PAYMENT_PREFLIGHT_UNAVAILABLE"] },
+      nextRunAt: { lte: new Date() } },
+    data: { status: "QUEUED" },
+  });
+  const stalled = await prisma.moneyOperation.findMany({
+    where: { mode: mode(), kind: { in: ["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT", "PAYOUT"] },
+      status: { in: ["UNKNOWN", "PROVIDER_PENDING", "PROCESSING", "QUEUED"] },
+      createdAt: { lt: new Date(Date.now() - 30 * 60000) } }, take: 100,
+  });
+  for (const op of stalled) await (await import("./fulfillment-deadline.js")).financeAlert(
+    prisma, `settlement:${op.id}`, mode(), "SETTLEMENT_DELAYED", op.orderId || undefined,
+  );
   await reconcileUncertainRefunds();
   // Durable confirmation is the retry source; never queue a release from farmer handover.
   const candidates = await prisma.$queryRaw<{ id: string }[]>`
@@ -1158,6 +1200,11 @@ export async function runPaymentJobs() {
   });
   for (const payment of pending) await reconcilePayment(payment.id).catch(() => {});
   await expireOrders();
+  await prisma.financeHeartbeat.upsert({
+    where: { id: `payments-${mode()}` },
+    create: { id: `payments-${mode()}`, checkedAt: new Date() },
+    update: { checkedAt: new Date() },
+  });
 }
 export async function reconcileBalances() {
   const available = balanceOf(await bachs.balances());

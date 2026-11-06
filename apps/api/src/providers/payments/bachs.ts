@@ -57,6 +57,12 @@ export function receiptAmounts(payment: any, principal: bigint) {
     declined: status === "failed" && received === 0n,
   };
 }
+/** Price and collection currency must both be NGN; charge currency alone is insufficient. */
+export function assertNgnCheckout(checkout: any) {
+  if (checkout.currency !== "NGN" || checkout.billing_currency !== "NGN")
+    throw new AppError(409, "PAYMENT_CURRENCY_MISMATCH", "This payment page needs a currency review. Please contact support before paying.");
+}
+
 export function paymentReady(kind = "CHECKOUT") {
   const c = getConfig();
   const enabled =
@@ -221,6 +227,12 @@ export class Bachs {
         "We couldn’t complete this payment action. Please try again or contact support.",
       );
       const body = await response.json().catch(() => null);
+      // A known provider configuration rejection needs an actionable, durable
+      // code. Do not store arbitrary provider response text or customer details.
+      if (response.status < 500 && path === "/refunds" &&
+          typeof body?.detail === "string" &&
+          /settlement currency NGN is not held by this account/i.test(body.detail))
+        error.code = "PROVIDER_WALLET_MISMATCH";
       error.diagnostics = {
         provider: "bachs",
         operation: path.split("/")[1] || "request",
@@ -245,6 +257,7 @@ export class Bachs {
   async checkout(input: { id: string; amountMinor: bigint; orderId: string; expiresAt?: Date }) {
     paymentReady("CHECKOUT");
     const c = getConfig();
+    await this.assertNgnSettlement();
     const redirects = checkoutReturnUrls(input.id);
     const result = z
       .object({
@@ -262,6 +275,7 @@ export class Bachs {
               amount: decimal(input.amountMinor),
               name: "LeetLogic order",
             },
+            billing_currency: "NGN",
             customer_bears_fee: true,
             reference: input.id,
             metadata: { order_id: input.orderId, attempt_id: input.id },
@@ -302,6 +316,17 @@ export class Bachs {
   }
   account(id?: string) {
     return this.call(`/accounts/${id ? encodeURIComponent(id) : "me"}`);
+  }
+  async assertNgnSettlement() {
+    const account = await this.account();
+    if (account.id !== getConfig().BACHS_ORGANIZATION_ID ||
+        !Array.isArray(account.balance_currencies) || !account.balance_currencies.includes("NGN")) {
+      const error = new AppError(503, "NGN_SETTLEMENT_REQUIRED", "Secure payments are temporarily unavailable. Please try again later or contact support.");
+      error.diagnostics = { provider: "bachs", operation: "ngn-settlement-readiness",
+        reason: "NGN_BALANCE_NOT_ENABLED_OR_ACCOUNT_MISMATCH",
+        hint: "Enable NGN balances and NGN settlement for NGN checkouts in Bachs withdrawal settings. Do not use a USD-only settlement account." };
+      throw error;
+    }
   }
   async accountLink(accountId: string, key: string) {
     paymentReady("ONBOARD");

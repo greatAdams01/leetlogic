@@ -174,6 +174,7 @@ suite("provider-backed payment safeguards", () => {
   });
   beforeEach(() => {
     Object.assign(getConfig(), { PAYMENTS_TRANSFERS_ENABLED: true, PAYMENT_RECOVERY_ENABLED: false, PAYMENT_AUTO_REFUNDS_ENABLED: false, SHIPPING_FUNDING_ENABLED: false });
+    vi.spyOn(bachs, "assertNgnSettlement").mockResolvedValue();
     // Workers scan the schema. No test may accidentally call either real provider.
     vi.spyOn(bachs, "call").mockRejectedValue(new Error("Unexpected payment provider call"));
     vi.spyOn(shippingProvider, "quotes").mockRejectedValue(new Error("Unexpected rate request"));
@@ -245,11 +246,13 @@ suite("provider-backed payment safeguards", () => {
       checkout_url: `https://checkout.bachs.io/${a.id}`,
       expires_at: new Date(Date.now() + 600000).toISOString(),
     });
+    vi.spyOn(bachs, "checkoutState").mockResolvedValue({ checkout_id: `cs_${a.id}`, reference: a.id, currency: "NGN", billing_currency: "NGN", status: "open" });
     await runMoneyOperation(op.id);
     return prisma.paymentAttempt.findUniqueOrThrow({ where: { id: a.id } });
   }
   function mockReceipt(a: any, overrides: any = {}) {
     vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      currency: "NGN", billing_currency: "NGN",
       checkout_id: a.checkoutId,
       reference: a.id,
       charge_id: `ch_${a.id}`,
@@ -429,6 +432,7 @@ suite("provider-backed payment safeguards", () => {
       checkout_url: `https://sandbox-checkout.bachs.io/c/${id}`,
       expires_at: new Date(Date.now() + 600000).toISOString(),
     }));
+    vi.spyOn(bachs, "checkoutState").mockImplementation(async id => ({ checkout_id:id, reference:id.slice(3), currency:"NGN", billing_currency:"NGN", status:"open" }));
     const first = await request(app).post(`/v1/orders/${o.id}/checkout`).set(auth).send({});
     expect(first.status).toBe(200);
     expect(first.body.amountMinor).toBe("705000");
@@ -437,6 +441,7 @@ suite("provider-backed payment safeguards", () => {
     expect(write).toHaveBeenCalledTimes(1);
     const attempt = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: first.body.id } });
     vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      currency: "NGN", billing_currency: "NGN",
       checkout_id: attempt.checkoutId,
       reference: attempt.id,
       status: "open",
@@ -470,6 +475,7 @@ suite("provider-backed payment safeguards", () => {
     const attempt = await checkout(o.id);
     mockReceipt(attempt, { status: "failed", amount_paid: "0.00", amount_remaining: "110.00" });
     vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      currency: "NGN", billing_currency: "NGN",
       checkout_id: attempt.checkoutId,
       reference: attempt.id,
       charge_id: `ch_${attempt.id}`,
@@ -492,6 +498,7 @@ suite("provider-backed payment safeguards", () => {
     const retryId = `retry_${attempt.id}`;
     mockReceipt(attempt, { payment_id: retryId });
     vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      currency: "NGN", billing_currency: "NGN",
       checkout_id: attempt.checkoutId,
       reference: attempt.id,
       charge_id: retryId,
@@ -784,6 +791,7 @@ suite("provider-backed payment safeguards", () => {
     vi.spyOn(bachs, "operation").mockResolvedValue({ ...refund, status: "success" });
     await runMoneyOperation(op.id);
     await runMoneyOperation(op.id);
+    expect(await prisma.deliveryEvent.count({where:{deliveryId:d.id,status:"PAYMENT_REFUNDED"}})).toBe(1);
     expect(write).toHaveBeenCalledTimes(1);
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).refundedMinor).toBe(
       10000n,
@@ -910,6 +918,7 @@ suite("provider-backed payment safeguards", () => {
       data: { checkoutId: `cs_${topup.id}` },
     });
     vi.spyOn(bachs, "checkoutState").mockResolvedValue({
+      currency: "NGN", billing_currency: "NGN",
       checkout_id: `cs_${topup.id}`,
       reference: topup.id,
       charge_id: `ch_${topup.id}`,
@@ -1760,6 +1769,7 @@ suite("provider-backed payment safeguards", () => {
         checkout_url: `https://sandbox-checkout.bachs.io/c/${id}`,
         expires_at: new Date(Date.now() + 600000).toISOString(),
       }));
+    vi.spyOn(bachs, "checkoutState").mockImplementation(async id => ({ checkout_id:id, reference:id.slice(3), currency:"NGN", billing_currency:"NGN", status:"open" }));
     const checkoutResult = await request(app)
       .post(`/v1/orders/${orderId}/checkout`)
       .set(buyerAuth)
@@ -2300,6 +2310,117 @@ suite("provider-backed payment safeguards", () => {
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(10000n);
     const view = await request(app).get(`/v1/orders/${o.id}/payments`).set(headers);
     expect(view.body.progress).toMatchObject({ stage: "PROCESSING", escrow: "Held in escrow", transfer: "Queued", earnings: "Not credited" });
+  });
+
+  it("resumes a balance-blocked release through admin without creating another transfer", async () => {
+    const f = await funded();
+    await prisma.tradeOrder.update({where:{id:f.o.id},data:{status:"DELIVERED",deliveryConfirmedAt:new Date()}});
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"DELIVERED"}});
+    vi.spyOn(bachs,"account").mockResolvedValue({id:`acct_${seller}`,parent_organization_id:"org_fixture",enabled_capabilities:["transfers","payouts"]});
+    const balance = vi.spyOn(bachs,"balances").mockResolvedValue([{currency:"NGN",available_balance:"0.00"}]);
+    const op = await requestRelease(f.o.id,req());
+    balance.mockRejectedValueOnce(new AppError(503,"PAYMENT_RESULT_UNKNOWN","Balance lookup timed out"));
+    await runMoneyOperation(op.id);
+    expect(await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).toMatchObject({status:"BLOCKED",failureCode:"PAYMENT_PREFLIGHT_UNAVAILABLE",providerRef:null});
+    expect((await requestRelease(f.o.id,req())).id).toBe(op.id);
+    await runMoneyOperation(op.id);
+    expect(await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).toMatchObject({status:"BLOCKED",failureCode:"PROVIDER_BALANCE_LOW",providerRef:null});
+    expect(await prisma.financeAlert.count({where:{key:`sandbox:settlement:${op.id}`,resolvedAt:null}})).toBe(1);
+    const responses = await Promise.all([0,1].map(()=>request(app).post(`/v1/admin/money/orders/${f.o.id}/release`).set(staffAuth()).send({reason:"Sandbox balance restored and eligibility reviewed"})));
+    expect(responses.map(r=>r.status)).toEqual([202,202]);
+    expect(responses.map(r=>r.body.id)).toEqual([op.id,op.id]);
+    balance.mockResolvedValue([{currency:"NGN",available_balance:"100000.00"}]);
+    const write = vi.spyOn(bachs,"call").mockImplementation(async(path,body:any)=> {
+      if(path!=="/transfers") throw new Error("Unexpected write");
+      return {id:`tr_${op.id}`,status:"paid",currency:"NGN",amount:body.amount,destination:`acct_${seller}`};
+    });
+    await Promise.all([runMoneyOperation(op.id),runMoneyOperation(op.id)]);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(await prisma.tradeOrder.findUniqueOrThrow({where:{id:f.o.id}})).toMatchObject({heldMinor:0n,status:"COMPLETED"});
+    expect(await prisma.escrowEntry.count({where:{orderId:f.o.id,kind:"RELEASE"}})).toBe(1);
+    expect(await prisma.financeAlert.count({where:{key:`sandbox:settlement:${op.id}`,resolvedAt:null}})).toBe(0);
+  });
+  it("keeps an unknown release on reconciliation and refuses to resume a disputed release", async()=>{
+    const f=await funded();
+    await prisma.tradeOrder.update({where:{id:f.o.id},data:{status:"DELIVERED",deliveryConfirmedAt:new Date()}});
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"DELIVERED"}});
+    const op=await requestRelease(f.o.id,req());
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"UNKNOWN"}});
+    expect((await requestRelease(f.o.id,req())).status).toBe("UNKNOWN");
+    const response=await request(app).post(`/v1/admin/money/operations/${op.id}/reconcile`).set(staffAuth()).send({reason:"Check uncertain original transfer before retrying"});
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe("PROVIDER_REFERENCE_REQUIRED");
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"BLOCKED"}});
+    await prisma.tradeOrder.update({where:{id:f.o.id},data:{financialHold:true}});
+    await expect(requestRelease(f.o.id,req())).rejects.toMatchObject({code:"RELEASE_BLOCKED"});
+    expect(await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).toMatchObject({status:"BLOCKED"});
+  });
+
+  it("never makes a rejected reconciliation read eligible for a duplicate release",async()=>{
+    const f=await funded();
+    await prisma.tradeOrder.update({where:{id:f.o.id},data:{status:"DELIVERED",deliveryConfirmedAt:new Date()}});
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"DELIVERED"}});
+    const op=await requestRelease(f.o.id,req());
+    await prisma.moneyOperation.update({where:{id:op.id},data:{status:"PROVIDER_PENDING",providerRef:"tr_read_unavailable"}});
+    vi.spyOn(bachs,"account").mockResolvedValue({id:`acct_${seller}`,parent_organization_id:"org_fixture",enabled_capabilities:["transfers","payouts"]});
+    vi.spyOn(bachs,"operation").mockRejectedValue(new AppError(422,"PAYMENT_PROVIDER_REJECTED","Provider cannot retrieve original transfer"));
+    const write=vi.spyOn(bachs,"call");
+    await runMoneyOperation(op.id);
+    expect(await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).toMatchObject({status:"PROVIDER_PENDING",providerRef:"tr_read_unavailable"});
+    expect((await requestRelease(f.o.id,req())).id).toBe(op.id);
+    expect(write).not.toHaveBeenCalled();
+    expect(await prisma.moneyOperation.count({where:{orderId:f.o.id,kind:"RELEASE"}})).toBe(1);
+    vi.mocked(bachs.operation).mockImplementationOnce(async()=>{
+      await prisma.moneyOperation.update({where:{id:op.id},data:{status:"SUCCEEDED",leaseUntil:null}});
+      throw new AppError(503,"PAYMENT_RESULT_UNKNOWN","A concurrent provider lookup timed out");
+    });
+    await runMoneyOperation(op.id);
+    expect(await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).toMatchObject({status:"SUCCEEDED",leaseUntil:null});
+  });
+
+  it("resumes an admin refund with its original identity and confirms one refund and notification",async()=>{
+    const f=await funded();
+    await prisma.delivery.update({where:{id:f.d.id},data:{status:"BOOKING_BLOCKED"}});
+    const refundReq=req();refundReq.auth.sub=buyer;
+    const op=(await requestRefund(f.o.id,refundReq))[0]!;
+    vi.spyOn(bachs,"payment").mockResolvedValue({payment_id:`ch_${f.a.id}`,checkout_id:f.a.checkoutId,currency:"NGN",is_refundable:true});
+    const balance=vi.spyOn(bachs,"balances").mockResolvedValue([{currency:"NGN",available_balance:"0.00"}]);
+    await runMoneyOperation(op.id);
+    expect(await prisma.moneyOperation.findUniqueOrThrow({where:{id:op.id}})).toMatchObject({status:"BLOCKED",failureCode:"PROVIDER_BALANCE_LOW"});
+    const response=await request(app).post(`/v1/admin/money/orders/${f.o.id}/refund`).set(staffAuth()).send({reason:"Refund funding is ready and original request reviewed"});
+    expect(response.status).toBe(202);expect(response.body[0].id).toBe(op.id);
+    balance.mockResolvedValue([{currency:"NGN",available_balance:"100000.00"}]);
+    const write=vi.spyOn(bachs,"call").mockResolvedValue({refund_id:`rf_${op.id}`,status:"success",requested_amount:"110.00",refunded_amount:"110.00",charge_id:`ch_${f.a.id}`,reference:op.id});
+    await Promise.all([runMoneyOperation(op.id),runMoneyOperation(op.id)]);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(await prisma.tradeOrder.findUniqueOrThrow({where:{id:f.o.id}})).toMatchObject({heldMinor:0n,refundedMinor:10000n,status:"REFUNDED"});
+    expect(await prisma.escrowEntry.count({where:{orderId:f.o.id,kind:"REFUND"}})).toBe(1);
+    expect(await prisma.deliveryNotification.count({where:{orderId:f.o.id,event:{status:"PAYMENT_REFUNDED"}}})).toBe(2);
+  });
+
+  it.each(["ORDER", "DELIVERY_TOPUP"])("does not create a %s payment attempt when NGN settlement is disabled",async(kind)=>{
+    const f=await order();
+    vi.mocked(bachs.assertNgnSettlement).mockRejectedValue(new AppError(503,"NGN_SETTLEMENT_REQUIRED","Secure payments are temporarily unavailable"));
+    await expect(startCheckout(f.o.id,buyer,kind)).rejects.toMatchObject({code:"NGN_SETTLEMENT_REQUIRED"});
+    expect(await prisma.paymentAttempt.count({where:{orderId:f.o.id}})).toBe(0);
+  });
+  it("rejects a USD-priced session even when its charge was collected in NGN",async()=>{
+    const f=await order();const a=await checkout(f.o.id);mockReceipt(a);
+    vi.mocked(bachs.checkoutState).mockResolvedValue({checkout_id:a.checkoutId,reference:a.id,currency:"USD",billing_currency:"NGN",status:"completed",charge_id:`ch_${a.id}`});
+    await expect(reconcilePayment(a.id)).rejects.toMatchObject({code:"PAYMENT_CONFIRMATION_PENDING"});
+    expect(await prisma.paymentAttempt.findUniqueOrThrow({where:{id:a.id}})).toMatchObject({confirmedAt:null,checkErrorCode:"PAYMENT_CURRENCY_MISMATCH"});
+    expect(await prisma.tradeOrder.findUniqueOrThrow({where:{id:f.o.id}})).toMatchObject({heldMinor:0n,status:"AWAITING_PAYMENT"});
+  });
+  it("withholds saved payment links when the account or session currency is unsafe",async()=>{
+    const f=await order();const a=await checkout(f.o.id);
+    vi.mocked(bachs.checkoutState).mockResolvedValue({checkout_id:a.checkoutId,reference:a.id,currency:"NGN",billing_currency:"USD",status:"open"});
+    const read=()=>request(app).get(`/v1/financial/payments/${a.id}`).set(customerAuth());
+    expect((await read()).body.checkoutUrl).toBeNull();
+    vi.mocked(bachs.checkoutState).mockResolvedValue({checkout_id:a.checkoutId,reference:a.id,currency:"NGN",billing_currency:"NGN",status:"open"});
+    vi.mocked(bachs.assertNgnSettlement).mockRejectedValue(new AppError(503,"NGN_SETTLEMENT_REQUIRED","Secure payments are temporarily unavailable"));
+    const response=await request(app).get(`/v1/orders/${f.o.id}/payments`).set(customerAuth());
+    expect(response.status).toBe(200);
+    expect(response.body.items[0].checkoutUrl).toBeNull();
   });
 
 });

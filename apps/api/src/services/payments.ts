@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { prisma, type Prisma, type MoneyOperation, type PaymentAttempt } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
-import { bachs, minor, paymentReady, checkoutReturnUrls, checkoutChargeId, receiptAmounts } from "../providers/payments/bachs.js";
+import { bachs, minor, paymentReady, checkoutReturnUrls, checkoutChargeId, receiptAmounts, assertNgnCheckout } from "../providers/payments/bachs.js";
 import { encryptSecret, hashToken } from "../lib/crypto.js";
 import { dependencyError } from "../lib/dependency-errors.js";
 import { logger } from "../lib/logger.js";
@@ -157,6 +157,7 @@ export async function createOperation(
 export async function startCheckout(orderId: string, buyerId: string, kind = "ORDER") {
   paymentReady("CHECKOUT");
   checkoutReturnUrls("configuration-check");
+  await bachs.assertNgnSettlement();
   // A declined card can leave its hosted session open. Reconcile that session before allowing another.
   const previous = await prisma.paymentAttempt.findFirst({
     where: {
@@ -318,6 +319,7 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
     (checkout.metadata?.order_id && checkout.metadata.order_id !== attempt.orderId)
   )
     throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+  assertNgnCheckout(checkout);
   const checkoutStatus = String(checkout.status || "").toLowerCase();
   const chargeId = hintedCharge || checkoutChargeId(checkout) || attempt.chargeId;
   if (!chargeId) {
@@ -413,6 +415,7 @@ async function confirmPayment(attempt: PaymentAttempt, hintedCharge?: string) {
   )
     throw new Error("PAYMENT_CHARGE_MISMATCH");
   const { fee, received, success, declined } = receiptAmounts(payment, attempt.amountMinor);
+  if (success) await bachs.assertNgnSettlement();
   const completed = payment.completed_at || checkout.completed_at;
   // Missing provider timestamps must never restart the two-hour clock on discovery.
   // Checkout creation is a conservative lower bound until provider evidence is available.
@@ -629,7 +632,22 @@ export async function requestRelease(orderId: string, req: Request) {
     const prior = await tx.moneyOperation.findFirst({
       where: { mode: mode(), orderId, kind: "RELEASE", status: { not: "FAILED" } },
     });
-    if (prior) return prior;
+    if (prior) {
+      // A blocked attempt has not submitted a write. Reuse its identity after
+      // rechecking eligibility; unknown outcomes must only be reconciled.
+      if (prior.status === "BLOCKED" && !prior.providerRef) {
+        await assertRelease(tx, orderId);
+        const resumed = await tx.moneyOperation.updateMany({
+          where: { id: prior.id, status: "BLOCKED", providerRef: null, leaseUntil: null },
+          data: { status: "QUEUED", nextRunAt: new Date(), failureCode: null },
+        });
+        if (resumed.count) await audit(req, {
+          action: "payment.release.resumed", entityType: "money_operation", entityId: prior.id,
+        }, tx);
+        return tx.moneyOperation.findUniqueOrThrow({ where: { id: prior.id } });
+      }
+      return prior;
+    }
     const order = await assertRelease(tx, orderId);
     if (
       await tx.moneyOperation.count({
@@ -805,7 +823,26 @@ export async function requestRefund(orderId: string, req: Request) {
         status: { not: "FAILED" },
       },
     });
-    if (previous) return [previous];
+    if (previous) {
+      const resumable = await tx.moneyOperation.findMany({ where: {
+        mode: mode(), orderId, kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] },
+        status: "BLOCKED", providerRef: null, leaseUntil: null,
+      } });
+      // Reuse existing requests. The worker revalidates held funds, disputes,
+      // fulfillment and destinations immediately before a provider write.
+      for (const op of resumable) {
+        const changed = await tx.moneyOperation.updateMany({
+          where: { id: op.id, status: "BLOCKED", providerRef: null, leaseUntil: null },
+          data: { status: "QUEUED", nextRunAt: new Date(), failureCode: null },
+        });
+        if (changed.count) await audit(req, {
+          action: "payment.refund.resumed", entityType: "money_operation", entityId: op.id,
+        }, tx);
+      }
+      return tx.moneyOperation.findMany({ where: {
+        mode: mode(), orderId, kind: { in: ["REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] }, status: { not: "FAILED" },
+      } });
+    }
     if (
       order.fundsProvider !== "bachs" ||
       !["FUNDED", "DELIVERED"].includes(order.status) ||

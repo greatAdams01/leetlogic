@@ -167,7 +167,10 @@ export function MoneyActions({
   const currentRefund =
     refundHistory.find((op: any) => !["FAILED", "RESOLVED"].includes(op.status)) ||
     refundHistory[0];
-  const visibleOperations = operationId ? operations : currentRefund ? [currentRefund] : [];
+  const visibleOperations = operationId ? operations : [
+    ...(currentRefund ? [currentRefund] : []),
+    ...operations.filter((op: any) => ["RELEASE", "PAYOUT"].includes(op.kind)),
+  ];
   const history = operations.filter(
     (op: any) => !visibleOperations.some((v: any) => v.id === op.id),
   );
@@ -175,11 +178,11 @@ export function MoneyActions({
     <section className="finance-action-panel" aria-label="Payment review actions">
       <div className="finance-section-heading">
         <div>
-          <h3>{toolsOnly ? "Provider tools" : "Refund"}</h3>
+          <h3>{toolsOnly ? "Provider tools" : orderId ? "Escrow release and refunds" : "Payment recovery"}</h3>
           <p>
             {toolsOnly
               ? "Check provider configuration and balances."
-              : "Review the amount, approve the refund once, and track its status here."}
+              : "Review release and refund attempts, resolve blocking issues, and track provider confirmation here."}
           </p>
         </div>
         <button
@@ -202,6 +205,9 @@ export function MoneyActions({
         </p>
       )}
       {!data && !error && <p role="status">Loading available actions…</p>}
+      {data?.readiness?.workerStale && (
+        <p role="alert" className="finance-action-notice">The payment worker has not completed a recent run. Check the worker service before expecting queued settlements to finish.</p>
+      )}
       {toolsOnly ? (
         <>
           {data && (
@@ -369,7 +375,8 @@ export function MoneyActions({
               {op.failureCode && (!op.kind.startsWith("REFUND") || refundState(op).needsHelp) && (
                 <p className="finance-action-notice">Issue: {financeLabel(op.failureCode)}</p>
               )}
-              <p>{op.kind.startsWith("REFUND") ? refundState(op).body : operationGuidance(op)}</p>
+              <p>{op.failureCode === "PROVIDER_WALLET_MISMATCH" || op.failureCode === "PROVIDER_BALANCE_LOW"
+                ? operationGuidance(op) : op.kind.startsWith("REFUND") ? refundState(op).body : operationGuidance(op)}</p>
               {op.status === "FAILED" &&
                 op.kind.startsWith("REFUND") &&
                 operationId &&
@@ -413,7 +420,9 @@ export function MoneyActions({
                         >
                           {op.kind === "REFUND" && !op.providerRef
                             ? "Check original refund status"
-                            : "Check provider & reconcile"}
+                            : op.status === "BLOCKED" && !op.providerRef
+                              ? "Resume original operation"
+                              : "Check provider & reconcile"}
                         </button>
                       )}
                     {op.kind === "REFUND" && op.status === "UNKNOWN" && !op.providerRef && (
@@ -534,6 +543,15 @@ export function MoneyActions({
           })}
           {orderId && !operationId && !paymentId && (
             <>
+              {data?.settlement && (
+                <article className="finance-operation-card">
+                  <h4>Escrow balance and release eligibility</h4>
+                  {data.settlement.state && <p><strong>{financeLabel(data.settlement.state)}</strong></p>}
+                  <p>Held in escrow: {money(data.settlement.heldMinor)}</p>
+                  <p>Released: {money(data.settlement.releasedMinor)} · Refunded: {money(data.settlement.refundedMinor)}</p>
+                  <p>{data.settlement.eligible ? "Eligible for release. Available provider funds are checked before transfer." : data.settlement.eligibilityReason}</p>
+                </article>
+              )}
               {!refunds.length && (
                 <article className="finance-operation-card">
                   <h4>Refund this order</h4>
@@ -663,7 +681,14 @@ export function operationGuidance(op: {
   status: string;
   kind: string;
   providerRef?: string | null;
+  failureCode?: string | null;
 }) {
+  if (op.failureCode === "PROVIDER_WALLET_MISMATCH")
+    return "Bachs rejected the refund because the charge’s settlement account does not hold NGN. Ask the provider to correct the charge/wallet configuration before creating another refund. No refund was submitted.";
+  if (op.failureCode === "PROVIDER_BALANCE_LOW")
+    return "The provider’s available NGN balance cannot cover this payment. Confirm settlement or fund the sandbox balance, then resume this original operation. No transfer was submitted.";
+  if (op.failureCode === "PAYMENT_BALANCE_UNAVAILABLE")
+    return "The provider’s NGN balance could not be verified. Check the account currency configuration before resuming this operation.";
   if (op.status === "SUCCEEDED")
     return "Provider confirmation received. No further submission is needed.";
   if (["QUEUED", "PROCESSING", "PROVIDER_PENDING"].includes(op.status))

@@ -110,6 +110,7 @@ export function orderUpdateCopy(messageKey: string, buyer: boolean) {
     PAYMENT_RELEASE_PROCESSING: ["Payment release processing", "Receipt is confirmed. The farmer’s transfer is queued for secure processing."],
     PAYMENT_RELEASE_FAILED: ["Payment needs attention", "The farmer’s payment could not be completed. Support will review it."],
     PAYMENT_RELEASED: ["Payment released", "The farmer’s payment is confirmed. Open the order for details."],
+    PAYMENT_REFUNDED: ["Refund confirmed", "The payment provider confirmed a refund for this order. Open the order to review the amount."],
     RECOVERY_REQUIRED: [
       buyer ? "Your payment needs order recovery" : "Stock confirmation needed",
       buyer

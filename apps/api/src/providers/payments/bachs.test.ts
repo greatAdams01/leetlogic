@@ -28,17 +28,37 @@ import {
   checkoutReturnUrls,
   checkoutChargeId,
   receiptAmounts,
+  assertNgnCheckout,
 } from "./bachs.js";
 describe("Bachs payment protocol", () => {
   const fetcher = vi.fn(),
     provider = new Bachs(fetcher as typeof fetch);
   beforeEach(() => {
     fetcher.mockReset();
+    vi.spyOn(provider, "account").mockResolvedValue({ id: "org_fixture", balance_currencies: ["NGN", "USD"] });
     config.BACHS_MODE = "sandbox";
     config.PAYMENT_AUTO_REFUNDS_ENABLED = false;
     config.PAYMENTS_REFUNDS_ENABLED = true;
     config.BACHS_BANK_REFUNDS_VERIFIED = false;
     config.PAYMENTS_RETURN_ORIGIN = "https://leetlogic.example";
+  });
+  it("identifies a provider refund wallet mismatch without exposing its response text", async () => {
+    fetcher.mockResolvedValue(new Response(JSON.stringify({error_code:"BAD_REQUEST",detail:"Cannot refund: settlement currency NGN is not held by this account. This indicates a charge/wallet configuration mismatch."}),{status:400}));
+    await expect(provider.call("/refunds",{charge_id:"ch_test"},"key_test")).rejects.toMatchObject({code:"PROVIDER_WALLET_MISMATCH",status:422});
+  });
+  it.each([
+    {id:"org_fixture",balance_currencies:["USD"]},
+    {id:"org_fixture"},
+    {id:"another_org",balance_currencies:["NGN"]},
+  ])("blocks checkout before submission when NGN settlement is unavailable: %j", async(account)=>{
+    vi.mocked(provider.account).mockResolvedValue(account);
+    await expect(provider.checkout({id:"blocked",orderId:"order",amountMinor:10000n})).rejects.toMatchObject({code:"NGN_SETTLEMENT_REQUIRED"});
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("requires both checkout price and billing currency to be NGN",()=>{
+    expect(()=>assertNgnCheckout({currency:"NGN",billing_currency:"NGN"})).not.toThrow();
+    for(const session of [{currency:"USD",billing_currency:"NGN"},{currency:"NGN",billing_currency:"USD"},{currency:"NGN"}])
+      expect(()=>assertNgnCheckout(session)).toThrow(expect.objectContaining({code:"PAYMENT_CURRENCY_MISMATCH"}));
   });
   it("preserves exact kobo and rejects malformed or negative money", () => {
     expect(minor("9999999999999.99")).toBe(999999999999999n);
@@ -116,6 +136,7 @@ describe("Bachs payment protocol", () => {
     expect(JSON.parse(options.body)).toMatchObject({
       reference: "attempt",
       pricing: { currency: "NGN", amount: "123.45" },
+      billing_currency: "NGN",
       customer_bears_fee: true,
       payment_method_types: ["NGN_CARD"],
     });

@@ -145,3 +145,20 @@ it("shows the amount before approving a full order refund without requiring a ko
     }),
   );
 });
+
+it("explains provider wallet mismatch without suggesting that a refund completed", async () => {
+  h.status = "FAILED";
+  h.failureCode = "PROVIDER_WALLET_MISMATCH";
+  render(<MoneyActions paymentId="payment" manage />);
+  await screen.findByText(/charge’s settlement account does not hold NGN/);
+  expect(screen.queryByText("Refund completed")).toBeNull();
+});
+
+it("shows release attempts and resume controls in the order finance view", async () => {
+  h.call.mockResolvedValue({payments:[],readiness:{workerStale:true},settlement:{heldMinor:"10000",releasedMinor:"0",refundedMinor:"0",eligible:true},operations:[{id:"release",orderId:"order",kind:"RELEASE",status:"BLOCKED",failureCode:"PROVIDER_BALANCE_LOW",amountMinor:"9800",feeMinor:"200",providerRef:null}]});
+  render(<MoneyActions orderId="order" manage />);
+  await screen.findByRole("button",{name:"Resume original operation"});
+  expect(screen.getByText(/available NGN balance cannot cover/)).toBeTruthy();
+  expect(screen.getByText(/payment worker has not completed a recent run/)).toBeTruthy();
+  expect(screen.getByText(/Eligible for release/)).toBeTruthy();
+});

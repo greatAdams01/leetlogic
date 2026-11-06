@@ -18,3 +18,7 @@ it("never promises automatic discovery of an unsupported bank return with no ref
     refundState({ status: "UNKNOWN", kind: "REFUND_TRANSFER", providerRef: "original" }).label,
   ).toBe("Checking refund");
 });
+
+it("does not call an internal refund transfer a completed bank refund",()=>{
+  expect(refundState({kind:"REFUND_TRANSFER",status:"SUCCEEDED"})).toMatchObject({label:"Awaiting refund bank payout",needsHelp:false});
+});

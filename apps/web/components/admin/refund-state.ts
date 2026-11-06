@@ -4,6 +4,13 @@ export function refundState(op: {
   kind?: string;
   providerRef?: string | null;
 }) {
+  if (op.kind === "REFUND_TRANSFER" && op.status === "SUCCEEDED")
+    return {
+      label: "Awaiting refund bank payout",
+      body: "Funds moved to the buyer’s provider balance. The separate bank payout must be confirmed before the refund is complete.",
+      tone: "neutral",
+      needsHelp: false,
+    };
   if (op.status === "SUCCEEDED")
     return {
       label: "Refund completed",

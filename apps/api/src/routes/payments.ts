@@ -11,7 +11,7 @@ import { prisma, type PaymentAttempt } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { getConfig } from "../config.js";
-import { bachs, verifyBachs, paymentReady, hostedUrl } from "../providers/payments/bachs.js";
+import { assertNgnCheckout, bachs, verifyBachs, paymentReady, hostedUrl } from "../providers/payments/bachs.js";
 import {
   startCheckout,
   reconcilePayment,
@@ -21,6 +21,7 @@ import {
   refreshAccount,
   availableEarnings,
   requestWithdrawal,
+  assertRelease,
   requestRelease,
   requestRefund,
   mode,
@@ -93,15 +94,25 @@ const safePayment = (item: any) => ({
   createdAt: item.createdAt,
   expiresAt: item.expiresAt,
 });
-function safeOrderPayment(order: CheckoutOrder, item: PaymentAttempt, buyer: boolean) {
+async function safeOrderPayment(order: CheckoutOrder, item: PaymentAttempt, buyer: boolean) {
   let available = false;
   try {
     assertPaymentShipment(order, item);
-    available = item.status === "OPEN";
+    if (item.status === "OPEN" && buyer && item.checkoutId) {
+      await bachs.assertNgnSettlement();
+      const checkout = await bachs.checkoutState(item.checkoutId);
+      if (checkout.checkout_id !== item.checkoutId || checkout.reference !== item.id)
+        throw new Error("PAYMENT_CHECKOUT_MISMATCH");
+      assertNgnCheckout(checkout);
+      available = true;
+    }
   } catch {
     /* Keep attempts visible for reconciliation, but never expose a stale payment link. */
   }
-  return { ...safePayment(item), checkoutUrl: available && buyer ? item.checkoutUrl : null };
+  return { ...safePayment(item), checkoutUrl: available && buyer ? item.checkoutUrl : null,
+    checkoutUnavailableReason: buyer && item.status === "OPEN" && !available
+      ? "We can’t reopen this payment safely right now. Please contact support before paying again." : null,
+  };
 }
 async function throttle(userId: string, action: string) {
   const key = `money-rate:${action}:${userId}:${Math.floor(Date.now() / 60000)}`;
@@ -135,7 +146,7 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
           ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"].includes(item.status) ||
           (item.status === "BLOCKED" && !!item.checkoutId),
       ),
-      items: items.map((item) => safeOrderPayment(order, item, order.buyerId === req.auth!.sub)),
+      items: await Promise.all(items.map((item) => safeOrderPayment(order, item, order.buyerId === req.auth!.sub))),
       fulfillment: await readFulfillment(order.id),
       orderStatus: order.status,
       financialHold: order.financialHold,
@@ -165,7 +176,7 @@ paymentsRouter.post("/:id/checkout", async (req, res) => {
       "We couldn’t start your payment. Please try again or contact support.",
     );
   const order = await ownedOrder(updated.orderId, req.auth!.sub);
-  const result = safeOrderPayment(order, updated, true);
+  const result = await safeOrderPayment(order, updated, true);
   res.status(result.checkoutUrl ? 200 : 202).json(serialize(result));
 });
 paymentsRouter.post("/:id/payments/:paymentId/refresh", async (req, res) => {
@@ -186,7 +197,7 @@ paymentsRouter.post("/:id/payments/:paymentId/refresh", async (req, res) => {
   await reconcilePayment(payment.id);
   res.json(
     serialize(
-      safeOrderPayment(
+      await safeOrderPayment(
         await ownedOrder(order.id, req.auth!.sub),
         await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: payment.id } }),
         true,
@@ -200,7 +211,7 @@ financialRouter.get("/payments/:id", async (req, res) => {
   });
   if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "Payment not found");
   res.json(
-    serialize(safeOrderPayment(await ownedOrder(payment.orderId, req.auth!.sub), payment, true)),
+    serialize(await safeOrderPayment(await ownedOrder(payment.orderId, req.auth!.sub), payment, true)),
   );
 });
 financialRouter.get("/", async (req, res) => {
@@ -429,6 +440,7 @@ moneyAdminRouter.get("/", async (req, res) => {
       take: 7,
     }),
   ]);
+  const worker = await prisma.financeHeartbeat.findUnique({ where: { id: `payments-${mode()}` } });
   res.json(
     serialize({
       operations: operations.map((op) => ({
@@ -439,6 +451,29 @@ moneyAdminRouter.get("/", async (req, res) => {
       payments,
       webhooks,
       reconciliations,
+      ...(orderId ? { settlement: await prisma.$transaction(async (tx) => {
+        const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+        let eligible = false;
+        let eligibilityReason: string | null = null;
+        try { paymentReady("RELEASE"); await assertRelease(tx, orderId); eligible = true; }
+        catch (error) { eligibilityReason = error instanceof AppError ? error.message : "Review this order before releasing funds."; }
+        const release = operations.find(op => op.kind === "RELEASE");
+        const refund = operations.find(op => op.kind.startsWith("REFUND"));
+        let state = eligible ? "ELIGIBLE_FOR_RELEASE" : order.deliveryConfirmedAt ? "RELEASE_PENDING_REVIEW" : "HELD_IN_ESCROW";
+        if (release && release.status !== "FAILED") {
+          eligible = false;
+          eligibilityReason = "Track the original release operation below. An uncertain result must be reconciled before another transfer.";
+          state = release.status === "SUCCEEDED" && order.releasedMinor > 0n ? "RELEASED"
+            : ["BLOCKED", "UNKNOWN"].includes(release.status) ? "RELEASE_PENDING_REVIEW" : "RELEASE_PROCESSING";
+        } else if (release?.status === "FAILED") state = "RELEASE_FAILED";
+        if (refund && refund.status !== "FAILED") {
+          eligible = false;
+          eligibilityReason = "Track the original refund below before taking another financial action.";
+          state = refund.status === "SUCCEEDED" && refund.kind !== "REFUND_TRANSFER" ? "REFUNDED" : "REFUND_PROCESSING";
+        }
+        return { state, heldMinor: order.heldMinor, releasedMinor: order.releasedMinor,
+          refundedMinor: order.refundedMinor, eligible, eligibilityReason };
+      }) } : {}),
       readiness: {
         mode: mode(),
         enabled: getConfig().PAYMENTS_ENABLED,
@@ -446,6 +481,8 @@ moneyAdminRouter.get("/", async (req, res) => {
         organizationConfigured: !!getConfig().BACHS_ORGANIZATION_ID,
         liveMoney: getConfig().PAYMENTS_LIVE_MONEY,
         bankRefundsVerified: getConfig().BACHS_BANK_REFUNDS_VERIFIED,
+        workerCheckedAt: worker?.checkedAt || null,
+        workerStale: !worker || Date.now() - worker.checkedAt.getTime() > 5 * 60000,
       },
     }),
   );
@@ -719,18 +756,18 @@ moneyAdminRouter.post(
         "PROVIDER_REFERENCE_REQUIRED",
         "Locate and link the original provider operation before retrying.",
       );
-    await prisma.moneyOperation.update({
-      where: { id: op.id },
-      data: {
-        status: op.providerRef ? "PROVIDER_PENDING" : "QUEUED",
-        nextRunAt: new Date(),
-        leaseUntil: null,
-      },
-    });
-    await audit(req, {
-      action: "money.reconciliation.requested",
-      entityType: "money_operation",
-      entityId: op.id,
+    await prisma.$transaction(async (tx) => {
+      const changed = await tx.moneyOperation.updateMany({
+        where: { id: op.id, mode: mode(), status: op.status, providerRef: op.providerRef,
+          OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }] },
+        data: { status: op.providerRef ? "PROVIDER_PENDING" : "QUEUED",
+          nextRunAt: new Date(), leaseUntil: null },
+      });
+      if (!changed.count)
+        throw new AppError(409, "STALE_RECORD", "This operation changed. Refresh its status before continuing.");
+      await audit(req, {
+        action: "money.reconciliation.requested", entityType: "money_operation", entityId: op.id,
+      }, tx);
     });
     res.status(202).json({ queued: true });
   },

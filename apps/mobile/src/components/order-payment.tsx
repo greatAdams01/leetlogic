@@ -240,8 +240,7 @@ export function OrderPayment({
             onPress={() => void act("REFRESH")}
           />
           <Label muted>
-            Confirming your payment. Please don’t pay again. We check automatically; you can also
-            check now.
+            {actions.pending.checkoutUnavailableReason || "Confirming your payment. Please don’t pay again. We check automatically; you can also check now."}
           </Label>
           {actions.canResume && (
             <Button
