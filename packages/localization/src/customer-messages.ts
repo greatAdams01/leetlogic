@@ -111,6 +111,7 @@ export const en = {
   "status.BOOKING": "Booking in progress",
   "status.BOOKING_UNCERTAIN": "Booking needs staff reconciliation",
   "status.BOOKING_BLOCKED": "Booking requires attention",
+  "status.QUOTE_REFRESHED": "Delivery quote renewed",
   "status.BOOKED": "Courier booked",
   "status.PICKED_UP": "Picked up",
   "status.IN_TRANSIT": "In transit",

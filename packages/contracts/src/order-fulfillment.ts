@@ -16,6 +16,7 @@ export function orderFulfillment(input: {
   buyer: boolean;
   farmer: boolean;
   status: string;
+  bookingFailureCode?: string | null;
   ready: boolean;
   dispatched: boolean;
   booked: boolean;
@@ -38,6 +39,23 @@ export function orderFulfillment(input: {
   const awaitingAcceptance = input.farmerDecision === "PENDING";
   const rejected = input.farmerDecision === "REJECTED";
   const accepted = !awaitingAcceptance && !rejected && !input.review;
+  const bookingBlocked = status === "BOOKING_BLOCKED";
+  const bookingQueued = ["BOOKING_QUEUED", "BOOKING"].includes(status);
+  const awaitingBooking = !collection && ready && !booked && status === "PAID";
+  const topup = status === "TOPUP_REQUIRED";
+  const bookingNext = topup
+    ? buyer
+      ? "Payment is confirmed. Review and pay only the additional delivery amount to continue."
+      : "Payment is confirmed. Waiting for the buyer to review the additional delivery amount."
+    : bookingBlocked
+      ? input.bookingFailureCode === "DELIVERY_PRICE_CHANGED"
+        ? buyer
+          ? "Payment is confirmed. The delivery price changed; review the new quote before booking. You will not be charged automatically."
+          : "Payment is confirmed. The delivery price changed; the buyer or staff must review it before booking."
+        : "Payment is confirmed. Courier booking needs attention; temporary issues retry automatically."
+      : bookingQueued
+        ? "Payment is confirmed. We are booking the courier; no booking is confirmed yet."
+        : "Produce is ready. Waiting for a confirmed courier booking.";
   const canAccept = farmer && paid && awaitingAcceptance && !blocked && !input.review && !confirmed;
   const canHandover =
     farmer &&
@@ -119,11 +137,13 @@ export function orderFulfillment(input: {
                         ? ready || status === "PICKUP_READY"
                           ? "Produce is ready. The buyer can collect and confirm pickup."
                           : "Waiting for the farmer to prepare the produce."
-                        : dispatched || ["PICKED_UP", "IN_TRANSIT"].includes(status)
-                          ? "The shipment is on its way. Courier tracking will update automatically."
-                          : status === "DELIVERED"
-                            ? "Waiting for the buyer to confirm receipt."
-                            : "Pickup is being arranged. Follow courier tracking for updates.";
+                        : bookingBlocked || bookingQueued || awaitingBooking || topup
+                          ? bookingNext
+                          : dispatched || ["PICKED_UP", "IN_TRANSIT"].includes(status)
+                            ? "The shipment is on its way. Courier tracking will update automatically."
+                            : status === "DELIVERED"
+                              ? "Waiting for the buyer to confirm receipt."
+                              : "Pickup is being arranged. Follow courier tracking for updates.";
   return {
     canAccept: canAccept && !terminal,
     canReject: canAccept && !terminal,
@@ -156,13 +176,21 @@ export function orderFulfillment(input: {
                       ? "Awaiting buyer confirmation"
                       : status === "PICKED_UP"
                         ? "Picked Up"
-                        : status === "IN_TRANSIT"
-                          ? "In Transit"
-                          : dispatched
-                            ? "Dispatched"
-                            : ready
-                              ? "Ready for Pickup"
-                              : "Preparing for Pickup",
+                         : status === "IN_TRANSIT"
+                           ? "In Transit"
+                           : bookingBlocked
+                             ? "Courier booking needs attention"
+                             : topup
+                               ? "Delivery top-up required"
+                               : bookingQueued
+                                 ? "Booking your courier"
+                                 : awaitingBooking
+                                   ? "Awaiting courier booking"
+                                   : dispatched
+                                     ? "Dispatched"
+                                     : ready
+                                       ? "Ready for Pickup"
+                                       : "Preparing for Pickup",
     stage,
     steps: collection
       ? ["Payment confirmed", "Preparing", "Ready for Pickup", "Collected", "Completed"]

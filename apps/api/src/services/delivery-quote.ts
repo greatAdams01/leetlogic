@@ -225,7 +225,7 @@ export function assertCurrentDeliveryQuote(
   }
   // Confirmation checks the saved shipment at the authoritative payment time, not today's
   // provider availability. Current eligibility and expiry are checked again before booking.
-  if (!options.confirmationAt) assertDeliveryInput(order, input, options.booking, options.allowExpired);
+  if (!options.confirmationAt) assertDeliveryInput(order, input, options.booking, options.allowExpired && !options.booking);
   return quote;
 }
 

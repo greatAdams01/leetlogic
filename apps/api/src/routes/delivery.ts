@@ -7,7 +7,7 @@ import { mode, queueReceiptRelease } from "../services/payments.js";
 import { orderFulfillment } from "@leetlogic/contracts";
 import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
-import { recoveryEnabled, financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
+import { financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
 import { rankDeliveryQuotes, courierQuality } from "../services/delivery-ranking.js";
 import { deliveryQuoteConfiguration } from "../services/delivery-configuration.js";
 import { packageSuggestion, orderShipping } from "../services/packaging.js";
@@ -337,6 +337,7 @@ async function fulfillmentView(
     buyer,
     farmer,
     status: d?.status || "",
+    bookingFailureCode: d?.failureCode,
     ready: events.some((e) => e.status === "READY_FOR_PICKUP"),
     dispatched: events.some((e) => e.status === "FARMER_DISPATCHED"),
     booked,
@@ -397,6 +398,9 @@ customerDeliveryRouter.post("/:id/delivery/ready", async (req, res) => {
       if (deadline?.collectionBuyerAt) await markFulfillmentSecured(tx, order.id);
     }
     await deliveryEvent(tx, d.id, "READY_FOR_PICKUP", "farmer", key, req.auth!.sub);
+    if (["PAID", "BOOKING_BLOCKED"].includes(d.status))
+      // Wake a newly ready order immediately, rather than retaining the farmer-wait backoff.
+      await tx.delivery.update({ where: { id: d.id }, data: { nextSyncAt: new Date() } });
     await audit(req, { action: "delivery.produce.ready", entityType: "order", entityId: order.id }, tx);
   });
   res.json({ ready: true });

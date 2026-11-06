@@ -236,8 +236,8 @@ suite("provider-backed payment safeguards", () => {
     await prisma.delivery.update({ where: { id: d.id }, data: { selectedQuoteId: q.id } });
     return { o, d, q };
   }
-  async function checkout(orderId: string) {
-    const a = await startCheckout(orderId, buyer);
+  async function checkout(orderId: string, kind = "ORDER") {
+    const a = await startCheckout(orderId, buyer, kind);
     const op = await prisma.moneyOperation.findFirstOrThrow({
       where: { paymentId: a.id, kind: "CHECKOUT" },
     });
@@ -1981,7 +1981,7 @@ suite("provider-backed payment safeguards", () => {
 
   it("paginates finance history, preserves exact money and redacts provider operation payloads", async () => {
     const {o}=await order();
-    await prisma.moneyOperation.createMany({data:Array.from({length:21},(_,i)=>({ownerId:buyer,orderId:o.id,mode:"sandbox",kind:"PAYOUT",status:"BLOCKED",amountMinor:125051n,feeMinor:100n,mutationKey:randomUUID(),requestHash:randomUUID(),payload:{privateEvidence:"never expose"},encryptedPayload:"secret"}))});
+    await prisma.moneyOperation.createMany({data:Array.from({length:21},()=>({ownerId:buyer,orderId:o.id,mode:"sandbox",kind:"PAYOUT",status:"BLOCKED",amountMinor:125051n,feeMinor:100n,mutationKey:randomUUID(),requestHash:randomUUID(),payload:{privateEvidence:"never expose"},encryptedPayload:"secret"}))});
     await prisma.moneyOperation.create({data:{ownerId:buyer,orderId:o.id,mode:"live",kind:"PAYOUT",status:"BLOCKED",amountMinor:999n,mutationKey:randomUUID(),requestHash:randomUUID(),payload:{}}});
     const path=`/v1/admin/money/records?type=operations&orderId=${o.id}&kind=PAYOUT&status=BLOCKED&search=${o.reference}`;
     const first=await request(app).get(path).set("Authorization",`Bearer ${staff}`);
@@ -2423,4 +2423,425 @@ suite("provider-backed payment safeguards", () => {
     expect(response.body.items[0].checkoutUrl).toBeNull();
   });
 
+  describe("paid delivery quote renewal", () => {
+    const renewalOrders: string[] = [];
+    afterEach(async () => {
+      vi.useRealTimers();
+      await prisma.delivery.updateMany({ where: { orderId: { in: renewalOrders.splice(0) } }, data: {
+        nextSyncAt: new Date("2099-01-01T00:00:00Z"),
+      } });
+    });
+    async function paidRenewal(quantity = 1, waitingForFarmer = false) {
+      const fixture = await order(quantity);
+      renewalOrders.push(fixture.o.id);
+      if (waitingForFarmer)
+        await prisma.tradeOrder.update({ where: { id: fixture.o.id }, data: { journeyVersion: 2, farmerDecision: "PENDING" } });
+      const a = await checkout(fixture.o.id);
+      mockReceipt(a);
+      await reconcilePayment(a.id);
+      return { ...fixture, a };
+    }
+    function freshRate(f: Awaited<ReturnType<typeof paidRenewal>>, prefix = "renewed") {
+      const parts = splitParts(f.q.requestToken);
+      if (!parts) return { ...rate(f.q), requestToken: `${prefix}-${f.d.id}` };
+      return combineParcelRates(parts.map((part, index) => [{
+        requestToken: `${prefix}-${f.d.id}-${index}`, serviceCode: part.serviceCode,
+        courierId: part.courierId, courier: f.q.courier,
+        amountMinor: BigInt(part.amountMinor), walletMinor: BigInt(part.walletMinor),
+      }]))[0]!;
+    }
+    function mockBooking(f: Awaited<ReturnType<typeof paidRenewal>>) {
+      let index = 0;
+      vi.mocked(shippingProvider.book).mockImplementation(async () => ({
+        id: `SB-renewed-${f.d.id}-${index++}`, status: "pending", courier: f.q.courier,
+        shippingMinor: f.q.amountMinor / BigInt((f.d.package as any).packageCount),
+      }));
+    }
+    async function expire(f: Awaited<ReturnType<typeof paidRenewal>>) {
+      await prisma.deliveryQuote.update({ where: { id: f.q.id }, data: { expiresAt: new Date(0) } });
+    }
+    async function expectPaymentPreserved(f: Awaited<ReturnType<typeof paidRenewal>>) {
+      expect(await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } })).toMatchObject({
+        status: "SUCCEEDED", quoteId: f.q.id, amountMinor: f.a.amountMinor,
+        shippingMinor: f.a.shippingMinor, paidMinor: f.a.amountMinor, exceptionCode: null,
+      });
+      expect(await prisma.paymentAttempt.count({ where: { orderId: f.o.id } })).toBe(1);
+      expect(await prisma.escrowEntry.count({ where: { orderId: f.o.id, kind: "FUND" } })).toBe(1);
+      expect(await prisma.moneyJournal.count({ where: { orderId: f.o.id, reference: `funded:${f.a.id}` } })).toBe(1);
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: { not: "CHECKOUT" } } })).toBe(0);
+    }
+    it.each([30, 180])("books once after a %i-minute farmer delay without restarting payment or its deadline", async minutes => {
+      const f = await paidRenewal(1, true);
+      const confirmedAt = new Date(Date.now() - minutes * 60000);
+      const refundDueAt = refundDeadline(confirmedAt, Math.max(120, minutes + 60));
+      await prisma.paymentAttempt.update({ where: { id: f.a.id }, data: { confirmedAt } });
+      await prisma.deliveryQuote.update({ where: { id: f.q.id }, data: {
+        createdAt: new Date(confirmedAt.getTime() - 120000),
+        expiresAt: new Date(confirmedAt.getTime() + 13 * 60000),
+      } });
+      getConfig().PAYMENT_AUTO_REFUNDS_ENABLED = true;
+      await prisma.fulfillmentDeadline.create({ data: {
+        orderId: f.o.id, paymentId: f.a.id, mode: "sandbox", confirmedAt, refundDueAt,
+      } });
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      mockBooking(f);
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).not.toHaveBeenCalled();
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      const sellerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+      const auth = { Authorization: `Bearer ${sellerToken}` }, base = `/v1/orders/${f.o.id}/delivery`;
+      const decisions = await Promise.all([0, 1].map(() => request(app).post(`${base}/decision`).set(auth).send({ accept: true })));
+      expect(decisions.map(response => response.status)).toEqual([200, 200]);
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).not.toHaveBeenCalled();
+      const ready = await Promise.all([0, 1].map(() => request(app).post(`${base}/ready`).set(auth).send({})));
+      expect(ready.map(response => response.status)).toEqual([200, 200]);
+      expect((await request(app).get(base).set(customerAuth())).body.progress).toMatchObject({
+        status: "Awaiting courier booking", canDispatch: false, canConfirm: false,
+      });
+      await Promise.all([runDeliveryJobs(), runDeliveryJobs()]);
+      await runDeliveryJobs();
+      const d = await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } });
+      expect(d).toMatchObject({ status: "BOOKED", paidMinor: f.q.amountMinor, shippingMinor: f.q.amountMinor, failureCode: null });
+      expect(d.selectedQuoteId).not.toBe(f.q.id);
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.quotes).toHaveBeenCalledWith(expect.objectContaining({
+        pickup: f.d.pickup, destination: f.d.destination, parcel: f.d.package, valueMinor: f.o.totalMinor,
+      }));
+      expect(shippingProvider.book).toHaveBeenCalledExactlyOnceWith({
+        courierId: f.q.courierId, serviceCode: f.q.serviceCode, requestToken: freshRate(f).requestToken,
+      });
+      expect(await prisma.deliveryEvent.count({ where: { deliveryId: f.d.id, status: "ORDER_ACCEPTED" } })).toBe(1);
+      expect(await prisma.deliveryEvent.count({ where: { deliveryId: f.d.id, status: "READY_FOR_PICKUP" } })).toBe(1);
+      expect(await prisma.deliveryEvent.count({ where: { deliveryId: f.d.id, status: "QUOTE_REFRESHED" } })).toBe(1);
+      expect(await prisma.shipment.count({ where: { orderId: f.o.id } })).toBe(1);
+      expect(await prisma.moneyJournal.count({ where: { orderId: f.o.id, reference: { startsWith: "shipping-cost:" } } })).toBe(1);
+      expect(await prisma.fulfillmentDeadline.findUniqueOrThrow({ where: { orderId: f.o.id } })).toMatchObject({ state: "SECURED", confirmedAt, refundDueAt });
+      await reconcilePayment(f.a.id);
+      await expectPaymentPreserved(f);
+    });
+    it("renews a quote that expires after it was queued, including a previously blocked expired delivery", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      await prisma.delivery.update({ where: { id: f.d.id }, data: {
+        status: "BOOKING_BLOCKED", failureCode: "QUOTE_EXPIRED", nextSyncAt: new Date(),
+      } });
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      mockBooking(f);
+      await runDeliveryJobs();
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).status).toBe("BOOKED");
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      await expectPaymentPreserved(f);
+    });
+    it.each(["DELIVERY_PROVIDER_UNAVAILABLE", "SHIPBUBBLE_RESPONSE_INVALID"])("retries a safe %s rate failure with backoff and no additional charge", async code => {
+      const f = await paidRenewal();
+      await expire(f);
+      vi.mocked(shippingProvider.quotes)
+        .mockRejectedValueOnce(new AppError(503, code, "Rate request failed"))
+        .mockResolvedValueOnce([freshRate(f)]);
+      mockBooking(f);
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: code, bookingStartedAt: null, providerShipmentId: null,
+      });
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(2);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).status).toBe("BOOKED");
+      await expectPaymentPreserved(f);
+    });
+    it.each(["increase", "decrease", "wallet cost"])("holds a renewed %s for explicit reconciliation without repricing, buying, refunding or topping up", async change => {
+      const f = await paidRenewal();
+      await expire(f);
+      const observed = { ...freshRate(f), amountMinor: change === "increase" ? 1500n : change === "decrease" ? 900n : 1000n };
+      observed.walletMinor = change === "wallet cost" ? 1200n : observed.amountMinor;
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([observed]);
+      await runDeliveryJobs();
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: "DELIVERY_PRICE_CHANGED", selectedQuoteId: f.q.id,
+        shippingMinor: f.q.amountMinor, paidMinor: f.q.amountMinor, providerShipmentId: null, bookingStartedAt: null,
+      });
+      expect(await prisma.deliveryQuote.findFirstOrThrow({ where: { deliveryId: f.d.id, id: { not: f.q.id } } })).toMatchObject({
+        amountMinor: observed.amountMinor, walletMinor: observed.walletMinor,
+      });
+      const view = (await request(app).get(`/v1/orders/${f.o.id}/delivery`).set(customerAuth())).body;
+      expect(view.progress).toMatchObject({ status: "Courier booking needs attention", canDispatch: false, canConfirm: false });
+      expect(view.progress.next).toContain("You will not be charged automatically");
+      expect((await request(app).get(`/v1/orders/${f.o.id}/payments`).set(customerAuth())).body.checkoutReady).toBe(false);
+      expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/book`).set(customerAuth()).send({})).body.error.code).toBe("DELIVERY_PRICE_CHANGED");
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).financialHold).toBe(false);
+      await expectPaymentPreserved(f);
+    });
+    it("waits for the selected service rather than substituting a cheaper courier", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      vi.mocked(shippingProvider.quotes)
+        .mockResolvedValueOnce([{ ...freshRate(f), courierId: "different-courier", amountMinor: 500n, walletMinor: 500n }])
+        .mockResolvedValueOnce([freshRate(f)]);
+      mockBooking(f);
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: "NO_DELIVERY_OPTIONS", selectedQuoteId: f.q.id,
+      });
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
+      await runDeliveryJobs();
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(shippingProvider.book).mock.calls[0]![0].courierId).toBe(f.q.courierId);
+      await expectPaymentPreserved(f);
+    });
+    it.each(["financial hold", "destination", "selection", "quote fee", "quote wallet cost", "quote token", "refund", "deadline"])("rejects a renewal response after a concurrent %s change", async change => {
+      const f = await paidRenewal();
+      await expire(f);
+      if (change === "deadline") {
+        getConfig().PAYMENT_AUTO_REFUNDS_ENABLED = true;
+        await prisma.fulfillmentDeadline.create({ data: {
+          orderId: f.o.id, paymentId: f.a.id, mode: "sandbox", confirmedAt: new Date(), refundDueAt: new Date(Date.now() + 60000),
+        } });
+      }
+      const entered = deferred<void>(), delayed = deferred<ReturnType<typeof freshRate>[]>();
+      vi.mocked(shippingProvider.quotes).mockImplementationOnce(async () => { entered.resolve(); return delayed.promise; });
+      const job = runDeliveryJobs();
+      await entered.promise;
+      if (change === "financial hold") await prisma.tradeOrder.update({ where: { id: f.o.id }, data: { financialHold: true } });
+      if (change === "destination") await prisma.delivery.update({ where: { id: f.d.id }, data: { destination: { ...(f.d.destination as object), address: "A changed delivery address in Lagos" } } });
+      if (change === "selection") await prisma.delivery.update({ where: { id: f.d.id }, data: { selectedQuoteId: null } });
+      if (change === "quote fee") await prisma.deliveryQuote.update({ where: { id: f.q.id }, data: { amountMinor: 1500n } });
+      if (change === "quote wallet cost") await prisma.deliveryQuote.update({ where: { id: f.q.id }, data: { walletMinor: 1500n } });
+      if (change === "quote token") await prisma.deliveryQuote.update({ where: { id: f.q.id }, data: { requestToken: "concurrently-changed-token" } });
+      if (change === "refund") {
+        const refund = req(); refund.body.shippingRefundMinor = "1000";
+        expect(await requestRefund(f.o.id, refund)).toHaveLength(1);
+      }
+      if (change === "deadline") await prisma.fulfillmentDeadline.update({ where: { orderId: f.o.id }, data: { refundDueAt: new Date(0) } });
+      delayed.resolve([freshRate(f)]);
+      await job;
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      expect(await prisma.deliveryQuote.count({ where: { deliveryId: f.d.id } })).toBe(1);
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", bookingStartedAt: null, providerShipmentId: null, paidMinor: f.q.amountMinor,
+      });
+      expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } })).status).toBe("SUCCEEDED");
+    });
+    it("does not let a crashed renewal's late response overwrite the replacement worker's booking", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      const entered = deferred<void>(), delayed = deferred<ReturnType<typeof freshRate>[]>();
+      vi.mocked(shippingProvider.quotes)
+        .mockImplementationOnce(async () => { entered.resolve(); return delayed.promise; })
+        .mockResolvedValueOnce([freshRate(f, "latest")]);
+      mockBooking(f);
+      const first = runDeliveryJobs();
+      await entered.promise;
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { leaseUntil: new Date(0) } });
+      await runDeliveryJobs();
+      delayed.resolve([freshRate(f, "obsolete")]);
+      await first;
+      const d = await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } });
+      expect(d.status).toBe("BOOKED");
+      expect((await prisma.deliveryQuote.findUniqueOrThrow({ where: { id: d.selectedQuoteId! } })).requestToken).toBe(freshRate(f, "latest").requestToken);
+      expect(await prisma.deliveryQuote.count({ where: { deliveryId: f.d.id } })).toBe(2);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      await expectPaymentPreserved(f);
+    });
+    it("retries expiry during the wallet read only before the label-purchase boundary", async () => {
+      const f = await paidRenewal();
+      const started = Date.now();
+      await prisma.deliveryQuote.update({ where: { id: f.q.id }, data: { expiresAt: new Date(started + 90000) } });
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(started);
+      vi.mocked(shippingProvider.wallet).mockImplementationOnce(async () => {
+        vi.setSystemTime(started + 100000);
+        return 1000000n;
+      });
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      mockBooking(f);
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: "QUOTE_EXPIRED", bookingStartedAt: null,
+      });
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      vi.setSystemTime(started + 100000 + 5 * 60000);
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      await expectPaymentPreserved(f);
+    });
+    it("renews every unpurchased split parcel and books each fresh token once", async () => {
+      const f = await paidRenewal(3);
+      await expire(f);
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      mockBooking(f);
+      await runDeliveryJobs();
+      await runDeliveryJobs();
+      const d = await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } });
+      expect(d).toMatchObject({ status: "BOOKED", providerShipmentId: `split:${f.d.id}`, paidMinor: 3000n, shippingMinor: 3000n });
+      const expected = splitParts(freshRate(f).requestToken)!;
+      expect(vi.mocked(shippingProvider.book).mock.calls.map(([quote]) => quote.requestToken)).toEqual(expected.map(part => part.requestToken));
+      const parcels = await prisma.deliveryParcel.findMany({ where: { deliveryId: f.d.id } });
+      expect(parcels).toHaveLength(3);
+      expect(parcels.every(parcel => parcel.quoteId === d.selectedQuoteId && parcel.providerShipmentId)).toBe(true);
+      expect(await prisma.moneyJournal.count({ where: { orderId: f.o.id, reference: { startsWith: "shipping-cost:" } } })).toBe(1);
+      await expectPaymentPreserved(f);
+    });
+    it("preserves a partial split purchase after renewal without rebuying labels or replacing its remaining plan", async () => {
+      const f = await paidRenewal(3);
+      await expire(f);
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      vi.mocked(shippingProvider.book)
+        .mockResolvedValueOnce({ id: `SB-partial-${f.d.id}`, status: "pending", courier: f.q.courier, shippingMinor: 1000n })
+        .mockRejectedValueOnce(new AppError(503, "DELIVERY_PROVIDER_UNAVAILABLE", "The second label response was lost"));
+      await runDeliveryJobs();
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
+      await runDeliveryJobs();
+      const parcels = await prisma.deliveryParcel.findMany({ where: { deliveryId: f.d.id }, orderBy: { parcelIndex: "asc" } });
+      expect(parcels.map(parcel => parcel.status)).toEqual(["BOOKED", "BOOKING_UNCERTAIN", "PENDING"]);
+      expect(parcels.map(parcel => parcel.requestToken)).toEqual(splitParts(freshRate(f).requestToken)!.map(part => part.requestToken));
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_UNCERTAIN", failureCode: "BOOKING_RESULT_UNKNOWN", providerShipmentId: `split:${f.d.id}`,
+      });
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(2);
+      expect(await prisma.shipment.count({ where: { orderId: f.o.id } })).toBe(0);
+      await expectPaymentPreserved(f);
+    });
+    it("recovers a temporary wallet failure after renewal without another quote or payment", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      vi.mocked(shippingProvider.wallet).mockRejectedValueOnce(new AppError(503, "DELIVERY_PROVIDER_UNAVAILABLE", "Wallet read failed"));
+      mockBooking(f);
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: "SHIPPING_WALLET_UNAVAILABLE", providerShipmentId: null, bookingStartedAt: null,
+      });
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      await expectPaymentPreserved(f);
+    });
+    it.each(["quote fee", "provider cost", "quote token", "quote expiry"])(
+      "rechecks a renewed %s changed during the wallet read before purchasing any label", async change => {
+        const f = await paidRenewal();
+        await expire(f);
+        vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+        vi.mocked(shippingProvider.wallet).mockImplementationOnce(async () => {
+          const d = await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } });
+          const fields = change === "quote fee" ? { amountMinor: 1500n }
+            : change === "provider cost" ? { walletMinor: 1500n }
+              : change === "quote token" ? { requestToken: "concurrently-changed-token" }
+                : { expiresAt: new Date(0) };
+          await prisma.deliveryQuote.update({ where: { id: d.selectedQuoteId! }, data: fields });
+          return 1000000n;
+        });
+        mockBooking(f);
+        await runDeliveryJobs();
+        expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+          status: "BOOKING_BLOCKED", failureCode: change === "quote expiry" ? "QUOTE_EXPIRED" : "STALE_DELIVERY_QUOTE",
+          paidMinor: f.q.amountMinor, shippingMinor: f.q.amountMinor, bookingStartedAt: null, providerShipmentId: null,
+        });
+        expect(shippingProvider.book).not.toHaveBeenCalled();
+        await expectPaymentPreserved(f);
+      },
+    );
+    it("retains the existing explicit shortfall checkout after a renewed price increase is held", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      const increased = { ...freshRate(f), amountMinor: 1500n, walletMinor: 1500n };
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([increased]);
+      await runDeliveryJobs();
+      await expectPaymentPreserved(f);
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/refresh-quote`).set(customerAuth()).send({})).status).toBe(200);
+      const topup = await checkout(f.o.id, "DELIVERY_TOPUP");
+      expect(topup).toMatchObject({ amountMinor: 500n, produceMinor: 0n, shippingMinor: 500n });
+      mockReceipt(topup);
+      await reconcilePayment(topup.id);
+      vi.mocked(shippingProvider.book).mockResolvedValue({
+        id: `SB-topup-${f.d.id}`, status: "pending", courier: f.q.courier, shippingMinor: 1500n,
+      });
+      await runDeliveryJobs();
+      await reconcilePayment(f.a.id);
+      await reconcilePayment(topup.id);
+      await runDeliveryJobs();
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKED", paidMinor: 1500n, shippingMinor: 1500n, failureCode: null,
+      });
+      expect(await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } })).toMatchObject({
+        status: "SUCCEEDED", quoteId: f.q.id, amountMinor: f.a.amountMinor, shippingMinor: 1000n,
+      });
+      expect(await prisma.paymentAttempt.count({ where: { orderId: f.o.id } })).toBe(2);
+      expect(await prisma.escrowEntry.count({ where: { orderId: f.o.id, kind: "FUND" } })).toBe(1);
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: { not: "CHECKOUT" } } })).toBe(0);
+    });
+    it("never requotes or repeats an ambiguous label purchase after successful renewal", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      vi.mocked(shippingProvider.quotes).mockResolvedValue([freshRate(f)]);
+      vi.mocked(shippingProvider.book).mockRejectedValue(new AppError(503, "DELIVERY_PROVIDER_UNAVAILABLE", "Label response was lost"));
+      await runDeliveryJobs();
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_UNCERTAIN", failureCode: "BOOKING_RESULT_UNKNOWN", providerShipmentId: null,
+      });
+      expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/book`).set(customerAuth()).send({})).status).toBe(202);
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      expect(await prisma.shipment.count({ where: { orderId: f.o.id } })).toBe(0);
+      await expectPaymentPreserved(f);
+    });
+    it("does not renew past the existing fulfillment/refund cutoff", async () => {
+      const f = await paidRenewal();
+      await expire(f);
+      getConfig().PAYMENT_AUTO_REFUNDS_ENABLED = true;
+      await prisma.fulfillmentDeadline.create({ data: {
+        orderId: f.o.id, paymentId: f.a.id, mode: "sandbox", confirmedAt: new Date(Date.now() - 3 * 3600000), refundDueAt: new Date(0),
+      } });
+      await runDeliveryJobs();
+      expect(shippingProvider.quotes).not.toHaveBeenCalled();
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: "FULFILLMENT_REFUND_DUE", bookingStartedAt: null,
+      });
+      await expectPaymentPreserved(f);
+    });
+    it("does not silently reschedule a past pickup date when renewing an expired quote", async () => {
+      const f = await paidRenewal();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.now() + 2 * 86400000);
+      await runDeliveryJobs();
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).toMatchObject({
+        status: "BOOKING_BLOCKED", failureCode: "INVALID_PICKUP_DATE", providerShipmentId: null, bookingStartedAt: null,
+      });
+      expect(shippingProvider.quotes).not.toHaveBeenCalled();
+      expect(shippingProvider.book).not.toHaveBeenCalled();
+      await expectPaymentPreserved(f);
+    });
+    it("rotates a full page of waiting farmers so a later ready order can be booked", async () => {
+      for (let index = 0; index < 11; index++) await paidRenewal(1, true);
+      const ready = await paidRenewal();
+      await prisma.delivery.update({ where: { id: ready.d.id }, data: { status: "PAID" } });
+      mockBooking(ready);
+      await runDeliveryJobs();
+      await runDeliveryJobs();
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: ready.d.id } })).status).toBe("BOOKED");
+      expect(shippingProvider.book).toHaveBeenCalledTimes(1);
+      expect(shippingProvider.quotes).not.toHaveBeenCalled();
+      expect(await prisma.deliveryEvent.count({ where: { delivery: { orderId: { in: renewalOrders.slice(0, 11) } }, status: "BOOKING_BLOCKED" } })).toBe(0);
+      await expectPaymentPreserved(ready);
+    });
+  });
 });

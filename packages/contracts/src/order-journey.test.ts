@@ -94,3 +94,16 @@ it("removes actions when rejected, disputed or cancelled and keeps legacy orders
   expect(orderFulfillment({ ...base, orderStatus: "CANCELLED" }).canAccept).toBe(false);
   expect(orderFulfillment({ ...base, farmerDecision: "LEGACY" }).canReady).toBe(true);
 });
+it.each(["PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED", "TOPUP_REQUIRED"])(
+  "keeps missing courier booking visible in the main %s journey", status => {
+    const progress = orderFulfillment({
+      ...base, collection: false, farmerDecision: "ACCEPTED", status, ready: true,
+      bookingFailureCode: "DELIVERY_PRICE_CHANGED",
+    });
+    for (const buyer of [true, false]) {
+      expect(orderJourney({ buyer, progress, orderStatus: "FUNDED" })).toMatchObject({
+        title: progress.status, body: progress.next, action: null,
+      });
+    }
+  },
+);

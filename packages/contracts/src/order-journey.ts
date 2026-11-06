@@ -104,6 +104,12 @@ export function orderJourney(input: {
     body = "Confirm only after giving every package to the buyer.";
     action = "handover";
     label = "Goods Handed to Buyer";
+  } else if (p && !(p.canReady && !buyer) && [
+    "Courier booking needs attention", "Delivery top-up required", "Booking your courier", "Awaiting courier booking",
+  ].includes(p.status)) {
+    stage = 2;
+    title = p.status;
+    body = p.next;
   } else if (p?.status === "Ready for Pickup") {
     stage = 2;
     title = pickup ? "Ready for pickup" : "Ready for rider pickup";

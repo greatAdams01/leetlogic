@@ -44,3 +44,16 @@ it("suppresses actions for closed or blocked orders and never claims a payment b
     expect(farmerOrderGuide(orderFulfillment({ ...base, ...patch })).action).toBeNull();
   expect(farmerOrderGuide().action).toBeNull();
 });
+it.each(["PAID", "BOOKING_QUEUED", "BOOKING", "BOOKING_BLOCKED"])(
+  "keeps farmer preparation available for an accepted paid %s order", status => {
+    expect(farmerOrderGuide(orderFulfillment({ ...base, status, booked: false }))).toMatchObject({
+      title: "Prepare this order", action: "ready",
+    });
+  },
+);
+it.each(["BOOKING_BLOCKED", "TOPUP_REQUIRED"])(
+  "does not ask a ready farmer to dispatch an unbooked %s delivery", status => {
+    const progress = orderFulfillment({ ...base, status, booked: false, ready: true });
+    expect(farmerOrderGuide(progress)).toMatchObject({ title: "This order needs help", body: progress.next, action: null });
+  },
+);

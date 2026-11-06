@@ -177,6 +177,7 @@ export function orderUpdateCopy(messageKey: string, buyer: boolean) {
     BOOKING: "Booking your courier",
     BOOKING_UNCERTAIN: "Courier booking needs review",
     BOOKING_BLOCKED: "Courier booking needs attention",
+    QUOTE_REFRESHED: "Delivery quote renewed",
     BOOKED: "Courier booked",
     COURIER_ASSIGNED: "Courier assigned",
     PICKED_UP: "Produce collected",

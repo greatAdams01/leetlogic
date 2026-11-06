@@ -23,10 +23,10 @@ export function farmerOrderGuide(progress?: OrderFulfillment) {
       step: 0,
       method,
     } as const;
-  if (progress.status === "Needs review")
+  if (progress.status === "Needs review" || (!progress.canReady && ["Courier booking needs attention", "Delivery top-up required"].includes(progress.status)))
     return {
       title: "This order needs help",
-      body: "Staff are reviewing this order. Get help before taking another action.",
+      body: progress.status === "Needs review" ? "Staff are reviewing this order. Get help before taking another action." : progress.next,
       action: null,
       step: 0,
       method,
@@ -55,10 +55,10 @@ export function farmerOrderGuide(progress?: OrderFulfillment) {
       step: 2,
       method,
     } as const;
-  if (progress.status === "Ready for Pickup")
+  if (["Ready for Pickup", "Awaiting courier booking", "Booking your courier"].includes(progress.status))
     return {
       title: collection ? "Waiting for the buyer" : "Waiting for the rider",
-      body: collection
+      body: progress.status !== "Ready for Pickup" ? progress.next : collection
         ? "Keep the produce ready. The buyer will confirm after collection."
         : "Your produce is ready. We are arranging the rider.",
       action: null,

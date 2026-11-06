@@ -47,6 +47,8 @@ If the worker reports `NGN_BALANCE_MISSING`, confirm NGN is enabled for the Bach
 - Card refunds return eligible principal/shipping through the original payment. Customer-paid processing fees are not subtracted twice. Bank refunds use a transfer followed by payout; order refund completion waits for the payout. Bachs can apply non-returnable refund charges according to its account terms. Courier cancellation does not mean that a payment or wallet refund succeeded.
 - Append-only, balanced journals and durable operations retain financial history. Legacy admin escrow funding/release controls cannot operate on Bachs orders.
 
+Expired checkout quotes no longer impose a farmer-confirmation deadline on paid delivery. The delivery worker renews a stale rate before purchase only for the unchanged shipment, courier/service and exact buyer/provider amounts; differences pause for explicit reconciliation without another charge or automatic refund. The existing fulfillment/refund deadline is not extended. See [paid delivery booking recovery](delivery-booking-recovery.md).
+
 ## Recovery and staff controls
 
 Admin order details, withdrawals and reconciliation show provider operations, review requirements and balance snapshots. Money-management permission, recent TOTP and a recorded reason protect releases, refunds, approvals and recovery actions.

@@ -80,3 +80,26 @@ it("keeps closed orders out of fulfillment actions and does not call them unpaid
     canConfirm: false,
   });
 });
+it.each([
+  ["PAID", "Awaiting courier booking"],
+  ["BOOKING_QUEUED", "Booking your courier"],
+  ["BOOKING", "Booking your courier"],
+  ["BOOKING_BLOCKED", "Courier booking needs attention"],
+  ["TOPUP_REQUIRED", "Delivery top-up required"],
+])("reports paid %s honestly without authorizing dispatch or receipt", (status, label) => {
+  const view = orderFulfillment({ ...base, status, ready: true, booked: false });
+  expect(view).toMatchObject({ status: label, canDispatch: false, canConfirm: false, confirmed: false });
+  expect(view.next).not.toContain("Follow courier tracking");
+});
+it("explains that a renewed price needs review and cannot charge the buyer automatically", () => {
+  const view = orderFulfillment({
+    ...base, buyer: true, farmer: false, status: "BOOKING_BLOCKED", bookingFailureCode: "DELIVERY_PRICE_CHANGED", ready: true, booked: false,
+  });
+  expect(view.next).toContain("You will not be charged automatically");
+  expect(view.next).toContain("review the new quote");
+});
+it("asks the farmer to wait for buyer price review rather than to pay the delivery shortfall", () => {
+  const view = orderFulfillment({ ...base, status: "TOPUP_REQUIRED", ready: true, booked: false });
+  expect(view.next).toContain("Waiting for the buyer");
+  expect(view.next).not.toContain("Review and pay");
+});
