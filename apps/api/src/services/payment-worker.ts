@@ -17,6 +17,7 @@ import {
   refreshAccount,
   assertRelease,
   requestRelease,
+  queueReceiptRelease,
   requestRefund,
   reconcilePayment,
   paymentCheckReason,
@@ -1081,10 +1082,10 @@ export async function runPaymentJobs() {
   // Durable confirmation is the retry source; never queue a release from farmer handover.
   const candidates = await prisma.$queryRaw<{ id: string }[]>`
     SELECT o.id FROM trade_orders o
-    WHERE o.journey_version >= 2 AND o.funds_provider = 'bachs'
+    WHERE o.funds_provider = 'bachs'
       AND o.status IN ('FUNDED', 'DELIVERED') AND NOT o.financial_hold
       AND EXISTS (SELECT 1 FROM payment_attempts p WHERE p."orderId" = o.id AND p.mode = ${mode()} AND p.kind = 'ORDER' AND p.status = 'SUCCEEDED' AND p."confirmedAt" IS NOT NULL AND p."produceMinor" = o."totalMinor")
-      AND ((o."deliveryConfirmedAt" IS NOT NULL AND o.receipt_photo_key IS NOT NULL AND o.farmer_decision = 'ACCEPTED') OR o.farmer_decision = 'REJECTED')
+      AND ((o."deliveryConfirmedAt" IS NOT NULL AND o.receipt_photo_key IS NOT NULL AND o.farmer_decision IN ('ACCEPTED', 'LEGACY')) OR o.farmer_decision = 'REJECTED')
       AND NOT EXISTS (SELECT 1 FROM support_tickets t WHERE t."orderId" = o.id AND t.kind = 'DISPUTE' AND t.status <> 'RESOLVED')
       AND NOT EXISTS (SELECT 1 FROM money_operations m WHERE m."orderId" = o.id AND m.mode = ${mode()} AND m.kind IN ('RELEASE', 'REFUND', 'REFUND_TRANSFER', 'REFUND_PAYOUT'))
     ORDER BY o."updatedAt" ASC LIMIT 20`;
@@ -1096,7 +1097,7 @@ export async function runPaymentJobs() {
     const req = systemRequest();
     req.auth = { sub: order.buyerId, subject: "customer" } as typeof req.auth;
     req.body = { reason: kind === "RELEASE" ? "Buyer inspected goods and confirmed receipt with a private photo" : "Farmer declined the order before fulfillment" };
-    try { if (kind === "RELEASE") await requestRelease(order.id, req); else await requestRefund(order.id, req); }
+    try { if (kind === "RELEASE") await queueReceiptRelease(order.id); else await requestRefund(order.id, req); }
     catch (error) { if (!(error instanceof AppError)) logger.warn({ orderId: order.id }, "Order payment action will retry"); }
   }
   const operations = await prisma.moneyOperation.findMany({

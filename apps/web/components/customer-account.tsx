@@ -5,6 +5,7 @@ import { needsSignIn, profileFailureCode } from "../../mobile/src/lib/auth-error
 import Link from "next/link";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
+import { CustomerOrders } from "./customer-orders";
 import { CustomerAddresses } from "./customer-addresses";
 export function CustomerAccount() {
   const { t, setLocale, locale } = useLanguage();
@@ -256,7 +257,8 @@ export function CustomerAccount() {
             <Link href="/sell">{t("nav.sell")}</Link>
           </p>}
           <CustomerAddresses addresses={user.addresses || []} seller={user.capabilities?.some((entry: any) => entry.capability === "SELLER")} onSaved={async () => { await load(); }} />
-          <p><Link href="/account/updates">{ui(locale,"Updates")} · {notifications.filter(n => !n.readAt).length} {ui(locale,"Unread")}</Link></p>
+          <p><Link href="/account/notifications">{ui(locale,"Notifications")} · {notifications.filter(n => !n.readAt).length} {ui(locale,"Unread")}</Link></p>
+          {!user.capabilities?.some((entry: any) => entry.capability === "SELLER") ? <CustomerOrders key={user.id} /> : <>
           <h2>{t("orders.title")}</h2>
           {orders.length ? (
             orders.map((order) => (
@@ -275,6 +277,7 @@ export function CustomerAccount() {
           ) : (
             <p>{t("orders.empty")}</p>
           )}
+          </>}
         </>
       )}
       {["OTP_EXPIRED", "OTP_ATTEMPTS_EXCEEDED"].includes(errorCode) && <button type="button" disabled={busy} onClick={() => void resendCode()}>{ui(locale, "Resend code")}</button>}

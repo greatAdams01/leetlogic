@@ -73,7 +73,7 @@
   ["The shipment is on its way. Courier tracking will update automatically.", "Your goods don dey road. Tracking go update by itself.", "Kayan suna kan hanya. Bibiyar mai kai kaya za ta sabunta da kanta.", "Ngwugwu nọ n'ụzọ. Nsochi nnyefe ga-emelite n'onwe ya.", "Ẹrù ti wà lójú ọ̀nà. Ìtẹ̀lé rẹ̀ yóò máa ṣe ìmúdójúìwọ̀n fúnra rẹ̀."],
   ["Waiting for the buyer to confirm receipt.", "We dey wait for buyer to confirm collection.", "Ana jiran mai saya ya tabbatar da karɓa.", "A na-eche ka onye zụrụ kwenye nnata.", "A ń dúró de olùra láti jẹ́rìí gbígbà."],
   ["Pickup is being arranged. Follow courier tracking for updates.", "Dem dey arrange pickup. Check courier tracking for updates.", "Ana shirya karɓa. Bi bibiyar mai kai kaya don sabuntawa.", "A na-ahazi iburu ya. Lelee nsochi nnyefe maka mmelite.", "A ń ṣètò gbígbà ẹrù. Wo ìtẹ̀lé olùfiránṣẹ́ fún ìmúdójúìwọ̀n."],
-  ["Updates", "Updates", "Sabuntawa", "Mmelite", "Àwọn ìmúdójúìwọ̀n"],
+  ["Updates", "Notifications", "Sanarwa", "Ọkwa", "Ìfitónilétí"],
   ["No updates match this filter.", "No updates match this filter.", "Babu sabuntawa da ya dace da wannan tacewar.", "Ọ dịghị mmelite dabara nzacha a.", "Kò sí ìmúdójúìwọ̀n tó bá àlẹ̀mọ́ yìí mu."],
   ["Digital postcode (optional)", "Digital postcode (if you want)", "Lambar gidan waya ta dijital (zaɓi)", "Koodu nzi dijitalụ (ọ bụrụ na ịchọrọ)", "Kóòdù ìfìwéránṣẹ́ onídíjítà (bí o bá fẹ́)"],
   ["Search uses postcode segments, not street names. Manual address entry is always available.", "Search na with parts of postcode, no be street name. You fit always enter address yourself.", "Bincike yana amfani da sassan lambar gidan waya, ba sunayen tituna ba. Za ka iya shigar da adireshi da kanka koyaushe.", "Ọchụchọ na-eji akụkụ koodu nzi, ọ bụghị aha okporo ụzọ. Ị nwere ike itinye adreesị n’onwe gị mgbe niile.", "Ìṣàwárí ń lo àwọn apá kóòdù ìfìwéránṣẹ́, kì í ṣe orúkọ òpópónà. O lè tẹ àdírẹ́sì rẹ fúnra rẹ nígbà gbogbo."],
@@ -1371,13 +1371,7 @@
     "Chekwaa adreesị",
     "Fipamọ́ àdírẹ́sì"
   ],
-  [
-    "Notifications",
-    "Updates",
-    "Sanarwa",
-    "Ọkwa",
-    "Àwọn ìfitónilétí"
-  ],
+  ["Notifications", "Notifications", "Sanarwa", "Ọkwa", "Ìfitónilétí"],
   [
     "Delivery updates will appear here when your shipment changes.",
     "You go see delivery updates here when anything change.",
@@ -7239,5 +7233,19 @@
   ["Choose photo", "Choose photo", "Zaɓi hoto", "Họrọ foto", "Yan àwòrán"],
   ["Take photo", "Take photo", "Ɗauki hoto", "See foto", "Ya àwòrán"],
   ["{count} orders need attention", "{count} orders need your attention", "Oda {count} na buƙatar kulawa", "Oda {count} chọrọ nlebara anya", "Àṣẹ {count} nílò ìtọ́jú"],
-  ["No orders need your attention.", "No order need your attention now.", "Babu oda da ke buƙatar kulawarka.", "Ọ dịghị oda chọrọ nlebara anya gị.", "Kò sí àṣẹ tó nílò ìtọ́jú rẹ."]
+  ["No orders need your attention.", "No order need your attention now.", "Babu oda da ke buƙatar kulawarka.", "Ọ dịghị oda chọrọ nlebara anya gị.", "Kò sí àṣẹ tó nílò ìtọ́jú rẹ."],
+  ["Earnings", "Money wey you earn", "Abin da aka samu", "Ego ị nwetara", "Èrè"],
+  ["Escrow", "Money wey we hold safe", "Kuɗin da aka riƙe", "Ego echekwara", "Owó tí a fi pamọ́"],
+  ["Transfer", "Money transfer", "Canja kuɗi", "Mbufe ego", "Ìfiránṣẹ́ owó"],
+  ["Load more orders", "Show more orders", "Nuna ƙarin oda", "Gosi oda ndị ọzọ", "Fi àṣẹ míì hàn"],
+  ["Search orders", "Find order", "Nemo oda", "Chọọ oda", "Wá àṣẹ"],
+  ["Order number, produce or farmer", "Order number, produce or farmer", "Lambar oda, amfanin gona ko manomi", "Nọmba oda, ihe ubi ma ọ bụ onye ọrụ ugbo", "Nọ́ńbà àṣẹ, ohun ọ̀gbìn tàbí àgbẹ̀"],
+  ["No notifications match this filter.", "No notification match this filter.", "Babu sanarwa da ta dace da tacewar.", "Ọ dịghị ọkwa dabara na nzacha a.", "Kò sí ìfitónilétí tó bá àlẹ̀mọ́ yìí mu."],
+  ["Your order, payment and delivery notifications will appear here.", "Your order, payment and delivery notifications go show here.", "Sanarwar oda, biyan kuɗi da kai kaya za su bayyana a nan.", "Ọkwa oda, ịkwụ ụgwọ na nnyefe gị ga-apụta ebe a.", "Ìfitónilétí àṣẹ, ìsanwó àti ìfijiṣẹ́ rẹ yóò hàn níbí."],
+  ["Payment is not verified. Check payment status or contact support.", "We never confirm payment. Check am or contact support.", "Ba a tabbatar da biyan kuɗi ba. Duba ko tuntuɓi tallafi.", "Ekwenyebeghị ịkwụ ụgwọ. Lelee ya ma ọ bụ kpọtụrụ nkwado.", "A kò tíì jẹ́rìí ìsanwó. Ṣàyẹ̀wò rẹ tàbí kàn sí ìrànlọ́wọ́."],
+  ["Order notifications", "Notifications for order", "Sanarwar oda", "Ọkwa oda", "Ìfitónilétí àṣẹ"],
+  ["No orders match your search and filters.", "No order match wetin you find.", "Babu oda da ta dace da bincike da tacewa.", "Ọ dịghị oda dabara na ọchụchọ na nzacha gị.", "Kò sí àṣẹ tó bá ohun tí o wá àti àlẹ̀mọ́ mu."],
+  ["Order and account notifications", "Notifications for order and account", "Sanarwar oda da asusu", "Ọkwa oda na akaụntụ", "Ìfitónilétí àṣẹ àti àkọọ́lẹ̀"],
+  ["Paid orders and delivery notifications", "Notifications for paid orders and delivery", "Sanarwar oda da aka biya da kai kaya", "Ọkwa oda akwụgoro na nnyefe", "Ìfitónilétí àṣẹ tí a sanwó àti ìfijiṣẹ́"],
+  ["Delivery notifications", "Delivery notifications", "Sanarwar kai kaya", "Ọkwa nnyefe", "Ìfitónilétí ìfijiṣẹ́"]
 ]

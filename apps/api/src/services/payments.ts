@@ -652,6 +652,8 @@ export async function requestRelease(orderId: string, req: Request) {
       feeMinor: fee,
       payload: { reason: req.body.reason },
     });
+    const delivery = await tx.delivery.findUnique({ where: { orderId } });
+    if (delivery) await deliveryEvent(tx, delivery.id, "PAYMENT_RELEASE_PROCESSING", "system", `${operation.id}:release-processing`);
     await audit(
       req,
       { action: "payment.release.requested", entityType: "order", entityId: orderId },
@@ -889,4 +891,29 @@ export async function requestRefund(orderId: string, req: Request) {
     );
     return operations;
   });
+}
+
+/** Automatic receipt release uses the same authorization and idempotency checks as staff release. */
+export async function queueReceiptRelease(orderId: string) {
+  const order = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+  if (!order.deliveryConfirmedAt || !order.receiptPhotoKey || ["PENDING", "REJECTED"].includes(order.farmerDecision)) return;
+  const verified = await prisma.paymentAttempt.count({ where: { orderId, mode: mode(), kind: "ORDER", status: "SUCCEEDED", confirmedAt: { not: null }, produceMinor: order.totalMinor } });
+  if (!verified) return;
+  // A provider failure is reviewed by staff; automatic scans must not create another transfer.
+  if (await prisma.moneyOperation.count({ where: { orderId, mode: mode(), kind: { in: ["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] } } })) return;
+  const req = systemRequest();
+  req.auth = { sub: order.buyerId, subject: "customer" } as typeof req.auth;
+  req.body = { reason: "Buyer inspected goods and confirmed receipt with private evidence" };
+  try {
+    await requestRelease(orderId, req);
+    await prisma.financeAlert.updateMany({ where: { key: `${mode()}:receipt-release:${orderId}`, resolvedAt: null }, data: { resolvedAt: new Date() } });
+  } catch (error) {
+    const code = error instanceof AppError ? error.code : "RELEASE_QUEUE_UNAVAILABLE";
+    await prisma.$transaction(async tx => {
+      await tx.financeAlert.upsert({ where: { key: `${mode()}:receipt-release:${orderId}` }, create: { key: `${mode()}:receipt-release:${orderId}`, mode: mode(), orderId, code }, update: { code, resolvedAt: null } });
+      const delivery = await tx.delivery.findUnique({ where: { orderId } });
+      if (delivery) await deliveryEvent(tx, delivery.id, "PAYMENT_RELEASE_PAUSED", "system", `${orderId}:release-paused:${code}`);
+    });
+    logger.warn({ orderId, code }, "Receipt saved; payment release requires attention");
+  }
 }

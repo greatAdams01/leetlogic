@@ -80,6 +80,8 @@ export type Customer = {
   addresses: Address[];
 };
 export type Order = {
+  sellerName?: string;
+  farmName?: string;
   farmerDecision?: string;
   handedOverAt?: string | null;
   deliveryConfirmedAt?: string | null;
@@ -108,7 +110,7 @@ export type Contact = {
   longitude?: number;
 };
 export type DeliveryData = {
-  money?: { heldMinor: string; releasedMinor: string; refundedMinor: string; release?: { status: string; failureCode?: string | null } | null };
+  money?: { progress?: import("../../../../packages/contracts/src/order-payment-progress").OrderPaymentProgress; heldMinor: string; releasedMinor: string; refundedMinor: string; release?: { status: string; failureCode?: string | null } | null };
   progress?: import("../../../../packages/contracts/src/order-fulfillment").OrderFulfillment;
   fulfillment?: { state: string; collectionBuyerAt: string | null } | null;
   order: {

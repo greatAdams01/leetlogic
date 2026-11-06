@@ -177,7 +177,7 @@ export function FarmerOrder({
         [
           ["pickup", "Pickup details"],
           ["money", "Money"],
-          ["updates", "Past updates"],
+          ["updates", "Order notifications"],
         ] as const
       ).map(([key, label]) => (
         <section key={key} className="farmer-disclosure">

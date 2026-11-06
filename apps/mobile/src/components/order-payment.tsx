@@ -9,7 +9,7 @@ import { isHostedPaymentUrl } from "../../../../packages/contracts/src/payment-u
 import { useApp } from "../state";
 import { api } from "../lib/api";
 import { money } from "../lib/domain";
-import { Button, Card, Heading, Label, Notice } from "./ui";
+import { Button, Card, Heading, Label, Notice, Icon } from "./ui";
 export function OrderPayment({
   orderId,
   isBuyer,
@@ -44,8 +44,10 @@ export function OrderPayment({
       try {
         let latest = await api(`/orders/${orderId}/payments`);
         if (version !== requestVersion.current) return null;
-        const pending = latest.items?.find((payment: any) =>
-          pendingPaymentStatuses.includes(payment.status) || (latest.checkoutActive && payment.status === "BLOCKED"),
+        const pending = latest.items?.find(
+          (payment: any) =>
+            pendingPaymentStatuses.includes(payment.status) ||
+            (latest.checkoutActive && payment.status === "BLOCKED"),
         );
         setData(latest);
         const previousStatus = latest.orderStatus;
@@ -73,21 +75,29 @@ export function OrderPayment({
     let active = true;
     setData(null);
     setError("");
-    void load(true).catch((e) => { if (active) setError(callbacks.current.error(e)); });
+    void load(true).catch((e) => {
+      if (active) setError(callbacks.current.error(e));
+    });
     const timer = setInterval(() => setNow(Date.now()), 1000);
     let polling = false;
     const confirmationTimer = setInterval(() => {
       if (polling || running.current) return;
       polling = true;
       void load(true)
-        .catch((e) => { if (active) setError(callbacks.current.error(e)); })
-        .finally(() => { polling = false; });
+        .catch((e) => {
+          if (active) setError(callbacks.current.error(e));
+        })
+        .finally(() => {
+          polling = false;
+        });
     }, 30000);
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active" && !running.current) {
         void load(true)
           .then((latest) => latest && callbacks.current.onChanged())
-          .catch((e) => { if (active) setError(callbacks.current.error(e)); });
+          .catch((e) => {
+            if (active) setError(callbacks.current.error(e));
+          });
       }
     });
     return () => {
@@ -106,8 +116,11 @@ export function OrderPayment({
     await Linking.openURL(url);
   };
   const act = async (kind: "ORDER" | "DELIVERY_TOPUP" | "REFRESH" | "RESUME") => {
-    const currentContext = () => context.current.orderId === orderId && context.current.revision === revision &&
-      context.current.isBuyer === isBuyer && context.current.topup === topup;
+    const currentContext = () =>
+      context.current.orderId === orderId &&
+      context.current.revision === revision &&
+      context.current.isBuyer === isBuyer &&
+      context.current.topup === topup;
     if (running.current || !currentContext()) return;
     running.current = true;
     setBusy(true);
@@ -116,11 +129,13 @@ export function OrderPayment({
       if (kind === "RESUME") {
         const latest = await load();
         const current = paymentActions<any>(latest || {}, topup);
-        if (currentContext() && !context.current.disabled && latest?.enabled && current.canResume) await open(current.pending!.checkoutUrl!);
+        if (currentContext() && !context.current.disabled && latest?.enabled && current.canResume)
+          await open(current.pending!.checkoutUrl!);
       } else if (kind === "REFRESH") {
         await load(true);
       } else {
-        if (context.current.disabled || !isBuyer || !paymentActions<any>(data || {}, topup).canPay) return;
+        if (context.current.disabled || !isBuyer || !paymentActions<any>(data || {}, topup).canPay)
+          return;
         const result = await api(`/orders/${orderId}/checkout`, { method: "POST", body: { kind } });
         if (!currentContext()) return;
         // Persist the returned pending state before opening the hosted page.
@@ -130,7 +145,13 @@ export function OrderPayment({
         }));
         const latest = await load();
         const current = paymentActions<any>(latest || {}, topup);
-        if (currentContext() && !context.current.disabled && latest?.enabled && current.canResume && current.pending?.id === result.id)
+        if (
+          currentContext() &&
+          !context.current.disabled &&
+          latest?.enabled &&
+          current.canResume &&
+          current.pending?.id === result.id
+        )
           await open(current.pending!.checkoutUrl!);
       }
       if (currentContext()) await callbacks.current.onChanged();
@@ -138,7 +159,9 @@ export function OrderPayment({
       if (!currentContext()) return;
       setError(a.error(e));
       // A lost response may still have created checkout. Read its state before offering another write.
-      await load().catch(() => { if (currentContext()) setData(null); });
+      await load().catch(() => {
+        if (currentContext()) setData(null);
+      });
       if (currentContext()) await callbacks.current.onChanged().catch(() => {});
     } finally {
       running.current = false;
@@ -148,26 +171,55 @@ export function OrderPayment({
   const content = (
     <>
       {!compact && <Heading>Payment</Heading>}
-      {data?.fulfillment && data.fulfillment.state !== "SECURED" && <Label>{a.ui(fulfillmentLabel(data.fulfillment.state))}</Label>}
-      {!compact && (
-        <Label>
-          Payment-processing fees are shown before you pay. Non-returnable fees are deducted from
-          refunds.
-        </Label>
+      {data?.progress && (
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Icon name={data.progress.tone === "warning" ? "sellerAlert" : "wallet"} size={22} />
+            <Heading>{data.progress.title}</Heading>
+          </View>
+          {data.progress.tone === "warning" ? (
+            <Notice text={data.progress.body} error />
+          ) : (
+            <Label muted>{data.progress.body}</Label>
+          )}
+          <Label>
+            {a.ui("Escrow")}: {data.progress.escrow}
+          </Label>
+          <Label>
+            {a.ui("Transfer")}: {data.progress.transfer}
+          </Label>
+          <Label>
+            {a.ui("Earnings")}: {data.progress.earnings}
+          </Label>
+        </View>
       )}
+      {data?.fulfillment && data.fulfillment.state !== "SECURED" && (
+        <Label>{a.ui(fulfillmentLabel(data.fulfillment.state))}</Label>
+      )}
+      {!compact &&
+        data?.orderStatus === "AWAITING_PAYMENT" &&
+        !actions.succeeded &&
+        !data?.progress?.verified && (
+          <Label>
+            Payment-processing fees are shown before you pay. Non-returnable fees are deducted from
+            refunds.
+          </Label>
+        )}
       {data && !data.enabled && (
-        <Notice text="Payments are not available right now. Please try again later." />
+        <Notice text="Payments are not available right now. Please try again later." error />
       )}
       {!!data?.financialHold && (
-        <Notice text="Your payment is being reviewed. Please contact support for help." />
+        <Notice text="Your payment is being reviewed. Please contact support for help." error />
       )}
-      {!compact && actions.ready && !disabled && <Label>{money(data.payableMinor)}</Label>}
+      {!compact && actions.ready && !actions.locked && !disabled && (
+        <Label>{money(data.payableMinor)}</Label>
+      )}
       {data?.enabled && isBuyer && !actions.ready && !actions.locked && !actions.succeeded && (
         <Notice text={a.error({ code: data.checkoutErrorCode || "QUOTE_EXPIRED" })} />
       )}
       {item && (
         <View style={{ gap: 8 }}>
-          <Label>{a.status(item.status)}</Label>
+          {!data?.progress && <Label>{a.status(item.status)}</Label>}
           <Label>{money(item.amountMinor)}</Label>
         </View>
       )}
@@ -187,7 +239,10 @@ export function OrderPayment({
             loading={busy}
             onPress={() => void act("REFRESH")}
           />
-          <Label muted>Confirming your payment. Please don’t pay again. We check automatically; you can also check now.</Label>
+          <Label muted>
+            Confirming your payment. Please don’t pay again. We check automatically; you can also
+            check now.
+          </Label>
           {actions.canResume && (
             <Button
               title="Continue payment"
@@ -198,10 +253,16 @@ export function OrderPayment({
           )}
         </>
       )}
-      {data?.enabled && isBuyer && actions.succeeded && <Label>Payment confirmed</Label>}
-      {data?.enabled && actions.locked && !data.financialHold && (
-        <Notice text="This order cannot accept a payment right now." />
+      {data?.enabled && isBuyer && actions.succeeded && !data.progress && (
+        <Label>Payment confirmed</Label>
       )}
+      {data?.enabled &&
+        actions.locked &&
+        !actions.succeeded &&
+        !data.progress &&
+        !data.financialHold && (
+          <Notice text="Payment is not verified. Check payment status or contact support." error />
+        )}
       {item?.exceptionCode &&
         (["FAILED", "BLOCKED", "EXCEPTION", "UNKNOWN"].includes(item.status) ||
           item.exceptionCode === "PAYMENT_ATTEMPT_FAILED") && (

@@ -1,4 +1,4 @@
-import { sendPaidOrderNotifications } from "./services/order-notifications.js";
+import { sendOrderUpdateNotifications, sendPaidOrderNotifications } from "./services/order-notifications.js";
 import { sendListingApprovalNotifications } from "./services/listing-notifications.js";
 import { startPaymentWorker } from "./services/payment-worker.js";
 import { prisma } from "@leetlogic/database";
@@ -10,7 +10,7 @@ const notifications = setInterval(async () => {
   if (notifying) return;
   notifying = true;
   try {
-    await Promise.all([sendPaidOrderNotifications(), sendListingApprovalNotifications()]);
+    await Promise.all([sendPaidOrderNotifications(), sendListingApprovalNotifications(), sendOrderUpdateNotifications()]);
   } catch (error) {
     logger.error({ error }, "Paid-order notification worker failed");
   } finally {

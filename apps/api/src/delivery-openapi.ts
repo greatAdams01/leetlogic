@@ -53,7 +53,13 @@ export const deliveryOpenApiPaths: Record<string, unknown> = {
   "/orders": {
     get: {
       ...operation("List owned orders; optionally select purchases or sales", undefined, false),
-      parameters: [{ name: "view", in: "query", schema: { enum: ["buyer", "seller"] } }],
+      parameters: [
+        { name: "view", in: "query", schema: { enum: ["buyer", "seller"] } },
+        { name: "q", in: "query", description: "Order reference, produce, farmer name or farm name", schema: { type: "string", maxLength: 100 } },
+        { name: "filter", in: "query", schema: { enum: ["ALL", "ACTIVE", "COMPLETED", "CANCELLED"] } },
+        { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+        { name: "cursor", in: "query", description: "The previous response's nextCursor, scoped to the same search", schema: uuid },
+      ],
     },
   },
   "/orders/{id}/delivery/decision": {

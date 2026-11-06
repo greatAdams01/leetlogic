@@ -62,5 +62,5 @@ it("loads farmer updates, filters unread records and preserves assistance with a
   );
   fireEvent.click(screen.getByRole("button", { name: "Mark all as read" }));
   await waitFor(() => expect(h.api).toHaveBeenCalledWith("orders/notifications/read", { through }));
-  await screen.findByText("No updates match this filter.");
+  await screen.findByText("No notifications match this filter.");
 });

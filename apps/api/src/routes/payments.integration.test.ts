@@ -173,7 +173,7 @@ suite("provider-backed payment safeguards", () => {
     ).id;
   });
   beforeEach(() => {
-    Object.assign(getConfig(), { PAYMENT_RECOVERY_ENABLED: false, PAYMENT_AUTO_REFUNDS_ENABLED: false, SHIPPING_FUNDING_ENABLED: false });
+    Object.assign(getConfig(), { PAYMENTS_TRANSFERS_ENABLED: true, PAYMENT_RECOVERY_ENABLED: false, PAYMENT_AUTO_REFUNDS_ENABLED: false, SHIPPING_FUNDING_ENABLED: false });
     // Workers scan the schema. No test may accidentally call either real provider.
     vi.spyOn(bachs, "call").mockRejectedValue(new Error("Unexpected payment provider call"));
     vi.spyOn(shippingProvider, "quotes").mockRejectedValue(new Error("Unexpected rate request"));
@@ -2258,13 +2258,18 @@ suite("provider-backed payment safeguards", () => {
     vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`receipt/${randomUUID()}`);
     const upload = await request(app).post(`/v1/orders/${o.id}/delivery/receipt-photo`).set("Authorization", `Bearer ${token}`).set("Content-Type", "image/jpeg").send(Buffer.from([255,216,255,...Array(20).fill(0)]));
     expect(upload.status).toBe(201);
+    getConfig().PAYMENTS_TRANSFERS_ENABLED = false;
     const confirm = await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set("Authorization", `Bearer ${token}`).send({ acknowledged: true });
     expect(confirm.status).toBe(200);
+    const paused = await request(app).get(`/v1/orders/${o.id}/payments`).set("Authorization", `Bearer ${token}`);
+    expect(paused.body.progress).toMatchObject({ stage: "PAUSED", tone: "warning" });
+    getConfig().PAYMENTS_TRANSFERS_ENABLED = true;
     await prisma.paymentAttempt.update({ where: { id: payment.id }, data: { mode: "live" } });
     await expect(requestRelease(o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
     await runPaymentJobs();
     expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(0);
     await prisma.paymentAttempt.update({ where: { id: payment.id }, data: { mode: "sandbox" } });
+    getConfig().PAYMENTS_TRANSFERS_ENABLED = true;
     const ticket = await prisma.supportTicket.create({ data: { orderId: o.id, userId: buyer, kind: "DISPUTE", subject: "QUALITY" } });
     await runPaymentJobs();
     expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(0);
@@ -2281,6 +2286,20 @@ suite("provider-backed payment safeguards", () => {
     expect(await prisma.moneyOperation.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(1);
     expect(await prisma.escrowEntry.count({ where: { orderId: o.id, kind: "RELEASE" } })).toBe(1);
     expect(await prisma.deliveryEvent.count({ where: { deliveryId: d.id, status: "PAYMENT_RELEASED" } })).toBe(1);
+  });
+
+  it("queues a photographed legacy receipt immediately without staff approval and without duplicate release", async () => {
+    const { o, d } = await order(); const payment = await checkout(o.id); mockReceipt(payment); await reconcilePayment(payment.id);
+    await prisma.delivery.update({ where: { id: d.id }, data: { status: "DELIVERED", providerShipmentId: `legacy-${o.id}` } });
+    vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`receipt/${randomUUID()}`);
+    const headers = { Authorization: `Bearer ${token}` };
+    expect((await request(app).post(`/v1/orders/${o.id}/delivery/receipt-photo`).set(headers).set("Content-Type", "image/jpeg").send(Buffer.from([255,216,255,...Array(20).fill(0)]))).status).toBe(201);
+    for (let retry = 0; retry < 2; retry++) expect((await request(app).post(`/v1/orders/${o.id}/delivery/confirm`).set(headers).send({ acknowledged: true })).status).toBe(200);
+    const operations = await prisma.moneyOperation.findMany({ where: { orderId: o.id, kind: "RELEASE" } });
+    expect(operations).toHaveLength(1); expect(operations[0]!.status).toBe("QUEUED");
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(10000n);
+    const view = await request(app).get(`/v1/orders/${o.id}/payments`).set(headers);
+    expect(view.body.progress).toMatchObject({ stage: "PROCESSING", escrow: "Held in escrow", transfer: "Queued", earnings: "Not credited" });
   });
 
 });

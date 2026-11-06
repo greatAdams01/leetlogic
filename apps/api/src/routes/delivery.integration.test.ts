@@ -2015,4 +2015,28 @@ suite("delivery and language database workflows", () => {
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(10000n);
   });
 
+  it("searches and paginates only the buyer's orders with combined status filters", async () => {
+    const seed = `FIND-${randomUUID()}`;
+    const owned = await Promise.all([journeyOrder(), journeyOrder(), journeyOrder()]);
+    for (const [index, o] of owned.entries()) await prisma.tradeOrder.update({ where: { id: o.id }, data: { reference: `${seed}-${index}`, createdAt: new Date("2026-11-06T12:00:00Z") } });
+    await prisma.tradeOrder.update({ where: { id: owned[1]!.id }, data: { status: "CANCELLED" } });
+    await prisma.tradeOrder.update({ where: { id: owned[2]!.id }, data: { status: "DELIVERED", deliveryConfirmedAt: new Date() } });
+    const other = await journeyOrder();
+    await prisma.tradeOrder.update({ where: { id: other.id }, data: { reference: `${seed}-private`, buyerId: verifyAccessToken(outsider, "customer").sub } });
+    const get = (query: Record<string, string | number>) => request(app).get("/v1/orders").set(customer()).query({ view: "buyer", q: seed, ...query });
+    const first = await get({ limit: 1 }); expect(first.status).toBe(200); expect(first.body.items).toHaveLength(1); expect(first.body.hasMore).toBe(true);
+    const second = await get({ limit: 1, cursor: first.body.nextCursor }); expect(second.status).toBe(200); expect(second.body.items[0].id).not.toBe(first.body.items[0].id);
+    const all = await get({ limit: 50 }); expect(all.body.items.map((i: any) => i.id).sort()).toEqual(owned.map(o => o.id).sort());
+    for (const filter of ["ACTIVE", "COMPLETED", "CANCELLED"]) expect((await get({ filter })).body.items).toHaveLength(1);
+    expect((await get({ cursor: other.id })).status).toBe(422);
+    expect((await get({ q: "no-such-produce-search" })).body.items).toHaveLength(0);
+    const farmer = await prisma.farmerProfile.findUniqueOrThrow({ where: { id: farmerId } });
+    const sellerTerm = `Farmer-${randomUUID()}`;
+    await prisma.userProfile.update({ where: { userId: farmer.userId }, data: { fullName: sellerTerm } });
+    const bySeller = await get({ q: sellerTerm }); expect(bySeller.body.items.some((i: any) => i.id === owned[0]!.id)).toBe(true);
+    expect(bySeller.body.items.every((i: any) => i.id !== other.id)).toBe(true);
+    const byProduce = await get({ q: "Dry beans" }); expect(byProduce.body.items.some((i: any) => i.id === owned[0]!.id)).toBe(true);
+    expect(JSON.stringify(bySeller.body)).not.toContain("phoneE164");
+  });
+
 });

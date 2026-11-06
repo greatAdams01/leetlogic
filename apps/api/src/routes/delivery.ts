@@ -1,6 +1,9 @@
+import { logger } from "../lib/logger.js";
+import { ownedOrderWhere } from "../services/order-search.js";
+import { orderPaymentView } from "../services/order-payment-view.js";
 import { storeMedia, readMedia, deleteMedia } from "../services/storage/private-media.js";
 import { imageType } from "./produce-photos.js";
-import { mode } from "../services/payments.js";
+import { mode, queueReceiptRelease } from "../services/payments.js";
 import { orderFulfillment } from "@leetlogic/contracts";
 import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
@@ -135,9 +138,8 @@ customerDeliveryRouter.post("/notifications/read", async (req,res)=>{
   res.json({read:true});
 });
 customerDeliveryRouter.get("/", async (req, res) => {
-  const { view: requestedView } = z
-    .object({ view: z.enum(["buyer", "seller"]).optional() })
-    .parse(req.query);
+  const query = z.object({ view: z.enum(["buyer", "seller"]).optional(), q: z.string().trim().max(100).optional(), filter: z.enum(["ALL", "ACTIVE", "COMPLETED", "CANCELLED"]).default("ALL"), limit: z.coerce.number().int().min(1).max(50).default(50), cursor: uuid.optional() }).parse(req.query);
+  const requestedView = query.view;
   const view = req.auth!.capabilities!.includes("SELLER") ? "seller" : "buyer";
   if (requestedView && requestedView !== view)
     throw new AppError(
@@ -145,26 +147,12 @@ customerDeliveryRouter.get("/", async (req, res) => {
       "ROLE_FORBIDDEN",
       "This dashboard is not available for your account role.",
     );
-  const items = await prisma.tradeOrder.findMany({
-    where:
-      view === "seller"
-        ? {
-            farmerProfile: { userId: req.auth!.sub },
-            ledger: { some: { kind: "FUND" } },
-            status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
-          }
-        : view === "buyer"
-          ? { buyerId: req.auth!.sub }
-          : {
-              OR: [
-                { buyerId: req.auth!.sub },
-                {
-                  farmerProfile: { userId: req.auth!.sub },
-                  ledger: { some: { kind: "FUND" } },
-                  status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
-                },
-              ],
-            },
+  const where = ownedOrderWhere(req.auth!.sub, view === "seller", query);
+  if (query.cursor && !(await prisma.tradeOrder.findFirst({ where: { AND: [where, { id: query.cursor }] }, select: { id: true } })))
+    throw new AppError(422, "INVALID_CURSOR", "Refresh your orders before loading another page.");
+  const rows = await prisma.tradeOrder.findMany({
+    where,
+    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
     select: {
       id: true,
       reference: true,
@@ -176,13 +164,17 @@ customerDeliveryRouter.get("/", async (req, res) => {
       totalMinor: true,
       reservationExpiresAt: true,
       quantity: true,
+      farmerProfile: { select: { farmName: true, user: { select: { profile: { select: { fullName: true, displayName: true } } } } } },
       listing: { select: { title: true, unitCode: true, salePackaging: true } },
       delivery: { select: { status: true, shippingMinor: true, events: {where:{status:{in:["READY_FOR_PICKUP","FARMER_DISPATCHED"]}},select:{status:true}} } },
     },
-    orderBy: { createdAt: "desc" },
-    take: 50,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: query.limit + 1,
   });
-  res.json(serialize({items:items.map(item=>({...item,delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({farmerDecision:item.farmerDecision,handedOver:!!item.handedOverAt,review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
+  const hasMore = rows.length > query.limit;
+  const items = rows.slice(0, query.limit);
+  res.set("Cache-Control", "private, no-store");
+  res.json(serialize({hasMore, nextCursor: hasMore ? items.at(-1)!.id : null, items:items.map(item=>({...item, sellerName: item.farmerProfile.user.profile?.fullName || item.farmerProfile.user.profile?.displayName || item.farmerProfile.farmName, farmName: item.farmerProfile.farmName, farmerProfile: undefined, delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({farmerDecision:item.farmerDecision,handedOver:!!item.handedOverAt,review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
 });
 // Buyer collection uses no courier quote or shipping charge.
 customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
@@ -502,6 +494,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     res.json(
       serialize({
         money: {
+          progress: await orderPaymentView(order),
           heldMinor: order.heldMinor, releasedMinor: order.releasedMinor, refundedMinor: order.refundedMinor,
           release: await prisma.moneyOperation.findFirst({ where: { orderId: order.id, mode: mode(), kind: "RELEASE" }, orderBy: { createdAt: "desc" }, select: { status: true, failureCode: true, updatedAt: true } }),
         },
@@ -1164,6 +1157,7 @@ customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
       tx,
     );
   });
+  await queueReceiptRelease(order.id).catch(() => logger.warn({ orderId: order.id, code: "RELEASE_WAKEUP_FAILED" }, "Receipt saved; durable payment worker will retry release")); // Durable worker retries a lost post-commit wakeup.
   res.json({ confirmed: true });
 });
 // Unauthenticated events never change delivery state: only accelerate an authenticated provider read.

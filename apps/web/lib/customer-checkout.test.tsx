@@ -662,3 +662,11 @@ it("requires an explicit second action before cancelling an unpaid order", async
   expect(h.api).toHaveBeenCalledWith("marketplace/orders/order/cancel", {});
   expect(h.changed).toHaveBeenCalledOnce();
 });
+
+it("shows a confirmed payment without the checkout-locked warning", async () => {
+  h.payment.orderStatus = "FUNDED"; h.payment.heldMinor = "10000";
+  h.payment.items = [{ ...pending("SUCCEEDED"), confirmedAt: "2026-11-06T10:00:00Z" }];
+  await mountPayment();
+  expect(screen.queryByText("This order cannot accept a payment right now.")).toBeNull();
+  expect(button("Make Payment")).toBeNull();
+});

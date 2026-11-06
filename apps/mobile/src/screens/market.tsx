@@ -1,3 +1,4 @@
+import { useOrderSearch } from "../lib/use-order-search";
 import { NotificationBell } from "../components/notification-bell";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { ReservationTimer } from "../components/reservation-timer";
@@ -601,16 +602,10 @@ export function Product() {
   );
 }
 export function Orders() {
-  const a = useApp(),
-    r = useResource<{ items: Order[] }>(`/orders?view=${a.role === "SELLER" ? "seller" : "buyer"}`, true, 30000),
-    [filter, setFilter] = useState("All");
-  const items = r.data?.items.filter(
-    (i) =>
-      filter === "All" ||
-      (filter === "Completed"
-        ? ["COMPLETED", "CANCELLED", "REFUNDED"].includes(i.status)
-        : !["COMPLETED", "CANCELLED", "REFUNDED"].includes(i.status)),
-  );
+  const a = useApp();
+  const r = useOrderSearch(a.role === "SELLER" ? "seller" : "buyer");
+  const filter = r.filter, setFilter = r.setFilter;
+  const items = r.data.items;
   const nextAction = (order: Order) => {
     if (order.farmerDecision === "PENDING" && a.role === "SELLER") return { title: "Review New Order", hint: "Check the goods and accept the order" };
     if (order.farmerDecision === "REJECTED") return { title: "View refund status", hint: "This order could not be fulfilled" };
@@ -635,6 +630,7 @@ export function Orders() {
     <Page loading={r.loading} contentStyle={{ gap: 18 }}>
       <Label muted>{a.role === "SELLER" ? "SELLER PORTAL" : "BUYER PORTAL"}</Label>
       <Heading>{a.t("orders.title")}</Heading>
+      <Field label="Search orders" placeholder="Order number, produce or farmer" value={r.search} onChangeText={r.setSearch} maxLength={100} />
       {a.role === "BUYER" && a.route.query === "checkout" && (
         <Card style={{ backgroundColor: "#e4f3e9", flexDirection: "row", gap: 12 }}>
           <Icon name="cartShield" size={22} />
@@ -647,19 +643,19 @@ export function Orders() {
         </Card>
       )}
       <View style={s.row}>
-        {["All", "Active", "Completed"].map((v) => (
-          <Pressable key={v} accessibilityRole="button" onPress={() => setFilter(v)}>
+        {([ ["ALL", "All Orders"], ["ACTIVE", "Active"], ["COMPLETED", "Completed"], ["CANCELLED", "Cancelled"] ] as const).map(([v, label]) => (
+          <Pressable key={v} accessibilityRole="button" accessibilityLabel={a.ui(label)} accessibilityState={{ selected: filter === v }} onPress={() => setFilter(v)} style={{ minHeight: 44, justifyContent: "center" }}>
             <Text
               style={[s.badge, filter === v && { backgroundColor: colors.green, color: "white" }]}
             >
-              {v}
+              {label}
             </Text>
           </Pressable>
         ))}
       </View>
       {r.error && <Notice text={r.error} error />}
-      {!r.loading && !r.error && !items?.length && <Notice text={a.t("orders.empty")} />}
-      {items?.map((i) => {
+      {!r.loading && !r.error && !items?.length && <Notice text={r.search || filter !== "ALL" ? "No orders match your search and filters." : a.t("orders.empty")} />}
+      {!r.loading && items?.map((i) => {
         const action = nextAction(i);
         const checkout = a.role === "BUYER" && i.status === "AWAITING_PAYMENT";
         return (
@@ -671,6 +667,7 @@ export function Orders() {
             {checkout && <ReservationTimer expiresAt={i.reservationExpiresAt} />}
             <View style={{ gap: 3 }}>
               <Label style={{ fontFamily: "NotoBold", fontSize: 20 }}>{i.listing.title}</Label>
+              {i.sellerName && <Label muted>{i.sellerName}{i.farmName && i.farmName !== i.sellerName ? ` · ${i.farmName}` : ""}</Label>}
               <Label muted>{i.quantity || 1} {(saleUnitLabel(i.listing.salePackaging, a.ui) || a.unit(i.listing.unitCode || "UNIT"))}</Label>
             </View>
             <View style={s.between}>
@@ -689,6 +686,7 @@ export function Orders() {
           </Card>
         );
       })}
+      {r.nextCursor && !r.loading && <Button title="Load more orders" secondary loading={r.loadingMore} disabled={r.loadingMore} onPress={() => void r.loadMore()} />}
       <Button title="Refresh orders" secondary onPress={() => void r.reload()} />
     </Page>
   );

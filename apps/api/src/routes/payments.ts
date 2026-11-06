@@ -1,3 +1,4 @@
+import { orderPaymentView } from "../services/order-payment-view.js";
 import { installFinanceReadRoutes } from "./finance-read.js";
 import { installRecoveryRoutes } from "./payment-recovery.js";
 import { readFulfillment } from "../services/fulfillment-deadline.js";
@@ -126,6 +127,7 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
   });
   res.json(
     serialize({
+      progress: await orderPaymentView(order),
       enabled: getConfig().PAYMENTS_ENABLED,
       ...checkoutSummary(order),
       checkoutActive: items.some(

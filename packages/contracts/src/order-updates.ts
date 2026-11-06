@@ -106,6 +106,8 @@ export function orderUpdateCopy(messageKey: string, buyer: boolean) {
     ORDER_ACCEPTED: ["Order accepted", "The farmer is preparing your goods."],
     ORDER_REJECTED: ["Order declined", "The farmer cannot fulfill this order. Follow the refund status in your order."],
     BUYER_COLLECTED: ["Goods handed over", "The buyer should inspect the goods and confirm receipt."],
+    PAYMENT_RELEASE_PAUSED: ["Payment release paused", "Receipt is saved. Payment processing needs support attention."],
+    PAYMENT_RELEASE_PROCESSING: ["Payment release processing", "Receipt is confirmed. The farmer’s transfer is queued for secure processing."],
     PAYMENT_RELEASE_FAILED: ["Payment needs attention", "The farmer’s payment could not be completed. Support will review it."],
     PAYMENT_RELEASED: ["Payment released", "The farmer’s payment is confirmed. Open the order for details."],
     RECOVERY_REQUIRED: [

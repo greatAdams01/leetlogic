@@ -7,6 +7,7 @@ export function orderJourney(input: {
   decision?: string;
   handedOver?: boolean;
   money?: {
+    progress?: import("./order-payment-progress.js").OrderPaymentProgress;
     heldMinor: string;
     releasedMinor: string;
     refundedMinor: string;
@@ -21,7 +22,7 @@ export function orderJourney(input: {
   const refunded =
     input.orderStatus === "REFUNDED" || BigInt(input.money?.refundedMinor || "0") > 0n;
   const releaseStatus = input.money?.release?.status;
-  const payment = refunded
+  const payment = input.money?.progress?.title || (refunded
     ? "Payment refunded"
     : input.decision === "REJECTED"
       ? "Refund pending"
@@ -33,7 +34,7 @@ export function orderJourney(input: {
             ? "Payment processing"
             : BigInt(input.money?.heldMinor || "0") > 0n
               ? "Payment protected"
-              : "Checking payment";
+              : "Checking payment");
   let title = buyer ? "Order placed" : "Checking this order",
     body = p?.next || "Checking the latest order update.",
     action: JourneyAction = null,

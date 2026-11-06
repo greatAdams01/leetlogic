@@ -130,7 +130,7 @@ export function FarmerOrder({
     ),
     updates: (
       <Card>
-        <Heading>Past updates</Heading>
+        <Heading>Order notifications</Heading>
         {d?.events.length ? (
           d.events.map((event) => (
             <View key={event.id} style={{ gap: 4, marginBottom: 12 }}>
@@ -290,7 +290,7 @@ export function FarmerOrder({
           [
             ["pickup", "Pickup details", "pin"],
             ["money", "Money", "wallet"],
-            ["updates", "Past updates", "securityDeviceClock"],
+            ["updates", "Order notifications", "securityDeviceClock"],
           ] as const
         ).map(([key, label, icon]) => (
           <Pressable

@@ -210,14 +210,32 @@ export function GuidedOrder({
           </View>
         </Card>
       )}
-      <Card style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <Icon name="wallet" size={26} />
+      <Card
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          backgroundColor: data.money?.progress?.tone === "warning" ? "#fff5eb" : colors.white,
+        }}
+      >
+        <Icon
+          name={data.money?.progress?.tone === "warning" ? "sellerAlert" : "wallet"}
+          size={26}
+        />
         <View style={{ flex: 1, gap: 4 }}>
-          <Label style={{ fontFamily: "NotoBold" }}>{a.ui(guide.payment)}</Label>
+          <Label
+            style={{
+              fontFamily: "NotoBold",
+              color: data.money?.progress?.tone === "warning" ? "#74301f" : colors.ink,
+            }}
+          >
+            {a.ui(guide.payment)}
+          </Label>
           <Label muted>
-            {data.progress?.confirmed
-              ? "Receipt is confirmed. Payment is tracked separately."
-              : "Handover does not release the farmer’s payment."}
+            {data.money?.progress?.body ||
+              (data.progress?.confirmed
+                ? "Receipt is confirmed. Payment is tracked separately."
+                : "Handover does not release the farmer’s payment.")}
           </Label>
         </View>
       </Card>
@@ -294,7 +312,7 @@ export function GuidedOrder({
         [
           ["details", "Order details", "orderPacking"],
           ["payment", "Payment and receipt", "wallet"],
-          ["history", "Order updates", "securityDeviceClock"],
+          ["history", "Order notifications", "securityDeviceClock"],
           ["problem", "Report a Problem", "sellerAlert"],
         ] as const
       ).map(([key, label, icon]) => (

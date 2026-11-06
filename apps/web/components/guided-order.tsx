@@ -111,7 +111,12 @@ export function GuidedOrder({
     else setHandoff(true);
   };
   const icon = (name: string) => (
-    <img src={`/order-icons/${name}.svg`} alt="" width={name === "packing" ? 20 : 22} height={name === "packing" ? 20 : 22} />
+    <img
+      src={`/order-icons/${name}.svg`}
+      alt=""
+      width={name === "packing" ? 20 : 22}
+      height={name === "packing" ? 20 : 22}
+    />
   );
   return (
     <section className="customer-panel order-journey">
@@ -176,15 +181,18 @@ export function GuidedOrder({
           </ol>
         </section>
       )}
-      <section className="journey-card journey-payment">
+      <section
+        className={`journey-card journey-payment ${data.money?.progress?.tone === "warning" ? "journey-payment-warning" : ""}`}
+      >
         <div>{icon("payment")}</div>
         <div>
           <h2>{say(guide.payment)}</h2>
           <p>
             {say(
-              data.progress?.confirmed
-                ? "Receipt is confirmed. Payment is tracked separately."
-                : "Handover does not release the farmer’s payment.",
+              data.money?.progress?.body ||
+                (data.progress?.confirmed
+                  ? "Receipt is confirmed. Payment is tracked separately."
+                  : "Handover does not release the farmer’s payment."),
             )}
           </p>
         </div>
@@ -285,7 +293,7 @@ export function GuidedOrder({
         )}
       </details>
       <details>
-        <summary>{say("Order updates")}</summary>
+        <summary>{say("Order notifications")}</summary>
         <ol className="journey-history">
           {d?.events?.map((event: any) => (
             <li key={event.id}>

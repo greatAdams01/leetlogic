@@ -21,6 +21,7 @@ vi.mock("react-native", () => ({
   },
 }));
 vi.mock("../components/ui", () => ({
+  Icon: "Icon",
   Button: "Button",
   Card: "Card",
   Heading: "Heading",
@@ -28,7 +29,7 @@ vi.mock("../components/ui", () => ({
   Notice: "Notice",
 }));
 vi.mock("../state", () => ({
-  useApp: () => ({ status: (s: string) => s, error: (e: any) => e.message || e.code }),
+  useApp: () => ({ ui: (s: string) => s, status: (s: string) => s, error: (e: any) => e.message || e.code }),
 }));
 vi.mock("./api", () => ({ api: h.api }));
 import { OrderPayment } from "../components/order-payment";
@@ -325,4 +326,18 @@ it("does not let a failed recovery read clear a newer order's payment state", as
   await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
   expect(h.refresh).toHaveBeenCalledTimes(2);
   expect(button("Check Payment")).toBeUndefined();
+});
+
+it("does not display checkout-lock warnings after a successful payment", async () => {
+  h.data.orderStatus = "FUNDED"; h.data.heldMinor = "10000"; h.data.items = [{ ...pending("SUCCEEDED"), confirmedAt: "2026-11-06T10:00:00Z" }];
+  await render();
+  expect(tree.root.findAllByType("Notice").some((node: any) => /cannot accept|not verified/.test(node.props.text))).toBe(false);
+  expect(button("Make Payment")).toBeUndefined();
+});
+it("renders backend escrow, transfer and earnings states separately", async () => {
+  h.data.progress = { title: "Transfer Processing", body: "Waiting for provider confirmation.", tone: "neutral", escrow: "Held in escrow", transfer: "Processing", earnings: "Not credited", verified: true };
+  h.data.orderStatus = "DELIVERED"; h.data.items = [{ ...pending("SUCCEEDED"), confirmedAt: "2026-11-06T10:00:00Z" }];
+  await render();
+  expect(tree.root.findAllByType("Heading").some((n: any) => n.props.children === "Transfer Processing")).toBe(true);
+  expect(tree.root.findAllByType("Label").map((n: any) => n.props.children).flat()).toContain("Not credited");
 });

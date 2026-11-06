@@ -1059,3 +1059,28 @@ main img[src$=".svg"] {
 @media(max-width:600px) { .order-journey { margin:0; border-radius:0; padding-top:16px; } .journey-status { padding:20px; } .journey-card { padding:16px; } }
 
 .journey-receipt input[type=file] { display:block; width:100%; box-sizing:border-box; font-size:14px; }
+
+.notifications-screen { max-width:800px; background:#faf7f0; border-radius:20px; }
+.notification-kind { display:flex; gap:12px; align-items:center; color:#66736b; font-size:14px; margin-bottom:12px; }
+.notification-kind strong { margin-left:auto; color:#14532d; }
+.notifications-screen .notification-day { font-size:14px; color:#66736b; margin-top:28px; }
+.notifications-screen article a { display:inline-flex; min-height:44px; align-items:center; color:#14532d; font-weight:700; }
+.payment-progress { padding:16px; border:1px solid #e2ddd5; border-radius:14px; background:#faf7f0; }
+.payment-progress-warning { background:#fff5eb; border-color:#9b3525; color:#74301f; }
+.payment-progress-success { background:#e5f1e9; color:#14532d; }
+.payment-progress dl { display:grid; grid-template-columns:auto 1fr; gap:8px 16px; }
+.payment-progress dd { margin:0; }
+
+.buyer-orders input[type=search] { width:100%; min-height:52px; box-sizing:border-box; border-radius:14px; background:#faf7f0; }
+.buyer-orders nav { display:flex; flex-wrap:wrap; gap:6px; margin:16px 0; }
+.buyer-orders nav button { min-height:44px; margin:0; background:#edf2ee; color:#14532d; }
+.buyer-orders nav button[aria-pressed=true] { background:#14532d; color:white; }
+.buyer-orders article { border:1px solid #e2ddd5; background:#fff; border-radius:16px; }
+.buyer-orders a { color:#14532d; display:inline-flex; min-height:44px; align-items:center; }
+
+.journey-payment-warning { background:#fff5eb; border-color:#9b3525; }
+.journey-payment-warning h2,.journey-payment-warning p { color:#74301f; }
+
+.notifications-screen nav button { min-height:44px; margin:0; color:#14532d; background:#edf2ee; border-radius:22px; }
+.notifications-screen nav button[aria-pressed=true] { background:#14532d; color:white; }
+.notifications-screen a:focus-visible,.notifications-screen button:focus-visible,.buyer-orders :focus-visible { outline:3px solid #2e9e4f; outline-offset:3px; }

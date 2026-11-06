@@ -141,7 +141,7 @@ export function Profile() {
             : []),
           {
             label: "Notifications",
-            sub: seller ? "Paid orders and delivery updates" : "Delivery updates",
+            sub: seller ? "Paid orders and delivery notifications" : "Delivery notifications",
             route: "notifications",
           },
           {
