@@ -9,9 +9,16 @@ import { audit } from "../services/audit.js";
 import { assertCurrentDeliveryQuote, assertNoActiveCheckout, shippingOrderInclude } from "../services/delivery-quote.js";
 import { deliveryReceiptReady, deliveryRefundReady } from "../services/delivery-policy.js";
 import { shippingSnapshot } from "../services/packaging.js";
+import { readAdminOrderQueue } from "../services/admin-order-operations.js";
 
 export const operationsRouter = Router();
 operationsRouter.use(requireAuth("admin"));
+for (const path of ["/order-operations", "/dispatch"]) {
+  operationsRouter.get(path, requirePermission("orders.read"), async (req, res) => {
+    res.set("Cache-Control", "private, no-store");
+    res.json(json(await readAdminOrderQueue(req.query, path === "/dispatch")));
+  });
+}
 const id = z.string().uuid();
 const reasonSchema = z.object({ reason: z.string().trim().min(5).max(500) });
 const json = (value: unknown) =>

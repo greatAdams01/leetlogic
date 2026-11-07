@@ -9,6 +9,7 @@ import { getConfig } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { AppError } from "../lib/errors.js";
 import { assertCurrentDeliveryQuote, assertNoActiveCheckout, shippingOrderInclude, storedDeliveryInput } from "./delivery-quote.js";
+import { recordProviderTracking, trackedUrl } from "./delivery-tracking.js";
 export const shippingProvider = new Shipbubble();
 const bookingRetryMs = 5 * 60000;
 // Only failures before the irreversible label purchase are eligible for automatic retry.
@@ -30,10 +31,11 @@ export async function deliveryEvent(
   source: string,
   dedupeKey: string,
   actorId?: string,
+  details?: Prisma.InputJsonValue,
 ) {
   if (await tx.deliveryEvent.findUnique({ where: { dedupeKey } })) return;
   const event = await tx.deliveryEvent.create({
-    data: { deliveryId, status, source, dedupeKey, actorId },
+    data: { deliveryId, status, source, dedupeKey, actorId, ...(details === undefined ? {} : { details }) },
   });
   const delivery = await tx.delivery.findUniqueOrThrow({
     where: { id: deliveryId },
@@ -251,7 +253,7 @@ export async function finalizeDeliveryBooking(
     where: { id: delivery.id },
     data: {
       providerShipmentId: result.id,
-      trackingUrl: result.trackingUrl,
+      trackingUrl: trackedUrl(result),
       courier: result.courier,
       status: "BOOKED",
       bookingStartedAt: delivery.bookingStartedAt || new Date(),
@@ -278,6 +280,7 @@ export async function finalizeDeliveryBooking(
   if (review) await tx.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
   await deliveryEvent(tx, delivery.id, "BOOKED", source, `${delivery.id}:booked`, actorId);
   await deliveryEvent(tx, delivery.id, "COURIER_ASSIGNED", source, `${delivery.id}:courier-assigned`, actorId);
+  if (!result.id.startsWith("split:")) await recordProviderTracking(tx, delivery.id, result);
 }
 export async function applyTracking(deliveryId: string, tracked: TrackedShipment) {
   await prisma.$transaction(async (tx) => {
@@ -287,13 +290,16 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
     const d = await tx.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
     if (d.providerShipmentId !== tracked.id) throw new Error("SHIPMENT_MISMATCH");
     const next = normalizeDeliveryStatus(tracked.status);
+    const observedAt = tracked.updates?.filter(update => normalizeDeliveryStatus(update.status) === next).at(-1)?.datetime || tracked.observedAt;
     const advance = next && (canAdvanceDelivery(d.status, next) ||
       (d.providerShipmentId?.startsWith("split:") && tracked.requiresReview));
     const review = tracked.requiresReview || next === "RETURNING" || next === "RETURNED";
+    if (!tracked.id.startsWith("split:")) await recordProviderTracking(tx, d.id, tracked);
     await tx.delivery.update({
       where: { id: d.id },
       data: {
         ...(advance ? { status: next } : {}),
+        ...(tracked.trackingUrl ? { trackingUrl: trackedUrl(tracked) } : {}),
         lastSyncedAt: new Date(),
         nextSyncAt: new Date(Date.now() + 15 * 60000),
         leaseUntil: null,
@@ -302,13 +308,15 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
       },
     });
     if (review) await tx.tradeOrder.update({ where: { id: d.orderId }, data: { financialHold: true } });
-    if (next && (advance || d.status === next))
+    if (next && advance)
       await deliveryEvent(
         tx,
         d.id,
         next,
         "shipbubble",
-        `${d.id}:provider:${next}:${hashInput(tracked.observedAt ?? next)}`,
+        `${d.id}:provider:${next}:${hashInput(observedAt ?? next)}`,
+        undefined,
+        { providerShipmentId: tracked.id, ...(observedAt ? { providerTime: observedAt } : {}) },
       );
     // Carrier confirmation alone does not authorize escrow settlement.
     if (advance)

@@ -1,3 +1,5 @@
+import { deliveryStatusCopy } from "./delivery-visibility.js";
+
 export type OrderTab = "details" | "fulfillment" | "payment" | "activity";
 export const orderTabs: { id: OrderTab; label: string }[] = [
   { id: "details", label: "Order Details" },
@@ -43,6 +45,7 @@ export function orderFulfillment(input: {
   const bookingQueued = ["BOOKING_QUEUED", "BOOKING"].includes(status);
   const awaitingBooking = !collection && ready && !booked && status === "PAID";
   const topup = status === "TOPUP_REQUIRED";
+  const incompleteDelivery = !collection && status === "DELIVERED" && !receiptReady;
   const bookingNext = topup
     ? buyer
       ? "Payment is confirmed. Review and pay only the additional delivery amount to continue."
@@ -128,7 +131,7 @@ export function orderFulfillment(input: {
               : !paid
                 ? "Payment must be verified before preparation or collection."
                 : canConfirm
-                  ? "Confirm only after collecting and inspecting your produce."
+                  ? collection ? "Confirm only after collecting and inspecting your produce." : deliveryStatusCopy("DELIVERED").body
                   : canReady
                     ? "Prepare the produce, then mark it ready."
                     : canDispatch
@@ -139,10 +142,10 @@ export function orderFulfillment(input: {
                           : "Waiting for the farmer to prepare the produce."
                         : bookingBlocked || bookingQueued || awaitingBooking || topup
                           ? bookingNext
-                          : dispatched || ["PICKED_UP", "IN_TRANSIT"].includes(status)
-                            ? "The shipment is on its way. Courier tracking will update automatically."
-                            : status === "DELIVERED"
-                              ? "Waiting for the buyer to confirm receipt."
+                          : incompleteDelivery
+                            ? "Not every planned package has a matching delivery confirmation. Contact support before confirming receipt."
+                          : dispatched || ["PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED_ATTEMPT", "RETURNING", "RETURNED", "CANCELLED"].includes(status)
+                            ? deliveryStatusCopy(status, dispatched).body
                               : "Pickup is being arranged. Follow courier tracking for updates.";
   return {
     canAccept: canAccept && !terminal,
@@ -173,11 +176,13 @@ export function orderFulfillment(input: {
                       ? "Ready for Pickup"
                       : "Preparing for Pickup"
                     : status === "DELIVERED"
-                      ? "Awaiting buyer confirmation"
+                      ? incompleteDelivery ? "Delivery completion needs review" : "Delivered"
                       : status === "PICKED_UP"
                         ? "Picked Up"
-                         : status === "IN_TRANSIT"
-                           ? "In Transit"
+                          : status === "IN_TRANSIT"
+                            ? "In Transit"
+                            : ["FAILED_ATTEMPT", "RETURNING", "RETURNED", "CANCELLED", "BOOKING_UNCERTAIN", "MANUAL_REVIEW"].includes(status)
+                              ? deliveryStatusCopy(status).label
                            : bookingBlocked
                              ? "Courier booking needs attention"
                              : topup
@@ -192,6 +197,8 @@ export function orderFulfillment(input: {
                                        ? "Ready for Pickup"
                                        : "Preparing for Pickup",
     stage,
+    deliveryStatus: collection ? null : status,
+    deliveryComplete: receiptReady,
     steps: collection
       ? ["Payment confirmed", "Preparing", "Ready for Pickup", "Collected", "Completed"]
       : ["Payment confirmed", "Preparing", "Dispatched", "In Transit", "Completed"],

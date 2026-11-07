@@ -4,6 +4,10 @@ import { orderTabs, type OrderTab } from "../../../packages/contracts/src/order-
 import { CustomerOrderIssues } from "./customer-order-issues";
 import { CancelUnpaidOrder } from "./cancel-unpaid-order";
 import { GuidedOrder } from "./guided-order";
+import { DeliveryTracking } from "./delivery-tracking";
+import { deliveryVisibility } from "../../../packages/contracts/src/delivery-visibility";
+import { financeDate, financeLabel, financeRequest } from "./admin/finance-ui";
+import { userFacingError } from "../lib/user-facing-error";
 import { CustomerRecovery } from "./customer-recovery";
 import { CustomerPayment } from "./customer-payments";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,20 +30,23 @@ export function CustomerDelivery({
   id,
   staff = false,
   staffPermissions = [],
+  onChanged,
 }: {
   id: string;
   staff?: boolean;
   staffPermissions?: string[];
+  onChanged?: () => void;
 }) {
   const { t, locale } = useLanguage();
   const say = (text: string, params: Record<string, string | number> = {}) =>
     ui(locale, text, params);
-  const error = (value: unknown) => localizedError(locale, value);
+  const error = (value: unknown) => staff ? userFacingError(value) : localizedError(locale, value);
   const [data, setData] = useState<any>(null);
   const [tab, setTab] = useState<OrderTab>("details");
   const [reportIssue, setReportIssue] = useState(false);
   const [confirmation, setConfirmation] = useState<"confirm" | "dispatch" | null>(null);
   const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const requestVersion = useRef(0);
@@ -83,17 +90,7 @@ export function CustomerDelivery({
   const call = useCallback(
     async (suffix = "", body?: unknown) => {
       if (!staff) return customerApi(`orders/${id}/delivery${suffix}`, body);
-      const response = await fetch(`/api/admin/delivery-orders/${id}/delivery${suffix}`, {
-        method: body ? "POST" : "GET",
-        headers: { "Content-Type": "application/json" },
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw Object.assign(new Error(result.error?.message || "Request failed"), {
-          code: result.error?.code,
-        });
-      return result;
+      return financeRequest(`delivery-orders/${id}/delivery${suffix}`, body);
     },
     [id, staff],
   );
@@ -103,6 +100,7 @@ export function CustomerDelivery({
       const latest = await call();
       if (version !== requestVersion.current) return null;
       setData(latest);
+      setLoadError("");
       return latest;
     } catch (error) {
       if (version !== requestVersion.current) return null;
@@ -115,25 +113,28 @@ export function CustomerDelivery({
     setData(null);
     setDirty(false);
     setNotice("");
-    void load().catch((e) => setNotice(copy.current.error(e)));
+    setLoadError("");
+    void load().catch((e) => setLoadError(copy.current.error(e)));
     const timer = setInterval(() => setNow(Date.now()), 1000);
     let refreshing = false;
     const refresh = () => {
       if (refreshing || running.current || document.visibilityState !== "visible") return;
       refreshing = true;
       void load()
-        .catch((e) => setNotice(copy.current.error(e)))
+        .catch((e) => setLoadError(copy.current.error(e)))
         .finally(() => {
           refreshing = false;
         });
     };
     const updates = setInterval(refresh, 30000);
     window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       requestVersion.current++;
       clearInterval(timer);
       clearInterval(updates);
       window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [load]);
   useEffect(() => {
@@ -171,6 +172,8 @@ export function CustomerDelivery({
   async function action(suffix: string, body: unknown) {
     const currentContext = () => context.current.id === id && context.current.staff === staff;
     if (running.current || !currentContext()) return;
+    if (staff && loadError) return;
+    if (staff && !staffPermissions.includes(suffix === "/payment" ? "payments.manage" : "orders.manage")) return;
     if (
       suffix === "/select" &&
       (context.current.dirty ||
@@ -192,14 +195,7 @@ export function CustomerDelivery({
         (["/payment", "/link", "/cancel"].includes(suffix) ||
           /^\/parcels\/[^/]+\/link$/.test(suffix))
       ) {
-        const check = await fetch("/api/admin/auth/totp/step-up", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: stepUpCode }),
-        });
-        const result = await check.json();
-        if (!check.ok)
-          throw new Error(result.error?.message || "Authenticator confirmation failed");
+        await financeRequest("auth/totp/step-up", { code: stepUpCode });
         if (!currentContext()) return;
         setStepUpCode("");
       }
@@ -207,6 +203,7 @@ export function CustomerDelivery({
       if (!currentContext()) return;
       if (result.message) setNotice(result.message);
       await load();
+      if (currentContext()) onChanged?.();
       if (
         currentContext() &&
         ["/quotes", "/select", "/collection", "/refresh-quote"].includes(suffix)
@@ -249,12 +246,14 @@ export function CustomerDelivery({
     return (
       <section className="customer-panel">
         <h1>{t("delivery.title")}</h1>
-        <p role="status">{notice || t("common.loading")}</p>
+        <p role="status">{notice || loadError || t("common.loading")}</p>
         <Link href="/account">{t("auth.required")}</Link>
       </section>
     );
-  if (!staff && data.order.status !== "AWAITING_PAYMENT") return <GuidedOrder key={data.order.id} data={data} notice={notice} onRefresh={load} />;
+   if (!staff && data.order.status !== "AWAITING_PAYMENT") return <GuidedOrder key={data.order.id} data={data} notice={notice} loadError={loadError} onRefresh={load} />;
   const d = data.delivery;
+  const tracking = data.tracking !== undefined ? data.tracking : d && data.progress?.method !== "Pickup"
+    ? deliveryVisibility({ ...d, orderStatus: data.order.status, receiptConfirmedAt: data.order.deliveryConfirmedAt }) : null;
   const packing = data.order.packageSuggestion;
   const selected = d?.quotes.find((quote: any) => quote.id === d.selectedQuoteId);
   const collection = ["PICKUP_PENDING", "PICKUP_READY"].includes(d?.status);
@@ -301,6 +300,33 @@ export function CustomerDelivery({
     <section className="customer-panel order-workspace">
       <h1>{data.order.title}</h1>
       <p>{data.order.reference}</p>
+      {staff && data.staffContext && (
+        <section className="dispatch-order-context">
+          <h2>Order overview</h2>
+          <dl className="finance-facts">
+            {[
+              ["Order status", financeLabel(data.order.status)],
+              ["Buyer", `${data.staffContext.buyer.name} · ${data.staffContext.buyer.phone}`],
+              ["Farmer", `${data.staffContext.farmer.name} · ${data.staffContext.farmer.farmName}`],
+              ["Farmer confirmation", `${financeLabel(data.order.farmerDecision)} · ${financeDate(data.staffContext.farmerDecidedAt)}`],
+              ["Payment", data.staffContext.manualFundingRecorded ? "Manual escrow funded — provider verification is not implied" : data.money?.progress?.title || "Not verified"],
+              ["Produce funds held", money(data.money?.heldMinor || "0")],
+              ["Farmer payment", data.money?.progress?.transfer || "Not started"],
+              ["Receipt confirmation", data.order.deliveryConfirmedAt ? financeDate(data.order.deliveryConfirmedAt) : "Not confirmed"],
+              ["Order created", financeDate(data.staffContext.createdAt)],
+              ["Snapshot loaded", financeDate(data.observedAt)],
+            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+          </dl>
+          {data.order.rejectionReason && <p>Farmer reason: {data.order.rejectionReason}</p>}
+          {data.staffContext.financialHold && <p className="delivery-warning" role="status">Financial hold: fulfillment and settlement need review.</p>}
+          {data.staffContext.disputes.map((dispute: any) => <p key={dispute.id} className="delivery-warning">
+            Open dispute: {dispute.subject} · {financeLabel(dispute.status)}
+            {staffPermissions.includes("support.read") && <> · <Link href={`/admin/disputes?id=${dispute.id}`}>Review dispute</Link></>}
+          </p>)}
+          {data.fulfillment && <p>Fulfillment deadline: {financeLabel(data.fulfillment.state)} · {financeDate(data.fulfillment.refundDueAt)}. Existing deadlines are unchanged.</p>}
+          {staffPermissions.includes("payments.read") && <Link href={`/admin/reconciliation/orders/${id}`}>Open payment reconciliation</Link>}
+        </section>
+      )}
       {!staff && data.order.status === "AWAITING_PAYMENT" && !data.order.checkoutActive && <CancelUnpaidOrder orderId={data.order.id} onChanged={load} />}
       {data.progress && (
         <div className="order-summary">
@@ -461,6 +487,7 @@ export function CustomerDelivery({
         )}
         {visible("fulfillment") && (
           <>
+            <DeliveryTracking tracking={tracking} staff={staff} openTimeline={staff} />
             {!staff && (
               <section>
                 <h3>{say("Pickup location")}</h3>
@@ -489,12 +516,7 @@ export function CustomerDelivery({
                 {d.failureCode && (
                   <p role="status">{staff ? d.failureCode : error({ code: d.failureCode })}</p>
                 )}
-                {d.trackingUrl?.startsWith("https://") && (
-                  <a href={d.trackingUrl} target="_blank" rel="noreferrer">
-                    {t("delivery.tracking")}
-                  </a>
-                )}
-                {d.parcels?.map((parcel: any) => (
+                {!tracking && d.parcels?.map((parcel: any) => (
                   <article key={parcel.id}>
                     <h3>{say("Parcel {number}", { number: parcel.parcelIndex + 1 })}</h3>
                     <p>{t(`status.${parcel.status}` as MessageKey) || parcel.status}</p>
@@ -820,9 +842,9 @@ export function CustomerDelivery({
         )}
         {visible("activity") && (
           <>
-            {d?.events?.length ? (
+             {!tracking && d?.events?.length ? (
               <ol>
-                {d.events.map((event: any) => (
+                 {d.events.filter((event: any) => !["PROVIDER_CONTACT_UPDATED", "PROVIDER_UPDATE"].includes(event.status)).map((event: any) => (
                   <li key={event.id}>
                     {say(orderUpdateCopy(`status.${event.status}`, data.order.isBuyer).title)} —{" "}
                     {new Date(event.createdAt).toLocaleString()}
@@ -830,14 +852,15 @@ export function CustomerDelivery({
                 ))}
               </ol>
             ) : (
-              <p>{say("No activity yet.")}</p>
+               !tracking && <p>{say("No activity yet.")}</p>
             )}
           </>
         )}
       </div>
-      {staff && d && (
+      {staff && d && (manage || staffPermissions.includes("payments.manage")) && (
         <div>
           <h2>Delivery operations</h2>
+          <p>These actions use the existing booking and reconciliation safeguards. Tracking refresh does not buy another label or confirm receipt.</p>
           {(staffPermissions.includes("payments.manage") ||
             staffPermissions.includes("orders.manage")) && (
             <label>
@@ -851,7 +874,7 @@ export function CustomerDelivery({
               />
             </label>
           )}
-          {d.status === "MANUAL_REVIEW" && (
+           {manage && d.status === "MANUAL_REVIEW" && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -878,7 +901,7 @@ export function CustomerDelivery({
               <button disabled={busy}>Assign manual dispatch</button>
             </form>
           )}
-          {!d.providerShipmentId &&
+           {manage && !d.providerShipmentId &&
             ["MANUAL_ASSIGNED", "PICKED_UP", "IN_TRANSIT", "FAILED_ATTEMPT", "RETURNING"].includes(
               d.status,
             ) && (
@@ -917,10 +940,11 @@ export function CustomerDelivery({
                 <button disabled={busy}>Update manual shipment</button>
               </form>
             )}
-          <button disabled={busy} onClick={() => action("/reconcile", {})}>
-            Reconcile provider tracking
-          </button>
-          {d.status === "BOOKING_UNCERTAIN" && !d.parcels?.length && (
+          {manage && d.providerShipmentId && !["CANCELLED", "RETURNED", "BOOKING_UNCERTAIN", "BOOKING_BLOCKED", "BOOKING"].includes(d.status) && <button disabled={busy || !!loadError} onClick={() => action("/reconcile", {})}>
+            Queue provider tracking refresh
+          </button>}
+          {manage && d.status === "BOOKING_UNCERTAIN" && <p className="delivery-warning">Check the existing provider booking and link matching shipment IDs. Do not pay or book again.</p>}
+          {manage && d.status === "BOOKING_UNCERTAIN" && !d.parcels?.length && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -942,7 +966,7 @@ export function CustomerDelivery({
               <button disabled={busy}>Link existing shipment</button>
             </form>
           )}
-          {d.status === "BOOKING_UNCERTAIN" &&
+          {manage && d.status === "BOOKING_UNCERTAIN" &&
             d.parcels
               ?.filter((parcel: any) => ["BOOKING", "BOOKING_UNCERTAIN"].includes(parcel.status))
               .map((parcel: any) => (
@@ -970,6 +994,7 @@ export function CustomerDelivery({
                 </form>
               ))}
           {staffPermissions.includes("payments.manage") &&
+            data.staffContext?.fundsProvider !== "bachs" &&
             ["PAYMENT_PENDING", "PAID"].includes(d.status) && (
               <form
                 onSubmit={(e) => {
@@ -988,7 +1013,7 @@ export function CustomerDelivery({
                 <button disabled={busy}>Confirm delivery payment</button>
               </form>
             )}
-          {d.providerShipmentId && (
+          {manage && d.providerShipmentId && !d.cancelRequestedAt && !["DELIVERED", "CANCELLED", "RETURNED"].includes(d.status) && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1003,8 +1028,17 @@ export function CustomerDelivery({
               <button disabled={busy}>Request cancellation</button>
             </form>
           )}
+          {d.cancelRequestedAt && <p className="delivery-warning">Cancellation was requested. Reconciliation is pending; no refund is implied and the request must not be repeated.</p>}
         </div>
       )}
+      {staff && data.legacyShipment && <section>
+        <h2>Legacy manual shipment</h2>
+        <p>{data.legacyShipment.carrier} · {data.legacyShipment.trackingRef} · {financeLabel(data.legacyShipment.status)}</p>
+        <p>{data.legacyShipment.evidence || "No delivery evidence recorded."}</p>
+        <p>A legacy staff delivery record is not a new buyer receipt acknowledgment.</p>
+        <Link href={`/admin/logistics?legacy=1&id=${data.legacyShipment.id}`}>Open legacy shipment controls</Link>
+      </section>}
+      {loadError && <p role="alert">{loadError}{staff && data.observedAt ? ` Showing the snapshot loaded at ${financeDate(data.observedAt)}.` : ""}</p>}
       <p role="status">{notice}</p>
     </section>
   );

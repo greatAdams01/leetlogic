@@ -900,6 +900,8 @@ model DeliveryEvent {
   status String @db.VarChar(40)
   source String @db.VarChar(30)
   actorId String? @db.Uuid
+  // Whitelisted provider timestamps, shipment scope and optional courier/rider contacts.
+  details Json?
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
   notifications DeliveryNotification[]

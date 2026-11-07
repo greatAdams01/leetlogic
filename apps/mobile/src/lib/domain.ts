@@ -110,6 +110,8 @@ export type Contact = {
   longitude?: number;
 };
 export type DeliveryData = {
+  tracking?: import("../../../../packages/contracts/src/delivery-visibility").DeliveryVisibility | null;
+  observedAt?: string;
   money?: { progress?: import("../../../../packages/contracts/src/order-payment-progress").OrderPaymentProgress; heldMinor: string; releasedMinor: string; refundedMinor: string; release?: { status: string; failureCode?: string | null } | null };
   progress?: import("../../../../packages/contracts/src/order-fulfillment").OrderFulfillment;
   fulfillment?: { state: string; collectionBuyerAt: string | null } | null;
@@ -166,6 +168,8 @@ export type DeliveryData = {
     courier: string | null;
     providerShipmentId?: string | null;
     bookingStartedAt?: string | null;
+    lastSyncedAt?: string | null;
+    createdAt?: string;
     failureCode?: string | null;
     package?: {
       weightKg: number;
@@ -191,6 +195,6 @@ export type DeliveryData = {
       expiresAt: string;
       available: boolean;
     }[];
-    events: { id: string; status: string; source: string; createdAt: string }[];
+    events: { id: string; status: string; source: string; createdAt: string; details?: unknown }[];
   };
 };

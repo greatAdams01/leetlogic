@@ -4,13 +4,15 @@ import { orderJourney } from "../../../../packages/contracts/src/order-journey";
 import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 import { api } from "../lib/api";
-import { money, safeHttps, type DeliveryData } from "../lib/domain";
+import { money, type DeliveryData } from "../lib/domain";
 import { useApp } from "../state";
 import { Button, Card, Field, Heading, Icon, Label, Notice, Page, colors, s } from "./ui";
 import { OrderPayment } from "./order-payment";
 import { PaymentRecovery } from "./payment-recovery";
 import { OrderDisputes, EvidencePhoto } from "./order-disputes";
 import { ReceiptConfirmation } from "./receipt-confirmation";
+import { DeliveryTracking } from "./delivery-tracking";
+import { deliveryVisibility } from "../../../../packages/contracts/src/delivery-visibility";
 export function GuidedOrder({
   data,
   error: loadError,
@@ -24,6 +26,8 @@ export function GuidedOrder({
     order = data.order,
     d = data.delivery,
     buyer = order.isBuyer;
+  const tracking = data.tracking !== undefined ? data.tracking : d && data.progress?.method !== "Pickup"
+    ? deliveryVisibility({ ...d, orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt }) : null;
   const guide = orderJourney({
     buyer,
     progress: data.progress,
@@ -279,9 +283,7 @@ export function GuidedOrder({
           )}
         </Card>
       )}
-      {d?.trackingUrl && safeHttps(d.trackingUrl) && (
-        <Button title="Track delivery" secondary onPress={() => void link(d.trackingUrl!)} />
-      )}
+      <DeliveryTracking tracking={tracking} showGuidance={false} />
       {data.progress?.canReject && !buyer && !reject && (
         <Button
           title="Cannot fulfill this order"
@@ -376,7 +378,7 @@ export function GuidedOrder({
             ) : key === "history" ? (
               <Card>
                 {d?.events?.length ? (
-                  d.events.map((event) => (
+                  d.events.filter(event => !["PROVIDER_CONTACT_UPDATED", "PROVIDER_UPDATE"].includes(event.status)).map((event) => (
                     <View key={event.id} style={{ gap: 4 }}>
                       <Label>{a.ui(orderUpdateCopy(`status.${event.status}`, buyer).title)}</Label>
                       <Label muted>{a.date(event.createdAt)}</Label>

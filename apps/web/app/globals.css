@@ -970,6 +970,27 @@ main img[src$=".svg"] {
 .customer-panel dd { margin: 4px 0; }
 
 .order-workspace { max-width:1000px; margin-inline:auto; }
+.delivery-tracking { background:#fff; border:1px solid #d5e5da; border-radius:14px; padding:20px; margin-block:18px; }
+.delivery-tracking-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.delivery-tracking-heading h2 { margin:0; font-size:20px; }
+.delivery-tracking-heading > strong { color:#14532d; }
+.delivery-tracking-meta { color:#5d7163; font-size:13px; line-height:1.6; }
+.delivery-milestones { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; padding:0; list-style:none; margin-block:20px; }
+.delivery-milestones > li { border-top:4px solid #d9e3dc; padding-top:12px; display:flex; flex-direction:column; gap:6px; font-size:14px; }
+.delivery-milestones > li.reported { border-color:#27834b; }
+.delivery-milestones small { color:#5d7163; line-height:1.5; }
+.delivery-warning { background:#fff6e6; border:1px solid #ead6ae; border-radius:10px; padding:14px; margin-block:12px; }
+.delivery-warning p { margin-bottom:0; line-height:1.6; }
+.delivery-assignments { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr)); gap:14px; margin-block:16px; }
+.delivery-assignments > article { border:1px solid #dce6df; border-radius:10px; padding:14px; min-width:0; }
+.delivery-assignments h3 { font-size:15px; margin-top:0; }
+.delivery-assignments p { line-height:1.6; margin-block:8px; }
+.delivery-reference { overflow-wrap:anywhere; display:block; color:#5d7163; font-size:12px; }
+.delivery-timeline { list-style:none; padding-left:14px; border-left:2px solid #dce6df; margin-block:16px; }
+.delivery-timeline > li { padding:8px 0 16px 14px; }
+.delivery-timeline p { margin-block:6px; }
+.delivery-timeline small { color:#5d7163; }
+@media(max-width:600px) { .delivery-milestones { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .order-summary { background:#f0f8f2; border:1px solid #d5e5da; border-radius:14px; padding:20px; }
 .order-summary > p { line-height:1.6; }
 .order-tabs { position:sticky; top:0; z-index:5; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:#fff; border-bottom:1px solid #dbe5de; margin-block:20px; }

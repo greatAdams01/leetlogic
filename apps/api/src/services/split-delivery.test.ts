@@ -2,8 +2,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ rows: [] as any[], book: vi.fn(), track: vi.fn(), cancel: vi.fn() }));
 vi.mock("@leetlogic/database", () => {
   const client = {
-    delivery: { update: vi.fn() },
+    $queryRaw: vi.fn(),
+    delivery: { update: vi.fn(), findUniqueOrThrow: async () => ({ orderId: "order" }) },
+    deliveryEvent: { upsert: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
     deliveryParcel: {
+      findUniqueOrThrow: async ({ where }: any) => ({ ...h.rows.find(row => row.id === where.id) }),
       upsert: async ({ create }: any) => {
         const row = h.rows.find((item) => item.parcelIndex === create.parcelIndex);
         if (!row)

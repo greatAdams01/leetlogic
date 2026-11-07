@@ -4,7 +4,9 @@ import { orderPaymentView } from "../services/order-payment-view.js";
 import { storeMedia, readMedia, deleteMedia } from "../services/storage/private-media.js";
 import { imageType } from "./produce-photos.js";
 import { mode, queueReceiptRelease } from "../services/payments.js";
-import { orderFulfillment } from "@leetlogic/contracts";
+import { deliveryVisibility, orderFulfillment } from "@leetlogic/contracts";
+import { fulfillmentView } from "../services/order-fulfillment-view.js";
+import { recordProviderTracking, trackedUrl } from "../services/delivery-tracking.js";
 import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
 import { financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
@@ -73,7 +75,7 @@ async function orderAccess(req: Request) {
       delivery: {
         include: {
           quotes: { orderBy: { createdAt: "desc" }, take: 30 },
-          events: { orderBy: { createdAt: "asc" } },
+          events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
         },
       },
     },
@@ -301,52 +303,6 @@ customerDeliveryRouter.post("/:id/delivery/pickup", async (req, res) => {
   });
   res.json({ saved: true });
 });
-async function fulfillmentView(
-  order: any,
-  buyer: boolean,
-  farmer: boolean,
-  tx: Prisma.TransactionClient = prisma,
-) {
-  const d = order.delivery;
-  const parcels = d ? await tx.deliveryParcel.findMany({ where: { deliveryId: d.id } }) : [];
-  const events = d
-    ? await tx.deliveryEvent.findMany({ where: { deliveryId: d.id }, select: { status: true } })
-    : [];
-  const count = (d?.package as any)?.packageCount || 1;
-  const manual = d?.status === "MANUAL_ASSIGNED" ? await tx.shipment.findUnique({where:{orderId:order.id}}) : null;
-  const booked = !!(manual && manual.carrier === d?.courier && manual.trackingRef && manual.status === "ASSIGNED") ||
-    !!d?.providerShipmentId &&
-    (count === 1 || (parcels.length === count && new Set(parcels.map(p=>p.parcelIndex)).size===count && parcels.every(p => !!p.providerShipmentId && p.quoteId===d.selectedQuoteId && p.parcelIndex>=0 && p.parcelIndex<count)));
-  const disputed =
-    order.financialHold ||
-    (await tx.supportTicket.count({
-      where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } },
-    }));
-  const blocked =
-    !!disputed ||
-    (await hasDeliverySettlement(order.id, tx)) ||
-    ["CANCELLED", "RETURNING", "RETURNED", "BOOKING_UNCERTAIN"].includes(d?.status || "");
-  return orderFulfillment({
-    farmerDecision: order.farmerDecision,
-    handedOver: !!order.handedOverAt,
-    review: !!disputed,
-    orderStatus: order.status,
-    paid: ["FUNDED", "DELIVERED", "COMPLETED"].includes(order.status),
-    confirmed: !!order.deliveryConfirmedAt,
-    blocked: !!blocked,
-    buyer,
-    farmer,
-    status: d?.status || "",
-    bookingFailureCode: d?.failureCode,
-    ready: events.some((e) => e.status === "READY_FOR_PICKUP"),
-    dispatched: events.some((e) => e.status === "FARMER_DISPATCHED"),
-    booked,
-    receiptReady: deliveryReceiptReady(d ? { ...d, parcels } : null),
-    collection:
-      !!d?.status?.startsWith("PICKUP_") ||
-      (d?.status === "DELIVERED" && !d.selectedQuoteId && !d.providerShipmentId && !d.courier),
-  });
-}
 customerDeliveryRouter.post("/:id/delivery/dispatch", async (req, res) => {
   const order = await orderAccess(req);
   if (order.farmerProfile.userId !== req.auth!.sub)
@@ -478,6 +434,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     res.set("Cache-Control", "private, no-store");
     const order = await orderAccess(req);
     const delivery = order.delivery;
+    const parcels = delivery ? await prisma.deliveryParcel.findMany({ where: { deliveryId: delivery.id }, orderBy: { parcelIndex: "asc" } }) : [];
     const checkout = checkoutSummary(order);
     const ownOrStaff = req.auth!.subject === "admin" || order.farmerProfile.userId === req.auth!.sub;
     const pickupContactAvailable = ownOrStaff || await buyerPickupContactAvailable(order);
@@ -495,8 +452,32 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       } catch { /* Historical or incompatible quotes remain visible, but cannot be selected. */ }
       return { ...quote, available };
     }) || [];
+    const staffContext = req.auth!.subject === "admin" ? {
+      buyer: { name: order.buyer.profile?.fullName || order.buyer.profile?.displayName || order.buyer.phoneE164, phone: order.buyer.phoneE164 },
+      farmer: { name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName, farmName: order.farmerProfile.farmName, phone: order.farmerProfile.user.phoneE164 },
+      farmerDecidedAt: order.farmerDecidedAt,
+      createdAt: order.createdAt,
+      fundsProvider: order.fundsProvider,
+      manualFundingRecorded: order.fundsProvider !== "bachs" && !!(await prisma.escrowEntry.count({ where: { orderId: order.id, kind: "FUND" } })),
+      financialHold: order.financialHold,
+      disputes: await prisma.supportTicket.findMany({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } }, select: { id: true, status: true, subject: true } }),
+    } : undefined;
     res.json(
       serialize({
+        observedAt: new Date().toISOString(),
+        ...(staffContext ? { staffContext } : {}),
+        tracking: delivery && !delivery.status.startsWith("PICKUP_") && !(delivery.status === "DELIVERED" && !delivery.selectedQuoteId && !delivery.providerShipmentId && !delivery.courier)
+          ? deliveryVisibility({ ...delivery, parcels, orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt })
+          : !delivery && order.shipment ? deliveryVisibility({
+            status: order.shipment.status === "ASSIGNED" ? "MANUAL_ASSIGNED" : order.shipment.status,
+            courier: order.shipment.carrier, createdAt: order.shipment.createdAt, bookingStartedAt: order.shipment.updatedAt,
+            orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt,
+          }) : null,
+        legacyShipment: !delivery && order.shipment ? {
+          id: order.shipment.id, carrier: order.shipment.carrier, trackingRef: order.shipment.trackingRef,
+          status: order.shipment.status, evidence: order.shipment.evidence,
+          createdAt: order.shipment.createdAt, updatedAt: order.shipment.updatedAt,
+        } : null,
         money: {
           progress: await orderPaymentView(order),
           heldMinor: order.heldMinor, releasedMinor: order.releasedMinor, refundedMinor: order.refundedMinor,
@@ -542,11 +523,9 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
               ...delivery,
               pickup: pickupContactView(delivery.pickup, pickupContactAvailable),
               quotes: rankDeliveryQuotes(quotes).map(safeQuote),
-              parcels: await prisma.deliveryParcel.findMany({
-                where: { deliveryId: delivery.id },
-                orderBy: { parcelIndex: "asc" },
-                select: { id: true, parcelIndex: true, status: true, trackingUrl: true },
-              }),
+              parcels: parcels.map(({ id, parcelIndex, status, trackingUrl, failureCode, providerShipmentId, quoteId }) => ({
+                id, parcelIndex, status, trackingUrl, failureCode, ...(staffContext ? { providerShipmentId, quoteId } : {}),
+              })),
             }
           : null,
       }),
@@ -905,7 +884,7 @@ staffDeliveryRouter.post(
         "Locate the shipment in Shipbubble and link it; do not repeat an uncertain booking",
       );
     await prisma.delivery.update({ where: { id: d.id }, data: { nextSyncAt: new Date() } });
-    res.status(202).json({ queued: true });
+    res.status(202).json({ queued: true, message: "Tracking refresh queued. The recorded status changes only after a verified provider update." });
   },
 );
 staffDeliveryRouter.post(
@@ -968,7 +947,7 @@ staffDeliveryRouter.post(
         },
         data: {
           providerShipmentId: tracked.id,
-          trackingUrl: tracked.trackingUrl,
+          trackingUrl: trackedUrl(tracked),
           actualMinor: tracked.shippingMinor,
           status: "BOOKED",
           failureCode: null,
@@ -976,6 +955,7 @@ staffDeliveryRouter.post(
       });
       if (!changed.count)
         throw new AppError(409, "STALE_RECORD", "Parcel changed. Refresh and try again.");
+      await recordProviderTracking(tx, current.id, tracked, parcel.parcelIndex);
       const parcels = await tx.deliveryParcel.findMany({ where: { deliveryId: current.id } });
       const recorded = recordedSplitBooking(current.id, quote, parcels);
       if (recorded) {

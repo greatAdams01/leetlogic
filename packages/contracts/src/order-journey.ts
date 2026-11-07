@@ -1,4 +1,5 @@
 import type { OrderFulfillment } from "./order-fulfillment.js";
+import { deliveryProblemStates, deliveryStatusCopy, farmerDeliveryStatusCopy } from "./delivery-visibility.js";
 export type JourneyAction = "accept" | "ready" | "dispatch" | "handover" | "confirm" | null;
 export function orderJourney(input: {
   buyer: boolean;
@@ -73,14 +74,27 @@ export function orderJourney(input: {
     }
   } else if (p?.canConfirm && buyer) {
     stage = 3;
-    title = "Have you received your goods?";
+    title = pickup ? "Have you received your goods?" : deliveryStatusCopy("DELIVERED").title;
     body = "Check the quantity and condition before confirming.";
     action = "confirm";
     label = "Confirm Receipt";
+  } else if (p?.status === "Delivery completion needs review") {
+    title = "Delivery completion needs review";
+    body = p.next;
+    receiptPending = buyer;
+    stage = 3;
+  } else if (p?.status === "Courier booking needs attention" && !p.canReady) {
+    title = p.status;
+    body = p.next;
+    stage = 2;
+  } else if (p?.deliveryStatus && p.deliveryStatus !== "BOOKING_BLOCKED" && deliveryProblemStates.includes(p.deliveryStatus)) {
+    title = deliveryStatusCopy(p.deliveryStatus).title;
+    body = p.next;
+    stage = 3;
   } else if (
     input.handedOver ||
     p?.handedOver ||
-    ["Dispatched", "Picked Up", "In Transit", "Awaiting buyer confirmation"].includes(
+    ["Dispatched", "Picked Up", "In Transit", "Delivered", "Awaiting buyer confirmation"].includes(
       p?.status || "",
     )
   ) {
@@ -89,11 +103,11 @@ export function orderJourney(input: {
     title = buyer
       ? pickup
         ? "Goods collected"
-        : "Your goods are on the way"
-      : "Waiting for buyer confirmation";
+        : deliveryStatusCopy(p?.deliveryStatus || "BOOKED", p?.status === "Dispatched").title
+      : pickup ? "Waiting for buyer confirmation" : farmerDeliveryStatusCopy(p?.deliveryStatus || "BOOKED", p?.status === "Dispatched").title;
     body = buyer
-      ? "Follow delivery updates. Confirm after receiving and inspecting everything."
-      : "The buyer will inspect the goods and confirm receipt.";
+      ? pickup ? "Follow delivery updates. Confirm after receiving and inspecting everything." : deliveryStatusCopy(p?.deliveryStatus || "BOOKED", p?.status === "Dispatched").body
+      : pickup ? "The buyer will inspect the goods and confirm receipt." : farmerDeliveryStatusCopy(p?.deliveryStatus || "BOOKED", p?.status === "Dispatched").body;
   } else if (p?.canDispatch && !buyer) {
     stage = 2;
     title = "Ready for rider pickup";

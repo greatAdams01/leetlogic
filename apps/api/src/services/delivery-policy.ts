@@ -25,7 +25,7 @@ export function normalizeDeliveryStatus(status: string): string | undefined {
       returning: "RETURNING",
       returned: "RETURNED",
     } as Record<string, string>
-  )[status.toLowerCase()];
+  )[status.trim().toLowerCase().replace(/[\s-]+/g, "_")];
 }
 export function canAdvanceDelivery(current: string, next: string) {
   if (current === "DELIVERED" && ["RETURNING", "RETURNED"].includes(next)) return true;

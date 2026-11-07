@@ -5,6 +5,7 @@ import {
   type TrackedShipment,
 } from "../providers/shipping/shipbubble.js";
 import { canAdvanceDelivery, normalizeDeliveryStatus } from "./delivery-policy.js";
+import { recordProviderTracking, trackedUrl } from "./delivery-tracking.js";
 
 type SplitQuote = { id: string; requestToken: string; courier: string };
 export function splitPlanMatches(quote: SplitQuote, parcels: DeliveryParcel[]) {
@@ -79,16 +80,19 @@ export async function bookSplitDelivery(
     if (!claimed.count) throw new Error("SPLIT_BOOKING_UNCERTAIN");
     try {
       const result = await provider.book(parcel);
-      await prisma.deliveryParcel.update({
-        where: { id: parcel.id },
-        data: {
-          providerShipmentId: result.id,
-          trackingUrl: result.trackingUrl,
-          actualMinor: result.shippingMinor,
-          status: "BOOKED",
-          // The label exists even if the courier differs. Keep it, but never hide the mismatch.
-          failureCode: result.courier !== quote.courier ? "SHIPMENT_MISMATCH" : null,
-        },
+      await prisma.$transaction(async tx => {
+        await tx.deliveryParcel.update({
+          where: { id: parcel.id },
+          data: {
+            providerShipmentId: result.id,
+            trackingUrl: trackedUrl(result),
+            actualMinor: result.shippingMinor,
+            status: "BOOKED",
+            // The label exists even if the courier differs. Keep it, but never hide the mismatch.
+            failureCode: result.courier !== quote.courier ? "SHIPMENT_MISMATCH" : null,
+          },
+        });
+        await recordProviderTracking(tx, deliveryId, result, parcel.parcelIndex);
       });
     } catch (error) {
       await prisma.deliveryParcel.update({
@@ -159,12 +163,19 @@ export async function trackSplitDelivery(
       const tracked = await provider.track(parcel.providerShipmentId);
       if (tracked.id !== parcel.providerShipmentId) throw new Error("SHIPMENT_MISMATCH");
       const next = normalizeDeliveryStatus(tracked.status);
-      await prisma.deliveryParcel.update({
-        where: { id: parcel.id },
-        data: {
-          ...(next && canAdvanceDelivery(parcel.status, next) ? { status: next } : {}),
-          trackingUrl: tracked.trackingUrl,
-        },
+      await prisma.$transaction(async tx => {
+        const owner = await tx.delivery.findUniqueOrThrow({ where: { id: deliveryId }, select: { orderId: true } });
+        await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${owner.orderId}::uuid FOR UPDATE`;
+        const current = await tx.deliveryParcel.findUniqueOrThrow({ where: { id: parcel.id } });
+        if (current.providerShipmentId !== tracked.id) throw new Error("SHIPMENT_MISMATCH");
+        await tx.deliveryParcel.update({
+          where: { id: parcel.id },
+          data: {
+            ...(next && canAdvanceDelivery(current.status, next) ? { status: next } : {}),
+            trackingUrl: trackedUrl(tracked),
+          },
+        });
+        await recordProviderTracking(tx, deliveryId, tracked, parcel.parcelIndex);
       });
     } catch (error) {
       // A failed read or ambiguous cancellation must not prevent other labels being reconciled.

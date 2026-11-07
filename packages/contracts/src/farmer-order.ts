@@ -1,4 +1,5 @@
 import type { OrderFulfillment } from "./order-fulfillment.js";
+import { farmerDeliveryStatusCopy } from "./delivery-visibility.js";
 /** Farmer-facing guidance changes wording only; the server still authorizes every action. */
 export function farmerOrderGuide(progress?: OrderFulfillment) {
   const collection = progress?.method === "Pickup";
@@ -23,7 +24,7 @@ export function farmerOrderGuide(progress?: OrderFulfillment) {
       step: 0,
       method,
     } as const;
-  if (progress.status === "Needs review" || (!progress.canReady && ["Courier booking needs attention", "Delivery top-up required"].includes(progress.status)))
+  if (progress.status === "Needs review" || (!progress.canReady && ["Courier booking needs attention", "Delivery top-up required", "Delivery attempt failed", "Returning to farmer", "Returned to farmer", "Delivery cancelled", "Booking needs reconciliation", "Manual delivery needs review", "Delivery completion needs review"].includes(progress.status)))
     return {
       title: "This order needs help",
       body: progress.status === "Needs review" ? "Staff are reviewing this order. Get help before taking another action." : progress.next,
@@ -66,13 +67,13 @@ export function farmerOrderGuide(progress?: OrderFulfillment) {
       method,
     } as const;
   if (
-    ["Dispatched", "Picked Up", "In Transit", "Awaiting buyer confirmation"].includes(
+    ["Dispatched", "Picked Up", "In Transit", "Delivered", "Awaiting buyer confirmation"].includes(
       progress.status,
     )
   )
     return {
-      title: "Waiting for buyer confirmation",
-      body: "The produce has left your farm. The buyer will confirm after receiving it.",
+      title: collection ? "Waiting for buyer confirmation" : farmerDeliveryStatusCopy(progress.deliveryStatus || "BOOKED", progress.status === "Dispatched").title,
+      body: collection ? "The produce has left your farm. The buyer will confirm after receiving it." : farmerDeliveryStatusCopy(progress.deliveryStatus || "BOOKED", progress.status === "Dispatched").body,
       action: null,
       step: 2,
       method,

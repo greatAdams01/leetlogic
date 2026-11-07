@@ -11,13 +11,17 @@ import { ui, localizedError } from "../../mobile/src/lib/localization";
 import { CustomerPayment } from "./customer-payments";
 import { CustomerRecovery } from "./customer-recovery";
 import { CustomerOrderIssues } from "./customer-order-issues";
+import { DeliveryTracking } from "./delivery-tracking";
+import { deliveryVisibility } from "../../../packages/contracts/src/delivery-visibility";
 export function GuidedOrder({
   data,
   notice,
+  loadError = "",
   onRefresh,
 }: {
   data: any;
   notice: string;
+  loadError?: string;
   onRefresh: () => Promise<void>;
 }) {
   const { locale } = useLanguage(),
@@ -25,6 +29,8 @@ export function GuidedOrder({
   const o = data.order,
     d = data.delivery,
     buyer = o.isBuyer;
+  const tracking = data.tracking !== undefined ? data.tracking : d && data.progress?.method !== "Pickup"
+    ? deliveryVisibility({ ...d, orderStatus: o.status, receiptConfirmedAt: o.deliveryConfirmedAt }) : null;
   const guide = orderJourney({
     buyer,
     progress: data.progress,
@@ -54,7 +60,7 @@ export function GuidedOrder({
     return () => URL.revokeObjectURL(url);
   }, [file]);
   useEffect(() => {
-    if (confirm && guide.action === "confirm") confirmationRef.current?.showModal();
+    if (confirm && guide.action === "confirm" && !loadError) confirmationRef.current?.showModal();
     else {
       confirmationRef.current?.close();
       if (confirm) {
@@ -62,7 +68,7 @@ export function GuidedOrder({
         setAck(false);
       }
     }
-  }, [confirm, guide.action]);
+  }, [confirm, guide.action, loadError]);
   const run = async (path: string, body: unknown = {}) => {
     if (running.current) return;
     running.current = true;
@@ -82,7 +88,7 @@ export function GuidedOrder({
     }
   };
   const submitReceipt = async () => {
-    if (running.current || !file || !ack || guide.action !== "confirm") return;
+    if (running.current || !file || !ack || guide.action !== "confirm" || loadError) return;
     running.current = true;
     setBusy(true);
     setError("");
@@ -111,7 +117,7 @@ export function GuidedOrder({
     }
   };
   const act = () => {
-    if (!guide.action || running.current) return;
+    if (!guide.action || running.current || loadError) return;
     if (guide.action === "confirm") setConfirm(true);
     else if (guide.action === "accept") void run("decision", { accept: true });
     else if (guide.action === "ready") void run("ready");
@@ -141,9 +147,9 @@ export function GuidedOrder({
         <h1>{say(guide.title)}</h1>
         <p>{say(guide.body)}</p>
       </section>
-      {(error || notice) && (
+      {(error || notice || loadError) && (
         <p className="journey-feedback" role="alert">
-          {error || notice}
+          {error || notice || loadError}
         </p>
       )}
       {o.checkoutErrorCode === "ORDER_EXPIRED" && o.listingId && (
@@ -227,11 +233,7 @@ export function GuidedOrder({
           )}
         </section>
       )}
-      {d?.trackingUrl?.startsWith("https://") && (
-        <a className="journey-link" target="_blank" rel="noreferrer" href={d.trackingUrl}>
-          {say("Track delivery")} ↗
-        </a>
-      )}
+      <DeliveryTracking tracking={tracking} showGuidance={false} />
       {data.progress?.canReject && !buyer && !reject && (
         <button className="secondary" disabled={busy} onClick={() => setReject(true)}>
           {say("Cannot fulfill this order")}
@@ -302,7 +304,7 @@ export function GuidedOrder({
       <details>
         <summary>{say("Order notifications")}</summary>
         <ol className="journey-history">
-          {d?.events?.map((event: any) => (
+          {d?.events?.filter((event: any) => !["PROVIDER_CONTACT_UPDATED", "PROVIDER_UPDATE"].includes(event.status)).map((event: any) => (
             <li key={event.id}>
               <strong>{say(orderUpdateCopy(`status.${event.status}`, buyer).title)}</strong>
               <p>{new Date(event.createdAt).toLocaleString(locale)}</p>
@@ -329,7 +331,7 @@ export function GuidedOrder({
             <>
               <h2>{say("Have all goods been handed over?")}</h2>
               <p>{say("Buyer confirmation is still required before payment release.")}</p>
-              <button disabled={busy} onClick={() => void run(guide.action!)}>
+              <button disabled={busy || !!loadError} onClick={() => void run(guide.action!)}>
                 {say(guide.label)}
               </button>
               <button className="secondary" disabled={busy} onClick={() => setHandoff(false)}>
@@ -338,7 +340,7 @@ export function GuidedOrder({
             </>
           ) : (
             <>
-              <button disabled={busy || !guide.action} onClick={act}>
+              <button disabled={busy || !!loadError || !guide.action} onClick={act}>
                 {say(busy ? "Saving…" : guide.receiptPending ? "Confirm Receipt" : guide.label)}
               </button>
               <small>{say(guide.after)}</small>
@@ -399,7 +401,7 @@ export function GuidedOrder({
         </label>
         {error && <p role="alert">{error}</p>}
         <button
-          disabled={busy || !file || !ack || guide.action !== "confirm"}
+          disabled={busy || !!loadError || !file || !ack || guide.action !== "confirm"}
           onClick={() => void submitReceipt()}
         >
           {say(busy ? "Saving…" : "Confirm Receipt")}

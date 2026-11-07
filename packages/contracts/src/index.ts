@@ -1,6 +1,7 @@
 import { z } from "zod";
 export { isHostedPaymentUrl } from "./payment-urls.js";
 export { normalizeNigerianPhone } from "./phone.js";
+export * from "./delivery-visibility.js";
 
 export const localeSchema = z.enum(["en", "pcm", "ig", "ha", "yo"]);
 export type Locale = z.infer<typeof localeSchema>;

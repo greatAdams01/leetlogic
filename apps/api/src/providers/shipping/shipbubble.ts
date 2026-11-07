@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError } from "../../lib/errors.js";
 import { getConfig } from "../../config.js";
-import { nigeriaStateSchema, postalCodeSchema } from "@leetlogic/contracts";
+import { nigeriaStateSchema, postalCodeSchema, safeTrackingUrl } from "@leetlogic/contracts";
 export const contactSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().email(),
@@ -69,6 +69,9 @@ export type TrackedShipment = {
   shippingMinor?: bigint;
   observedAt?: string;
   requiresReview?: boolean;
+  courierContact?: { name: string; phone: string | null };
+  rider?: { name: string | null; phone: string | null } | null;
+  updates?: { status: string; datetime: string }[];
 };
 export interface ShippingProvider {
   validateAddress(contact: Contact): Promise<number>;
@@ -88,11 +91,18 @@ export interface ShippingProvider {
 const trackingSchema = z.object({
   order_id: z.string().min(1),
   status: z.string(),
-  tracking_url: z.string().optional(),
-  courier: z.object({ name: z.string() }),
+  tracking_url: z.string().nullish().catch(null),
+  courier: z.object({
+    name: z.string(),
+    phone: z.string().trim().max(40).nullish().catch(null),
+    rider_info: z.object({
+      name: z.string().trim().max(160).nullish().catch(null),
+      phone: z.string().trim().max(40).nullish().catch(null),
+    }).nullish().catch(null),
+  }),
   ship_from: z.object({ address: z.string() }).optional(),
   ship_to: z.object({ address: z.string() }).optional(),
-  package_status: z.array(z.object({ datetime: z.string(), status: z.string() })).optional(),
+  package_status: z.array(z.object({ datetime: z.string().max(80), status: z.string().max(160) })).nullish().catch(null),
   payment: z
     .object({ currency: z.literal("NGN"), shipping_fee: z.number().nonnegative() })
     .optional(),
@@ -106,12 +116,18 @@ function providerResponse<S extends z.ZodTypeAny>(schema: S, value: unknown, ope
 }
 export function mapShipment(value: unknown): TrackedShipment {
   const data = trackingSchema.parse(value);
+  const statusKey = (status: string) => status.trim().toLowerCase().replace(/[\s-]+/g, "_");
   return {
-    observedAt: data.package_status?.at(-1)?.datetime,
+    observedAt: data.package_status?.filter(update => statusKey(update.status) === statusKey(data.status)).at(-1)?.datetime,
     id: data.order_id,
     status: data.status,
-    trackingUrl: data.tracking_url?.startsWith("https://") ? data.tracking_url : undefined,
+    trackingUrl: safeTrackingUrl(data.tracking_url) || undefined,
     courier: data.courier.name,
+    courierContact: { name: data.courier.name, phone: data.courier.phone || null },
+    rider: data.courier.rider_info?.name || data.courier.rider_info?.phone
+      ? { name: data.courier.rider_info.name || null, phone: data.courier.rider_info.phone || null }
+      : null,
+    updates: data.package_status || [],
     pickupAddress: data.ship_from?.address,
     destinationAddress: data.ship_to?.address,
     shippingMinor: data.payment ? BigInt(Math.round(data.payment.shipping_fee * 100)) : undefined,

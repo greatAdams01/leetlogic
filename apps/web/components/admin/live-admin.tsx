@@ -9,6 +9,7 @@ import { FinanceDrawer, financeDate } from "./finance-ui";
 import { MoneyRecordReview } from "./money-record-review";
 import { MoneyOperations } from "./money-operations";
 import { CustomerDelivery } from "../customer-delivery";
+import { OrderOperations } from "./order-operations";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -356,6 +357,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
   const searchParams = useSearchParams();
   const resource = route === "verification/buyer" ? "users" : route.split("/")[0]!;
   const financePage = ["withdrawals", "reconciliation", "reports"].includes(resource);
+  const operationalPage = ["orders", "logistics"].includes(resource) && searchParams.get("legacy") !== "1";
   const legacyFinance = resource === "withdrawals" && searchParams.get("finTab") === "legacy";
   const financeOrderId =
     resource === "reconciliation" && route.split("/")[1] === "orders"
@@ -412,7 +414,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
     try {
       const me = await api("me");
       setStaff(me as Staff);
-      if (financePage && !legacyFinance) return;
+      if ((financePage && !legacyFinance) || operationalPage) return;
       const records = await api(
         `${endpoint}?page=${page}&search=${encodeURIComponent(query)}&status=${status}`,
       );
@@ -437,7 +439,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
     } finally {
       setBusy(false);
     }
-  }, [endpoint, page, query, status, router, searchParams, financePage, legacyFinance]);
+  }, [endpoint, page, query, status, router, searchParams, financePage, legacyFinance, operationalPage]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -633,12 +635,12 @@ function Workspace({ route, title }: { route: string; title: string }) {
               <div className="live-eyebrow">LEETLOGIC OPERATIONS</div>
               <h1>{title}</h1>
               <p>
-                {financePage
-                  ? "Collections, obligations and financial operations"
-                  : "Review and manage marketplace records."}
+                 {financePage
+                   ? "Collections, obligations and financial operations"
+                   : operationalPage ? "Payment, farmer confirmation and delivery investigation" : "Review and manage marketplace records."}
               </p>
             </div>
-            {(!financePage || legacyFinance) && (
+            {!operationalPage && (!financePage || legacyFinance) && (
               <div className="live-actions">
                 <button className="secondary" onClick={() => void load()} disabled={busy}>
                   Refresh
@@ -697,14 +699,15 @@ function Workspace({ route, title }: { route: string; title: string }) {
             </div>
           )}
           {busy && !action && <p role="status">Loading marketplace records…</p>}
-          {financePage && can("payments.read") && (financeRecord ? <MoneyRecordReview recordType={financeRecord.type} recordId={financeRecord.id} manage={can("payments.manage")} /> : (
+           {financePage && can("payments.read") && (financeRecord ? <MoneyRecordReview recordType={financeRecord.type} recordId={financeRecord.id} manage={can("payments.manage")} /> : (
             <MoneyOperations
               key={financeOrderId || resource}
               view={resource}
               orderId={financeOrderId}
               manage={can("payments.manage")}
             />
-          ))}
+           ))}
+          {operationalPage && can("orders.read") && <OrderOperations dispatch={resource === "logistics"} permissions={staff?.permissions || []} />}
           {resource === "dashboard" && (
             <div className="live-metrics">
               {["users", "listings", "orders", "verifications", "tickets"].map((key) => (
@@ -786,7 +789,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
           {resource === "categories" && can("catalog.manage") && Array.isArray(data.items) && (
             <Categories items={data.items || []} request={api} reload={load} />
           )}
-          {(!financePage || legacyFinance) &&
+          {!operationalPage && (!financePage || legacyFinance) &&
             !["dashboard", "reports", "settings", "categories"].includes(resource) && (
               <section className="live-card">
                 {resource === "listings" && (

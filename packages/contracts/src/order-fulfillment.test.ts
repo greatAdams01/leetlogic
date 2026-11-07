@@ -41,7 +41,7 @@ it("never treats a courier delivery or farmer dispatch as buyer confirmation", (
   });
   expect(view).toMatchObject({
     confirmed: false,
-    status: "Awaiting buyer confirmation",
+    status: "Delivered",
     canConfirm: true,
   });
   expect(

@@ -1756,6 +1756,25 @@
   text-align: left;
   min-width: 650px;
 }
+.dispatch-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:18px; }
+.dispatch-toolbar > p { flex:1; min-width:240px; color:#66736b; line-height:1.6; }
+.dispatch-toolbar > h2 { flex:1; }
+.dispatch-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:22px; }
+.live-admin button.dispatch-metric { padding:20px; display:flex; flex-direction:column; gap:10px; background:#fff; border:1px solid #dce6df; border-radius:12px; color:#1c1c1c; }
+.live-admin button.dispatch-metric.selected { border-color:#27834b; background:#f0f8f2; }
+.dispatch-metric > strong { font-size:28px; color:#14532d; }
+.dispatch-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:12px; }
+.dispatch-filters label { flex:1; min-width:160px; }
+.dispatch-filters label:first-child { flex:2; min-width:240px; }
+.dispatch-observed { color:#66736b; font-size:13px; line-height:1.6; margin-block:18px; }
+.live-admin table.dispatch-queue { min-width:1240px; }
+.dispatch-queue td { vertical-align:top; }
+.dispatch-queue tr.selected { background:#f0f8f2; }
+.dispatch-package + .dispatch-package { margin-top:12px; padding-top:10px; border-top:1px solid #dce6df; }
+.dispatch-issue { font-size:12px; background:#fff6e6; color:#743e12; border-radius:6px; padding:6px 8px; margin:0 0 8px; }
+.dispatch-review:focus { outline:2px solid #27834b; outline-offset:4px; }
+.dispatch-order-context { margin-block:20px; }
+@media(max-width:900px) { .dispatch-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .live-admin th {
   font-size: 11px;
   text-transform: uppercase;

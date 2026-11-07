@@ -3,7 +3,7 @@ import { prisma } from "@leetlogic/database";
 import { orderPaymentProgress } from "@leetlogic/contracts";
 import { mode } from "./payments.js";
 import { paymentReady } from "../providers/payments/bachs.js";
-export async function orderPaymentView(order: {
+type PaymentViewOrder = {
   id: string;
   totalMinor: bigint;
   heldMinor: bigint;
@@ -12,7 +12,8 @@ export async function orderPaymentView(order: {
   deliveryConfirmedAt: Date | null;
   receiptPhotoKey: string | null;
   financialHold: boolean;
-}) {
+};
+export async function orderPaymentView(order: PaymentViewOrder) {
   const [verified, release, disputed] = await Promise.all([
     prisma.paymentAttempt.count({
       where: {
@@ -33,6 +34,15 @@ export async function orderPaymentView(order: {
       where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } },
     }),
   ]);
+  return paymentProgressView(order, { verified: !!verified, release, disputed: !!disputed });
+}
+
+/** Shared projection; queue readers can load the evidence in batches without per-row queries. */
+export function paymentProgressView(order: PaymentViewOrder, facts: {
+  verified: boolean;
+  disputed: boolean;
+  release: { status: string; failureCode: string | null } | null;
+}) {
   let releaseEnabled = true;
   try {
     paymentReady("RELEASE");
@@ -40,19 +50,19 @@ export async function orderPaymentView(order: {
     releaseEnabled = false;
   }
   return orderPaymentProgress({
-    verified: !!verified,
+    verified: facts.verified,
     heldMinor: String(order.heldMinor),
     releasedMinor: String(order.releasedMinor),
     refundedMinor: String(order.refundedMinor),
     receiptConfirmed: !!order.deliveryConfirmedAt,
     hasPhoto: !!order.receiptPhotoKey,
-    disputed: order.financialHold || !!disputed,
+    disputed: order.financialHold || facts.disputed,
     releaseEnabled,
     pauseReason: !getConfig().PAYMENTS_ENABLED
       ? "PAYMENTS_DISABLED"
       : !getConfig().PAYMENTS_TRANSFERS_ENABLED
         ? "TRANSFERS_DISABLED"
         : "PAYMENT_CONFIGURATION",
-    release,
+    release: facts.release,
   });
 }
