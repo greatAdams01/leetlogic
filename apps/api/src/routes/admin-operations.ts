@@ -919,6 +919,12 @@ operationsRouter.post("/logistics", requirePermission("orders.manage"), async (r
   });
   res.status(201).json(item);
 });
+// Resolve older shipment links to the order-backed delivery detail page.
+operationsRouter.get("/logistics/:id", requirePermission("orders.read"), async (req, res) => {
+  const shipment = await prisma.shipment.findUnique({ where: { id: id.parse(req.params.id) }, select: { id: true, orderId: true } });
+  if (!shipment) throw new AppError(404, "SHIPMENT_NOT_FOUND", "Shipment not found");
+  res.set("Cache-Control", "private, no-store").json(shipment);
+});
 operationsRouter.post(
   "/logistics/:id/status",
   requirePermission("orders.manage"),

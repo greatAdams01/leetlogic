@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { adminRecordReturnPath } from "../../lib/admin-order-navigation";
 import { formatMoney as money } from "../../../../packages/contracts/src/money";
 import { FinanceLedger, FinanceReportTables } from "./finance-ledger";
 import { FinanceOperations } from "./finance-operations";
@@ -133,10 +134,7 @@ export function MoneyOperations({
     };
   }, [active, page, search, status, from, to, orderId, view, refresh]);
   const rawReturn = params.get("returnTo");
-  const back =
-    rawReturn && /^\/admin\/(reconciliation|withdrawals|reports)(\?|$)/.test(rawReturn)
-      ? rawReturn
-      : "/admin/reconciliation";
+  const back = adminRecordReturnPath(rawReturn, "/admin/reconciliation");
   const returnPath = orderId ? back : `${pathname}${params.size ? `?${params}` : ""}`;
   const orderLink = (id: string) =>
     `/admin/reconciliation/orders/${id}?returnTo=${encodeURIComponent(returnPath)}`;
@@ -170,7 +168,7 @@ export function MoneyOperations({
         <div>
           {orderId && (
             <Link href={back} className="finance-back">
-              ← Back to finance records
+              ← Back to {back.startsWith("/admin/orders") ? "order" : back.startsWith("/admin/logistics") ? "delivery" : "finance records"}
             </Link>
           )}
           <p className="finance-eyebrow">

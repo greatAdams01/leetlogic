@@ -8,8 +8,9 @@ import { VerificationReview, verificationLabel } from "./verification-review";
 import { FinanceDrawer, financeDate } from "./finance-ui";
 import { MoneyRecordReview } from "./money-record-review";
 import { MoneyOperations } from "./money-operations";
-import { CustomerDelivery } from "../customer-delivery";
 import { OrderOperations } from "./order-operations";
+import { OrderReview } from "./order-review";
+import { operationsDetailLink, operationsDetailRoute } from "../../lib/admin-order-navigation";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -357,8 +358,11 @@ function Workspace({ route, title }: { route: string; title: string }) {
   const searchParams = useSearchParams();
   const resource = route === "verification/buyer" ? "users" : route.split("/")[0]!;
   const financePage = ["withdrawals", "reconciliation", "reports"].includes(resource);
-  const operationalPage = ["orders", "logistics"].includes(resource) && searchParams.get("legacy") !== "1";
+  const operationsDetail = operationsDetailRoute(route);
+  const operationalPage = !!operationsDetail || (["orders", "logistics"].includes(resource) && searchParams.get("legacy") !== "1");
   const legacyFinance = resource === "withdrawals" && searchParams.get("finTab") === "legacy";
+  const legacyOperations = ["orders", "logistics"].includes(resource) && !operationalPage;
+  const legacyUrl = legacyFinance || legacyOperations;
   const financeOrderId =
     resource === "reconciliation" && route.split("/")[1] === "orders"
       ? route.split("/")[2]
@@ -376,16 +380,16 @@ function Workspace({ route, title }: { route: string; title: string }) {
   const [queryState, setQuery] = useState("");
   const [statusState, setStatus] = useState("ALL");
   const [pageState, setPage] = useState(1);
-  const query = legacyFinance ? searchParams.get("legacySearch") || "" : queryState;
-  const status = legacyFinance ? searchParams.get("legacyStatus") || "ALL" : statusState;
-  const page = legacyFinance ? Math.max(1, Number(searchParams.get("legacyPage")) || 1) : pageState;
+  const query = legacyUrl ? searchParams.get("legacySearch") || "" : queryState;
+  const status = legacyUrl ? searchParams.get("legacyStatus") || "ALL" : statusState;
+  const page = legacyUrl ? Math.max(1, Math.floor(Number(searchParams.get("legacyPage")) || 1)) : pageState;
   useEffect(() => {
-    if (legacyFinance) setSearch(query);
-  }, [legacyFinance, query]);
+    if (legacyUrl) setSearch(query);
+  }, [legacyUrl, query]);
   const legacyFilters = (changes: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(changes)) params.set(key, value);
-    router.push(`/admin/withdrawals?${params}`, { scroll: false });
+    router.push(`/admin/${resource}?${params}`, { scroll: false });
   };
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [selected, setSelected] = useState<Row>();
@@ -415,6 +419,14 @@ function Workspace({ route, title }: { route: string; title: string }) {
       const me = await api("me");
       setStaff(me as Staff);
       if ((financePage && !legacyFinance) || operationalPage) return;
+      const recordId = searchParams.get("id");
+      if (legacyOperations && recordId && operationsDetailRoute(`orders/${recordId}`)) {
+        const targetId = resource === "orders" ? recordId : (await api(`logistics/${recordId}`)).orderId;
+        const back = new URLSearchParams(searchParams.toString());
+        back.delete("id");
+        router.replace(operationsDetailLink(resource as "orders" | "logistics", targetId, `/admin/${resource}?${back}`));
+        return;
+      }
       const records = await api(
         `${endpoint}?page=${page}&search=${encodeURIComponent(query)}&status=${status}`,
       );
@@ -427,19 +439,21 @@ function Workspace({ route, title }: { route: string; title: string }) {
             )
           : undefined,
       );
-      const recordId = searchParams.get("id");
       if (recordId && endpoint === "verifications") {
         const detail = await api(`verifications/${recordId}`);
         setSelected(detail.verification);
-      } else if (recordId)
-        setSelected((records.items || []).find((row: Row) => row.id === recordId));
+      } else if (recordId && ["orders", "logistics"].includes(resource)) {
+        const row = (records.items || []).find((row: Row) => row.id === recordId);
+        const orderId = resource === "orders" ? recordId : row?.orderId;
+        if (orderId) router.replace(operationsDetailLink(resource as "orders" | "logistics", orderId, `/admin/${resource}?legacy=1`));
+      } else if (recordId) setSelected((records.items || []).find((row: Row) => row.id === recordId));
     } catch (failure) {
       if ((failure as Error & { status?: number }).status === 401) router.replace("/admin/login");
       else setError(userFacingError(failure));
     } finally {
       setBusy(false);
     }
-  }, [endpoint, page, query, status, router, searchParams, financePage, legacyFinance, operationalPage]);
+  }, [endpoint, page, query, status, router, searchParams, financePage, legacyFinance, operationalPage, resource, legacyOperations]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -554,7 +568,11 @@ function Workspace({ route, title }: { route: string; title: string }) {
   };
   async function review(row: Row) {
     try {
-      if (resource === "verification") {
+      if (["orders", "logistics"].includes(resource)) {
+        const back = new URLSearchParams(searchParams.toString());
+        back.delete("id");
+        router.push(operationsDetailLink(resource as "orders" | "logistics", resource === "orders" ? row.id : row.orderId, `/admin/${resource}?${back}`));
+      } else if (resource === "verification") {
         const result = await api(`verifications/${row.id}`);
         setSelected(result.verification);
       } else setSelected(row);
@@ -633,11 +651,12 @@ function Workspace({ route, title }: { route: string; title: string }) {
           <div className="live-page-heading">
             <div>
               <div className="live-eyebrow">LEETLOGIC OPERATIONS</div>
+              {legacyOperations && <Link className="finance-back" href={`/admin/${resource}`}>← Back to {resource === "orders" ? "Orders" : "Deliveries"}</Link>}
               <h1>{title}</h1>
               <p>
                  {financePage
                    ? "Collections, obligations and financial operations"
-                   : operationalPage ? "Payment, farmer confirmation and delivery investigation" : "Review and manage marketplace records."}
+                   : operationalPage ? resource === "orders" ? "Manage purchases, payments and farmer fulfillment." : "Manage courier assignments, pickup, tracking and delivery issues." : "Review and manage marketplace records."}
               </p>
             </div>
             {!operationalPage && (!financePage || legacyFinance) && (
@@ -707,7 +726,10 @@ function Workspace({ route, title }: { route: string; title: string }) {
               manage={can("payments.manage")}
             />
            ))}
-          {operationalPage && can("orders.read") && <OrderOperations dispatch={resource === "logistics"} permissions={staff?.permissions || []} />}
+          {operationalPage && can("orders.read") && (operationsDetail
+            ? <OrderReview id={operationsDetail.id} area={operationsDetail.area} permissions={staff?.permissions || []} />
+            : <OrderOperations dispatch={resource === "logistics"} permissions={staff?.permissions || []} />)}
+          {operationalPage && staff && !can("orders.read") && <section className="live-card"><p role="alert">You do not have permission to view {resource === "orders" ? "orders" : "deliveries"}.</p></section>}
           {resource === "dashboard" && (
             <div className="live-metrics">
               {["users", "listings", "orders", "verifications", "tickets"].map((key) => (
@@ -805,7 +827,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                   className="live-search"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (legacyFinance) legacyFilters({ legacySearch: search, legacyPage: "1" });
+                    if (legacyUrl) legacyFilters({ legacySearch: search, legacyPage: "1" });
                     else {
                       setPage(1);
                       setQuery(search);
@@ -827,7 +849,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                       aria-label="Filter by status"
                       value={status}
                       onChange={(event) => {
-                        if (legacyFinance)
+                        if (legacyUrl)
                           legacyFilters({ legacyStatus: event.target.value, legacyPage: "1" });
                         else {
                           setStatus(event.target.value);
@@ -958,7 +980,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     className="secondary"
                     disabled={page <= 1 || busy}
                     onClick={() =>
-                      legacyFinance
+                       legacyUrl
                         ? legacyFilters({ legacyPage: String(page - 1) })
                         : setPage(page - 1)
                     }
@@ -969,7 +991,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     className="secondary"
                     disabled={busy || !data.total || page * 25 >= data.total}
                     onClick={() =>
-                      legacyFinance
+                       legacyUrl
                         ? legacyFilters({ legacyPage: String(page + 1) })
                         : setPage(page + 1)
                     }
@@ -979,7 +1001,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
                 </div>
               </section>
             )}
-          {selected && (
+          {selected && !["orders", "logistics"].includes(resource) && (
             <ReviewShell title={rowLabel(selected)} onClose={() => setSelected(undefined)}>
               <section className="live-card live-detail" ref={reviewPanel} tabIndex={-1}>
                 {!financePage && (
@@ -1192,66 +1214,6 @@ function Workspace({ route, title }: { route: string; title: string }) {
                       }
                     >
                       Change account status
-                    </button>
-                  )}
-                  {resource === "orders" &&
-                    selected.status === "AWAITING_PAYMENT" &&
-                    can("orders.manage") && (
-                      <button
-                        onClick={() =>
-                          open("Cancel unpaid order", `orders/${selected.id}/cancel`, [reason])
-                        }
-                      >
-                        Cancel order
-                      </button>
-                    )}
-                  {resource === "orders" &&
-                    selected.fundsProvider !== "bachs" &&
-                    can("payments.manage") && (
-                      <button
-                        onClick={() =>
-                          open(
-                            "Record escrow transaction",
-                            `orders/${selected.id}/escrow`,
-                            [
-                              select("kind", "Action", ["FUND", "RELEASE", "REFUND"]),
-                              text("amountMinor", "Amount in kobo"),
-                              {
-                                name: "externalRef",
-                                label: "Verified payment reference (required for funding)",
-                                type: "optional",
-                              },
-                              reason,
-                            ],
-                            { stepUp: true, extra: { mutationKey: crypto.randomUUID() } },
-                          )
-                        }
-                      >
-                        Manage escrow
-                      </button>
-                    )}
-                  {resource === "orders" &&
-                    selected?.fundsProvider === "bachs" &&
-                    can("payments.read") && (
-                      <MoneyOperations orderId={selected.id} manage={can("payments.manage")} />
-                    )}
-                  {resource === "orders" && selected?.id && (
-                    <CustomerDelivery
-                      id={selected.id}
-                      staff
-                      staffPermissions={staff?.permissions || []}
-                    />
-                  )}
-                  {resource === "logistics" && can("orders.manage") && (
-                    <button
-                      onClick={() =>
-                        open("Update shipment", `logistics/${selected.id}/status`, [
-                          select("status", "Status", ["IN_TRANSIT", "DELIVERED"]),
-                          text("evidence", "Delivery / tracking evidence"),
-                        ])
-                      }
-                    >
-                      Update shipment
                     </button>
                   )}
                   {resource === "withdrawals" &&

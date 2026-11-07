@@ -24,10 +24,10 @@ const sections: Section[] = [
   },
   {
     id: "orders",
-    label: "Orders & delivery",
+    label: "Orders & deliveries",
     items: [
-      { path: "orders", label: "Orders & escrow", permission: "orders.read" },
-      { path: "logistics", label: "Logistics & dispatch", permission: "orders.read" },
+      { path: "orders", label: "Orders", permission: "orders.read" },
+      { path: "logistics", label: "Deliveries", permission: "orders.read" },
     ],
   },
   {

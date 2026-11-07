@@ -76,6 +76,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
     const seller = await prisma.user.create({
       data: {
         phoneE164: `+23481${suffix}`,
+        capabilities: { create: { capability: "SELLER" } },
         farmerProfile: {
           create: {
             farmName: "Integration Farm",

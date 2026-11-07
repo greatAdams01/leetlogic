@@ -2084,6 +2084,18 @@ suite("delivery and language database workflows", () => {
     });
     const queue = (search: string, query: Record<string, string | number> = {}, dispatch = true) => request(app)
       .get(`/v1/admin/${dispatch ? "dispatch" : "order-operations"}`).set(admin()).query({ search, ...query });
+    const detail = (id: string) => request(app).get(`/v1/admin/delivery-orders/${id}/delivery`).set(admin());
+    const operator = async (permissions: string[]) => {
+      const role = await prisma.adminRole.create({ data: { code: `OPS_${randomUUID()}`, name: "Operations regression" } });
+      for (const code of permissions) {
+        const permission = await prisma.permission.upsert({ where: { code }, create: { code, description: code }, update: {} });
+        await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: permission.id } });
+      }
+      const account = await prisma.adminAccount.create({ data: {
+        email: `ops-${randomUUID()}@example.test`, fullName: "Operations reviewer", status: "ACTIVE", roles: { create: { roleId: role.id } },
+      } });
+      return (await createSession({ subject: "ADMIN", principalId: account.id, deviceId: randomUUID() })).accessToken;
+    };
 
     it("restricts the queues to staff with order-read permission and validates filters", async () => {
       expect((await request(app).get("/v1/admin/dispatch")).status).toBe(401);
@@ -2115,6 +2127,140 @@ suite("delivery and language database workflows", () => {
       const orders = await queue(prefix, { status: "FUNDED" }, false);
       expect(orders.status).toBe(200);
       expect(orders.body.items.some((i: any) => i.id === pickup.id && i.fulfillment.method === "Pickup")).toBe(true);
+    });
+
+    it("keeps every buyer-collection stage in Orders, including completed and cancelled orders", async () => {
+      const prefix = `COLLECTION-${randomUUID()}`;
+      const collections = await Promise.all(["PICKUP_PENDING", "PICKUP_PREPARING", "PICKUP_READY", "DELIVERED"].map(status => fixture(prefix, status)));
+      const cancelled = await fixture(prefix, "PICKUP_PENDING"), refunded = await fixture(prefix, "PICKUP_PREPARING");
+      await prisma.tradeOrder.update({ where: { id: collections[3]!.id }, data: { status: "COMPLETED", deliveryConfirmedAt: new Date() } });
+      await prisma.tradeOrder.update({ where: { id: cancelled.id }, data: { status: "CANCELLED", heldMinor: 0n } });
+      await prisma.tradeOrder.update({ where: { id: refunded.id }, data: { status: "REFUNDED", heldMinor: 0n, refundedMinor: 10000n } });
+      const courier = await fixture(prefix, "CANCELLED", { courier: "Cancelled courier", providerShipmentId: `SB-${randomUUID()}` });
+      const dispatch = await queue(prefix);
+      expect(dispatch.status).toBe(200);
+      expect(dispatch.body.items.map((i: any) => i.id)).toEqual([courier.id]);
+      expect(dispatch.body.counts).toEqual({ pending: 0, active: 0, attention: 1, delivered: 0 });
+      const orders = await queue(prefix, {}, false);
+      expect(orders.body.total).toBe(7);
+      for (const order of [...collections, cancelled, refunded]) {
+        expect(orders.body.items.find((i: any) => i.id === order.id)).toMatchObject({ fulfillment: { method: "Pickup" }, delivery: null });
+        const record = await detail(order.id);
+        expect(record.status).toBe(200);
+        expect(record.body.progress.method).toBe("Pickup");
+        expect(record.body.tracking).toBeNull();
+      }
+    });
+
+    it("makes order summary counts searchable and independent of conflicting row filters", async () => {
+      const prefix = `COUNTS-${randomUUID()}`;
+      const unpaid = await fixture(prefix, "QUOTE_REQUIRED", {}, "PENDING");
+      await prisma.tradeOrder.update({ where: { id: unpaid.id }, data: { status: "AWAITING_PAYMENT", heldMinor: 0n } });
+      await fixture(prefix, "PAID", {}, "PENDING");
+      await fixture(prefix, "PAID");
+      await fixture(prefix, "PAID", {}, "REJECTED");
+      const cancelled = await fixture(prefix, "PICKUP_PENDING");
+      await prisma.tradeOrder.update({ where: { id: cancelled.id }, data: { status: "CANCELLED", heldMinor: 0n } });
+      const summary = { all: 5, awaitingPayment: 1, awaitingFarmer: 1, attention: 1 };
+      const conflicting = await queue(prefix, { status: "CANCELLED", farmer: "REJECTED", view: "ATTENTION" }, false);
+      expect(conflicting.status).toBe(200);
+      expect(conflicting.body).toMatchObject({ total: 0, items: [], orderCounts: summary });
+      const shortcuts = [
+        { filters: { status: "ALL", farmer: "ALL", view: "ALL" }, count: summary.all },
+        { filters: { status: "AWAITING_PAYMENT", farmer: "ALL", view: "ALL" }, count: summary.awaitingPayment },
+        { filters: { status: "FUNDED", farmer: "PENDING", view: "ALL" }, count: summary.awaitingFarmer },
+        { filters: { status: "ALL", farmer: "ALL", view: "ATTENTION" }, count: summary.attention },
+      ];
+      for (const shortcut of shortcuts) {
+        const result = await queue(prefix, shortcut.filters, false);
+        expect(result.body).toMatchObject({ total: shortcut.count, orderCounts: summary });
+      }
+      expect((await queue(unpaid.reference, {}, false)).body.orderCounts).toEqual({ all: 1, awaitingPayment: 1, awaitingFarmer: 0, attention: 0 });
+      const filteredDispatch = await queue(prefix, { farmer: "PENDING", status: "PAID", view: "ATTENTION" });
+      expect(filteredDispatch.body).toMatchObject({ total: 0, counts: { pending: 1, active: 0, attention: 0, delivered: 0 } });
+      expect((await queue(prefix, { farmer: "PENDING", status: "PAID", view: "PENDING" })).body.total).toBe(filteredDispatch.body.counts.pending);
+    });
+
+    it("adds manual ledger and action hints only to staff detail responses", async () => {
+      const order = await fixture(`STAFF-${randomUUID()}`, "MANUAL_ASSIGNED", { courier: "Recorded carrier" });
+      await prisma.shipment.create({ data: { orderId: order.id, carrier: "Recorded carrier", trackingRef: `LOCAL-${randomUUID()}` } });
+      const entry = await prisma.escrowEntry.create({ data: {
+        orderId: order.id, kind: "FUND", amountMinor: 10000n, mutationKey: randomUUID(), actorId: verifyAccessToken(staff, "admin").sub,
+        externalRef: `PRIVATE-${randomUUID()}`, reason: "Staff-only payment investigation note",
+      } });
+      const staffView = await detail(order.id);
+      expect(staffView.status).toBe(200);
+      expect(staffView.headers["cache-control"]).toBe("private, no-store");
+      expect(staffView.body.staffContext).toMatchObject({ manualFundingRecorded: true, manualEscrowKinds: [],
+        ledger: [{ id: entry.id, amountMinor: "10000", externalRef: entry.externalRef, reason: entry.reason }] });
+      expect(staffView.body.staffContext.manualDeliveryStatuses).toContain("IN_TRANSIT");
+      expect(staffView.body.staffContext.manualDeliveryStatuses).not.toContain("DELIVERED");
+      for (const token of [buyer, seller]) {
+        const publicView = await request(app).get(`/v1/orders/${order.id}/delivery`).set("Authorization", `Bearer ${token}`);
+        expect(publicView.status).toBe(200);
+        expect(publicView.body.staffContext).toBeUndefined();
+        expect(JSON.stringify(publicView.body)).not.toContain(entry.reason);
+        expect(JSON.stringify(publicView.body)).not.toContain(entry.externalRef);
+      }
+      const list = await queue(order.reference, {}, false);
+      expect(list.body.items[0].payment).toMatchObject({ title: "Manual escrow funded", source: "Manual escrow" });
+      await prisma.delivery.update({ where: { id: order.delivery!.id }, data: { status: "IN_TRANSIT" } });
+      expect((await detail(order.id)).body.staffContext.manualDeliveryStatuses).toContain("DELIVERED");
+      await prisma.delivery.update({ where: { id: order.delivery!.id }, data: { status: "DELIVERED" } });
+      expect((await detail(order.id)).body.staffContext.manualEscrowKinds).toEqual([]);
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: order.id } })).deliveryConfirmedAt).toBeNull();
+      await prisma.tradeOrder.update({ where: { id: order.id }, data: { deliveryConfirmedAt: new Date() } });
+      expect((await detail(order.id)).body.staffContext.manualEscrowKinds).toEqual(["RELEASE"]);
+      const dispute = await prisma.supportTicket.create({ data: { orderId: order.id, kind: "DISPUTE", subject: "Receipt disputed" } });
+      expect((await detail(order.id)).body.staffContext).toMatchObject({ manualEscrowKinds: [], disputes: [{ id: dispute.id }] });
+      await prisma.supportTicket.update({ where: { id: dispute.id }, data: { status: "RESOLVED" } });
+      await prisma.tradeOrder.update({ where: { id: order.id }, data: { fundsProvider: "bachs" } });
+      expect((await detail(order.id)).body.staffContext).toMatchObject({ manualFundingRecorded: false, manualEscrowKinds: [] });
+    });
+
+    it("pauses unpaid actions for an unresolved checkout even after its apparent expiry", async () => {
+      const order = await fixture(`CHECKOUT-${randomUUID()}`, "MANUAL_REVIEW");
+      await prisma.tradeOrder.update({ where: { id: order.id }, data: { status: "AWAITING_PAYMENT", heldMinor: 0n } });
+      expect((await detail(order.id)).body.staffContext.manualEscrowKinds).toEqual(["FUND"]);
+      const payment = await prisma.paymentAttempt.create({ data: {
+        orderId: order.id, buyerId: verifyAccessToken(buyer, "customer").sub, mode: getConfig().BACHS_MODE,
+        status: "EXPIRED", amountMinor: 10000n, produceMinor: 10000n, shippingMinor: 0n,
+        checkoutId: `CHECKOUT-${randomUUID()}`, checkErrorCode: "PROVIDER_UNAVAILABLE", expiresAt: new Date(Date.now() - 60000),
+      } });
+      expect((await detail(order.id)).body).toMatchObject({ order: { checkoutActive: true }, staffContext: { manualEscrowKinds: [] } });
+      const cancel = await request(app).post(`/v1/admin/orders/${order.id}/cancel`).set(admin()).send({ reason: "Buyer requested cancellation" });
+      expect(cancel.status).toBe(409);
+      expect(cancel.body.error.code).toBe("CHECKOUT_ACTIVE");
+      const fund = await request(app).post(`/v1/admin/orders/${order.id}/escrow`).set(admin()).send({
+        kind: "FUND", amountMinor: "10000", externalRef: `EXT-${randomUUID()}`, mutationKey: randomUUID(), reason: "Verified external payment received",
+      });
+      expect(fund.status).toBe(409);
+      expect(fund.body.error.code).toBe("CHECKOUT_ACTIVE");
+      await prisma.paymentAttempt.update({ where: { id: payment.id }, data: { checkErrorCode: null } });
+      expect((await detail(order.id)).body).toMatchObject({ order: { checkoutActive: false }, staffContext: { manualEscrowKinds: ["FUND"] } });
+      await prisma.tradeOrder.update({ where: { id: order.id }, data: { financialHold: true } });
+      expect((await detail(order.id)).body.staffContext.manualEscrowKinds).toEqual([]);
+    });
+
+    it("keeps detail actions permission-controlled and requires step-up for sensitive writes", async () => {
+      const order = await fixture(`AUTH-${randomUUID()}`, "BOOKED", { courier: "Courier", providerShipmentId: `SB-${randomUUID()}` });
+      const readOnly = await operator(["orders.read"]), unpermitted = await operator([]);
+      const base = `/v1/admin/delivery-orders/${order.id}/delivery`;
+      expect((await request(app).get(base).set("Authorization", `Bearer ${readOnly}`)).status).toBe(200);
+      expect((await request(app).get(base).set("Authorization", `Bearer ${unpermitted}`)).status).toBe(403);
+      for (const action of ["book", "quotes", "select", "refresh-quote", "manual-dispatch", "manual-status", "reconcile", "link", "cancel"]) {
+        const result = await request(app).post(`${base}/${action}`).set("Authorization", `Bearer ${readOnly}`).send({ quoteId: randomUUID() });
+        expect(result.status, action).toBe(403);
+      }
+      expect((await request(app).post(`${base}/payment`).set("Authorization", `Bearer ${readOnly}`).send({})).status).toBe(403);
+      expect((await request(app).post(`/v1/admin/orders/${order.id}/cancel`).set("Authorization", `Bearer ${readOnly}`).send({})).status).toBe(403);
+      expect((await request(app).post(`/v1/admin/orders/${order.id}/escrow`).set("Authorization", `Bearer ${readOnly}`).send({})).status).toBe(403);
+      const management = await operator(["orders.read", "orders.manage", "payments.manage"]);
+      for (const path of [`${base}/payment`, `${base}/link`, `${base}/parcels/${randomUUID()}/link`, `${base}/cancel`, `/v1/admin/orders/${order.id}/escrow`]) {
+        const result = await request(app).post(path).set("Authorization", `Bearer ${management}`).send({});
+        expect(result.status, path).toBe(403);
+        expect(result.body.error.code).toBe("STEP_UP_REQUIRED");
+      }
     });
 
     it("separates stale provider checks, possible delay, parcel problems and declined orders", async () => {
@@ -2185,6 +2331,16 @@ suite("delivery and language database workflows", () => {
       expect(result.status).toBe(200);
       expect(result.body.items[0].fulfillment).toMatchObject({ status: "In Transit", receiptSource: "legacy-staff" });
       expect(result.body.items[0].delivery.trackingRef).toBe(trackingRef);
+      const shipment = await prisma.shipment.findUniqueOrThrow({ where: { orderId: order.id } });
+      const resolved = await request(app).get(`/v1/admin/logistics/${shipment.id}`).set(admin());
+      expect(resolved.status).toBe(200);
+      expect(resolved.body).toEqual({ id: shipment.id, orderId: order.id });
+      expect(resolved.headers["cache-control"]).toBe("private, no-store");
+      expect((await request(app).get(`/v1/admin/logistics/${shipment.id}`).set(customer())).status).toBe(401);
+      const unpermitted = await operator([]);
+      expect((await request(app).get(`/v1/admin/logistics/${shipment.id}`).set("Authorization", `Bearer ${unpermitted}`)).status).toBe(403);
+      expect((await request(app).get(`/v1/admin/logistics/${randomUUID()}`).set(admin())).status).toBe(404);
+      expect((await request(app).get("/v1/admin/logistics/not-a-uuid").set(admin())).status).toBe(422);
     });
 
     it("paginates the filtered order queue deterministically and treats search wildcards literally", async () => {

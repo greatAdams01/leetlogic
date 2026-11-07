@@ -33,7 +33,7 @@ import { prisma, type Prisma } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { getConfig } from "../config.js";
-import { canAdvanceDelivery, deliveryReceiptReady } from "../services/delivery-policy.js";
+import { canAdvanceDelivery, deliveryReceiptReady, deliveryRefundReady } from "../services/delivery-policy.js";
 import { audit } from "../services/audit.js";
 import { contactSchema } from "../providers/shipping/shipbubble.js";
 import { assertNoDeliverySettlement, queueBooking, deliveryEvent, finalizeDeliveryBooking, hasDeliverySettlement, hashInput, serialize, shippingProvider } from "../services/delivery.js";
@@ -442,6 +442,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       where: { orderId: order.id, OR: [
         { status: { in: ["QUEUED", "PROCESSING", "UNKNOWN", "OPEN"] } },
         { status: "BLOCKED", checkoutId: { not: null } },
+        { checkoutId: { not: null }, confirmedAt: null, checkErrorCode: { not: null } },
       ] },
     }));
     const quotes = delivery?.quotes.map((quote) => {
@@ -452,15 +453,37 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       } catch { /* Historical or incompatible quotes remain visible, but cannot be selected. */ }
       return { ...quote, available };
     }) || [];
-    const staffContext = req.auth!.subject === "admin" ? {
+    const isStaff = req.auth!.subject === "admin";
+    const [disputes, ledger] = isStaff ? await Promise.all([
+      prisma.supportTicket.findMany({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } }, select: { id: true, status: true, subject: true } }),
+      prisma.escrowEntry.findMany({ where: { orderId: order.id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, kind: true, amountMinor: true, feeMinor: true, externalRef: true, reason: true, createdAt: true } }),
+    ]) : [[], []];
+    // Presentation hints use the same parcel/transition policies as the mutation endpoints.
+    // Writes still recheck authorization, locks, quotes and balances in their transactions.
+    const parcelDelivery = delivery ? { ...delivery, parcels } : null;
+    const manualEscrowKinds: string[] = [];
+    if (isStaff && order.fundsProvider !== "bachs" && !order.financialHold && !checkoutActive) {
+      const fundingQuote = quotes.find(quote => quote.id === delivery?.selectedQuoteId && quote.available && quote.expiresAt > new Date());
+      if (order.status === "AWAITING_PAYMENT" && (!delivery || delivery.status === "MANUAL_REVIEW" || fundingQuote)) manualEscrowKinds.push("FUND");
+      if (order.heldMinor > 0n && !disputes.length) {
+        if (order.deliveryConfirmedAt && (!delivery || deliveryReceiptReady(parcelDelivery))) manualEscrowKinds.push("RELEASE");
+        if (deliveryRefundReady(parcelDelivery)) manualEscrowKinds.push("REFUND");
+      }
+    }
+    const staffContext = isStaff ? {
       buyer: { name: order.buyer.profile?.fullName || order.buyer.profile?.displayName || order.buyer.phoneE164, phone: order.buyer.phoneE164 },
       farmer: { name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName, farmName: order.farmerProfile.farmName, phone: order.farmerProfile.user.phoneE164 },
       farmerDecidedAt: order.farmerDecidedAt,
       createdAt: order.createdAt,
       fundsProvider: order.fundsProvider,
-      manualFundingRecorded: order.fundsProvider !== "bachs" && !!(await prisma.escrowEntry.count({ where: { orderId: order.id, kind: "FUND" } })),
+      manualFundingRecorded: order.fundsProvider !== "bachs" && ledger.some(entry => entry.kind === "FUND"),
       financialHold: order.financialHold,
-      disputes: await prisma.supportTicket.findMany({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } }, select: { id: true, status: true, subject: true } }),
+      disputes, ledger, manualEscrowKinds,
+      manualDeliveryStatuses: delivery && !delivery.providerShipmentId && ["FUNDED", "DELIVERED"].includes(order.status) &&
+        !["MANUAL_REVIEW", "QUOTE_REQUIRED", "PAYMENT_PENDING"].includes(delivery.status) && order.shipment
+        ? ["PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED_ATTEMPT", "RETURNING", "RETURNED", "CANCELLED"].filter(status =>
+          canAdvanceDelivery(delivery.status, status) && (status !== "DELIVERED" || delivery.status === "IN_TRANSIT")) : [],
     } : undefined;
     res.json(
       serialize({

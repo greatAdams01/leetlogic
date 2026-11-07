@@ -54,6 +54,18 @@ describe("admin private media proxy", () => {
     expect(response.status).toBe(503);
     expect((await response.json()).error.code).toBe("MEDIA_CONFIGURATION_ERROR");
   });
+  it("opens staff receipt evidence as private image bytes, not a JSON response", async () => {
+    const path = ["delivery-orders", filePath[2]!, "delivery", "receipt-photo"];
+    const fetcher = vi.fn().mockResolvedValue(new Response("receipt-photo-bytes", { headers: { "Content-Type": "image/png" } }));
+    vi.stubGlobal("fetch", fetcher);
+    const response = await get(path);
+    expect(fetcher.mock.calls[0]![0]).toContain(`/v1/admin/${path.join("/")}`);
+    expect(fetcher.mock.calls[0]![1].headers.Authorization).toBe("Bearer private-session");
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.text()).toBe("receipt-photo-bytes");
+  });
   it("distinguishes file timeouts and never logs the signed URL or session", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubGlobal(

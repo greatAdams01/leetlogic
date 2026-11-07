@@ -77,8 +77,6 @@ export async function readAdminOrderQueue(query: unknown, dispatch = false, now 
   const filters: Prisma.Sql[] = [Prisma.sql`TRUE`];
   if (dispatch) filters.push(Prisma.sql`((d.id IS NOT NULL AND d.status NOT LIKE 'PICKUP_%'
     AND NOT (d.status = 'DELIVERED' AND d."selectedQuoteId" IS NULL AND d."providerShipmentId" IS NULL AND d.courier IS NULL)) OR (d.id IS NULL AND s.id IS NOT NULL))`);
-  if (input.status !== "ALL") filters.push(dispatch ? Prisma.sql`${deliveryState} = ${input.status}` : Prisma.sql`o.status = ${input.status}`);
-  if (input.farmer !== "ALL") filters.push(Prisma.sql`o.farmer_decision = ${input.farmer}`);
   if (input.search) {
     const needle = `%${input.search.replace(/[\\%_]/g, "\\$&")}%`;
     filters.push(Prisma.sql`(o.reference ILIKE ${needle} OR l.title ILIKE ${needle} OR b.phone_e164 ILIKE ${needle} OR bp.full_name ILIKE ${needle}
@@ -86,14 +84,22 @@ export async function readAdminOrderQueue(query: unknown, dispatch = false, now 
       OR d.courier ILIKE ${needle} OR d."providerShipmentId" ILIKE ${needle} OR s.carrier ILIKE ${needle} OR s."trackingRef" ILIKE ${needle}
       OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id AND p."providerShipmentId" ILIKE ${needle}))`);
   }
-  const base = Prisma.join(filters, " AND "), where = Prisma.sql`${base} AND ${views[input.view]}`;
+  const summaryBase = Prisma.join(filters, " AND ");
+  const recordFilters = [Prisma.sql`TRUE`];
+  if (input.status !== "ALL") recordFilters.push(dispatch ? Prisma.sql`${deliveryState} = ${input.status}` : Prisma.sql`o.status = ${input.status}`);
+  if (input.farmer !== "ALL") recordFilters.push(Prisma.sql`o.farmer_decision = ${input.farmer}`);
+  const selected = Prisma.join(recordFilters, " AND "), where = Prisma.sql`${summaryBase} AND ${selected} AND ${views[input.view]}`;
   const [ids, counts] = await Promise.all([
     prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT o.id ${joins} WHERE ${where} ORDER BY o."createdAt" DESC, o.id DESC LIMIT 25 OFFSET ${(input.page - 1) * 25}`),
-    prisma.$queryRaw<{ total: bigint; pending: bigint; active: bigint; attention: bigint; delivered: bigint }[]>(Prisma.sql`SELECT
-      COUNT(*) FILTER (WHERE ${views[input.view]}) AS total,
-      COUNT(*) FILTER (WHERE ${views.PENDING}) AS pending, COUNT(*) FILTER (WHERE ${views.ACTIVE}) AS active,
-      COUNT(*) FILTER (WHERE ${views.ATTENTION}) AS attention, COUNT(*) FILTER (WHERE ${views.DELIVERED}) AS delivered
-      ${joins} WHERE ${base}`),
+    prisma.$queryRaw<{ total: bigint; pending: bigint; active: bigint; attention: bigint; delivered: bigint;
+      all_orders: bigint; awaiting_payment: bigint; awaiting_farmer: bigint; order_attention: bigint }[]>(Prisma.sql`SELECT
+      COUNT(*) FILTER (WHERE ${selected} AND ${views[input.view]}) AS total,
+      COUNT(*) FILTER (WHERE ${selected} AND ${views.PENDING}) AS pending, COUNT(*) FILTER (WHERE ${selected} AND ${views.ACTIVE}) AS active,
+      COUNT(*) FILTER (WHERE ${selected} AND ${views.ATTENTION}) AS attention, COUNT(*) FILTER (WHERE ${selected} AND ${views.DELIVERED}) AS delivered,
+      COUNT(*) AS all_orders, COUNT(*) FILTER (WHERE o.status = 'AWAITING_PAYMENT') AS awaiting_payment,
+      COUNT(*) FILTER (WHERE o.status = 'FUNDED' AND o.farmer_decision = 'PENDING') AS awaiting_farmer,
+      COUNT(*) FILTER (WHERE ${views.ATTENTION}) AS order_attention
+      ${joins} WHERE ${summaryBase}`),
   ]);
   const orderIds = ids.map(row => row.id);
   const [orders, payments, operations, deadlines] = await Promise.all([
@@ -158,5 +164,7 @@ export async function readAdminOrderQueue(query: unknown, dispatch = false, now 
   });
   const count = counts[0]!;
   return { items, total: Number(count.total), page: input.page, pageSize: 25, observedAt: now.toISOString(),
+    ...(!dispatch ? { orderCounts: { all: Number(count.all_orders), awaitingPayment: Number(count.awaiting_payment),
+      awaitingFarmer: Number(count.awaiting_farmer), attention: Number(count.order_attention) } } : {}),
     counts: { pending: Number(count.pending), active: Number(count.active), attention: Number(count.attention), delivered: Number(count.delivered) } };
 }

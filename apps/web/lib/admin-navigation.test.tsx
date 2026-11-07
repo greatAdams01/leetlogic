@@ -54,9 +54,17 @@ describe("admin sidebar navigation", () => {
       <SidebarNavigation route="logistics" permissions={permissions} onNavigate={() => {}} />,
     );
     expect(
-      screen.getByRole("link", { name: "Logistics & dispatch" }).getAttribute("aria-current"),
+      screen.getByRole("link", { name: "Deliveries" }).getAttribute("aria-current"),
     ).toBe("page");
     expect(screen.queryByRole("link", { name: "Buyer verification" })).toBeNull();
+  });
+  it("keeps the correct workspace active on dedicated order and delivery pages", () => {
+    const view = render(<SidebarNavigation route="orders/11111111-1111-4111-8111-111111111111" permissions={permissions} onNavigate={() => {}} />);
+    expect(screen.getByRole("button", { name: "Orders & deliveries" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("link", { name: "Orders" }).getAttribute("aria-current")).toBe("page");
+    view.rerender(<SidebarNavigation route="logistics/11111111-1111-4111-8111-111111111111" permissions={permissions} onNavigate={() => {}} />);
+    expect(screen.getByRole("link", { name: "Deliveries" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Orders" }).hasAttribute("aria-current")).toBe(false);
   });
   it("omits inaccessible items and empty sections and reports navigation", () => {
     const navigate = vi.fn();

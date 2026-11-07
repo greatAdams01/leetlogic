@@ -2,65 +2,61 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { deliveryActiveStates, deliveryPendingStates, deliveryStatusCopy, safeTrackingUrl } from "../../../../packages/contracts/src/delivery-visibility";
+import { deliveryActiveStates, deliveryPendingStates, deliveryStatusCopy } from "../../../../packages/contracts/src/delivery-visibility";
 import { formatMoney } from "../../../../packages/contracts/src/money";
-import { CustomerDelivery } from "../customer-delivery";
-import { financeDate, financeLabel, financeRequest } from "./finance-ui";
+import { operationsDetailLink, operationsDetailRoute, operationsQueuePath } from "../../lib/admin-order-navigation";
 import { userFacingError } from "../../lib/user-facing-error";
+import { financeDate, financeRequest } from "./finance-ui";
+import { farmerDecisionLabel, OperationsBadge, orderStatusLabel } from "./order-ui";
+import type { QueueData, QueueOrder } from "./order-types";
 
-type QueueOrder = {
-  id: string; reference: string; status: string; createdAt: string;
-  listing: { title: string; unitCode: string }; quantity: string; totalMinor: string;
-  buyer: { name: string; phone: string };
-  farmer: { name: string; farmName: string; decision: string; decidedAt: string | null };
-  fulfillment: { status: string; method: string; readyAt: string | null; dispatchedAt: string | null; receiptConfirmedAt: string | null; receiptSource: string };
-  payment: { title: string; source: string; heldMinor: string; releasedMinor: string; refundedMinor: string; transfer: string };
-  delivery: null | {
-    id: string; status: string; label: string; courier: string | null; provider: string | null;
-    providerShipmentId: string | null; trackingRef: string | null; legacyTrackingRef: string | null;
-    pickupState: string | null; destinationState: string | null;
-    packageCount: number; deliveredPackages: number; lastSyncedAt: string | null; lastProgressAt: string | null;
-    assignments: { providerShipmentId: string | null; parcelIndex?: number; status: string; trackingUrl: string | null; courier: { name: string | null; phone: string | null }; rider: { name: string | null; phone: string | null } | null }[];
-  };
-  issues: { code: string; title: string; body: string }[];
-};
-type QueueData = { items: QueueOrder[]; total: number; page: number; pageSize: number; observedAt: string; counts: { pending: number; active: number; attention: number; delivered: number } };
-const views = [
-  ["ALL", "All records"], ["ATTENTION", "Needs attention"], ["PENDING", "Pending booking"],
-  ["ACTIVE", "Dispatch in progress"], ["DELIVERED", "Delivery reported"], ["FAILED", "Failed / returned / cancelled"],
-  ["DELAYED", "Possible delay"], ["STALE", "Stale tracking"],
+const deliveryViews = [
+  ["ALL", "All deliveries"], ["ATTENTION", "Needs attention"], ["PENDING", "To arrange"],
+  ["ACTIVE", "In progress"], ["DELIVERED", "Delivered"], ["FAILED", "Delivery problems"],
+  ["DELAYED", "Possible delay"], ["STALE", "Tracking update overdue"],
 ] as const;
 
 export function OrderOperations({ dispatch = false, permissions }: { dispatch?: boolean; permissions: string[] }) {
   const router = useRouter(), params = useSearchParams(), base = dispatch ? "logistics" : "orders";
   const query = params.get("search") || "", status = params.get("status") || "ALL", farmer = params.get("farmer") || "ALL", view = params.get("view") || "ALL";
-  const page = Math.min(10000, Math.max(1, Number(params.get("page")) || 1));
-  const selected = params.get("id"), orderId = selected && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(selected) ? selected : null;
+  const page = Math.min(10000, Math.max(1, Math.floor(Number(params.get("page")) || 1)));
   const path = `${dispatch ? "dispatch" : "order-operations"}?${new URLSearchParams({ page: String(page), search: query, status, farmer, view })}`;
+  const returnTo = operationsQueuePath(base, new URLSearchParams(params.toString()));
+  const canRead = permissions.includes("orders.read");
   const [search, setSearch] = useState(query), [snapshot, setSnapshot] = useState<{ path: string; data: QueueData }>(), [error, setError] = useState("");
   const [busy, setBusy] = useState(false), requests = useRef(0), loading = useRef(false);
   const data = snapshot?.path === path ? snapshot.data : undefined;
   useEffect(() => setSearch(query), [query]);
+  const oldId = params.get("id");
+  useEffect(() => {
+    if (oldId && operationsDetailRoute(`${base}/${oldId}`))
+      router.replace(operationsDetailLink(base, oldId, returnTo));
+  }, [oldId, base, returnTo, router]);
   const filters = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params.toString());
-    for (const [key, value] of Object.entries(changes)) value === null ? next.delete(key) : next.set(key, value);
-    router.push(`/admin/${base}?${next}`, { scroll: false });
+    next.delete("id");
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    router.push(operationsQueuePath(base, next), { scroll: false });
   };
   const load = useCallback(async () => {
+    if (!canRead) return;
     const version = ++requests.current;
     loading.current = true;
     setBusy(true);
+    setError("");
     try {
       const next = await financeRequest(path) as QueueData;
       if (version !== requests.current) return;
       setSnapshot({ path, data: next });
-      setError("");
     } catch (failure) {
       if (version === requests.current) setError(userFacingError(failure));
     } finally {
       if (version === requests.current) { loading.current = false; setBusy(false); }
     }
-  }, [path]);
+  }, [path, canRead]);
   useEffect(() => {
     void load();
     const refresh = () => {
@@ -76,77 +72,98 @@ export function OrderOperations({ dispatch = false, permissions }: { dispatch?: 
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [load]);
-  const detail = useRef<HTMLElement>(null);
-  useEffect(() => { if (orderId) detail.current?.focus({ preventScroll: true }); }, [orderId]);
+  const metrics = dispatch ? [
+    { label: "To arrange", count: data?.counts.pending, filters: { view: "PENDING", status, farmer } },
+    { label: "In progress", count: data?.counts.active, filters: { view: "ACTIVE", status, farmer } },
+    { label: "Needs attention", count: data?.counts.attention, filters: { view: "ATTENTION", status, farmer } },
+    { label: "Delivered", count: data?.counts.delivered, filters: { view: "DELIVERED", status, farmer } },
+  ] : [
+    { label: "All orders", count: data?.orderCounts?.all, filters: { view: "ALL", status: "ALL", farmer: "ALL" } },
+    { label: "Awaiting payment", count: data?.orderCounts?.awaitingPayment, filters: { view: "ALL", status: "AWAITING_PAYMENT", farmer: "ALL" } },
+    { label: "Awaiting farmer", count: data?.orderCounts?.awaitingFarmer, filters: { view: "ALL", status: "FUNDED", farmer: "PENDING" } },
+    { label: "Needs attention", count: data?.orderCounts?.attention ?? data?.counts.attention, filters: { view: "ATTENTION", status: "ALL", farmer: "ALL" } },
+  ];
+  const hasFilters = !!query || status !== "ALL" || farmer !== "ALL" || view !== "ALL";
   const statuses = dispatch ? [...new Set([...deliveryPendingStates, ...deliveryActiveStates, "DELIVERED", "RETURNED", "CANCELLED"])]
     : ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED"];
-  return <div className="dispatch-workspace">
-    <div className="dispatch-toolbar">
-      <p>Updates refresh every 30 seconds while this page is visible. Provider tracking is not a live rider location.</p>
-      <button className="secondary" disabled={busy} onClick={() => void load()}>Refresh records</button>
-      <Link href={`/admin/${base}?legacy=1`}>Legacy {dispatch ? "shipment controls" : "order controls"}</Link>
+  if (!canRead) return <section className="live-card"><p role="alert">You do not have permission to view {dispatch ? "deliveries" : "orders"}.</p></section>;
+  return <div className="operations-workspace">
+    <nav className="finance-tabs" aria-label="Orders and deliveries">
+      <Link href="/admin/orders" aria-current={!dispatch ? "page" : undefined}>Orders</Link>
+      <Link href="/admin/logistics" aria-current={dispatch ? "page" : undefined}>Deliveries</Link>
+    </nav>
+    <div className="dispatch-metrics" aria-label={dispatch ? "Delivery counts" : "Order counts"}>
+      {metrics.map(metric => {
+        const selected = metric.filters.view === view && metric.filters.status === status && metric.filters.farmer === farmer;
+        return <button key={metric.label} className={`dispatch-metric ${selected ? "selected" : ""}`} aria-label={`${metric.label} ${metric.count ?? "Not available"}`} aria-pressed={selected} onClick={() => filters({ ...metric.filters, page: "1" })}>
+          <span>{metric.label}</span><strong>{metric.count ?? "—"}</strong>
+        </button>;
+      })}
     </div>
-    <div className="dispatch-metrics" aria-label="Order and dispatch counts">
-      {([['pending', 'Pending booking', 'PENDING'], ['active', 'Dispatch in progress', 'ACTIVE'], ['attention', 'Needs attention', 'ATTENTION'], ['delivered', 'Delivery reported', 'DELIVERED']] as const).map(([key, label, value]) =>
-        <button key={key} className={`dispatch-metric ${view === value ? "selected" : ""}`} onClick={() => filters({ view: value, page: "1" })}>
-          <span>{label}</span><strong>{data?.counts[key] ?? "—"}</strong>
-        </button>)}
-    </div>
-    <section className="live-card">
+    <section className="live-card operations-queue-card">
+      <div className="finance-section-heading">
+        <div><h2>{dispatch ? "Dispatch queue" : "Order list"}</h2><p>{dispatch ? "Buyer collections stay in Orders. Open a delivery for contacts, tracking and dispatch actions." : "Open an order for produce, contacts, payments and fulfillment actions."}</p></div>
+        <button className="secondary" disabled={busy} onClick={() => void load()}>Refresh</button>
+      </div>
       <form className="dispatch-filters" onSubmit={event => { event.preventDefault(); filters({ search, page: "1" }); }}>
-        <label>Search orders or shipments<input value={search} maxLength={100} onChange={event => setSearch(event.target.value)} placeholder="Reference, buyer, farmer, courier or shipment ID" /></label>
-        <label>Operational view<select value={view} onChange={event => filters({ view: event.target.value, page: "1" })}>{views.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label>{dispatch ? "Delivery status" : "Order status"}<select value={status} onChange={event => filters({ status: event.target.value, page: "1" })}>
-          <option value="ALL">All statuses</option>{statuses.map(value => <option key={value} value={value}>{dispatch ? deliveryStatusCopy(value).label : financeLabel(value)}</option>)}
-        </select></label>
-        <label>Farmer confirmation<select value={farmer} onChange={event => filters({ farmer: event.target.value, page: "1" })}>
-          <option value="ALL">All decisions</option>{["PENDING", "ACCEPTED", "REJECTED", "LEGACY"].map(value => <option key={value} value={value}>{financeLabel(value)}</option>)}
-        </select></label>
+        <label>{dispatch ? "Search deliveries" : "Search orders"}<input value={search} maxLength={100} onChange={event => setSearch(event.target.value)} placeholder={dispatch ? "Order reference, courier or tracking reference" : "Order reference, produce, buyer or farmer"} /></label>
+        {dispatch ? <label>Show deliveries<select value={view} onChange={event => filters({ view: event.target.value, page: "1" })}>{deliveryViews.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          : <label>Order status<select value={status} onChange={event => filters({ status: event.target.value, page: "1" })}><option value="ALL">All statuses</option>{statuses.map(value => <option key={value} value={value}>{orderStatusLabel(value)}</option>)}</select></label>}
+        {!dispatch && <label>Farmer response<select value={farmer} onChange={event => filters({ farmer: event.target.value, page: "1" })}>
+          <option value="ALL">All responses</option>{["PENDING", "ACCEPTED", "REJECTED", "LEGACY"].map(value => <option key={value} value={value}>{farmerDecisionLabel(value)}</option>)}
+        </select></label>}
         <button className="secondary">Search</button>
+        {hasFilters && <button type="button" className="secondary" onClick={() => filters({ search: null, status: null, farmer: null, view: null, page: null })}>Clear filters</button>}
       </form>
-      {error && <p className="live-error" role="alert">{error}{data ? ` Showing the snapshot from ${financeDate(data.observedAt)}.` : ""}</p>}
-      {!data && busy && <p role="status">Loading order and delivery progress…</p>}
+      {dispatch && <details className="operations-more-filters"><summary>Filter by delivery status</summary><label>Delivery status<select value={status} onChange={event => filters({ status: event.target.value, page: "1" })}>
+        <option value="ALL">All statuses</option>{statuses.map(value => <option key={value} value={value}>{deliveryStatusCopy(value).label}</option>)}
+      </select></label></details>}
+      {error && <p className="live-error" role="alert">{error}{data ? ` Showing the last update from ${financeDate(data.observedAt)}.` : ""}</p>}
+      {!data && busy && <p role="status">Loading {dispatch ? "deliveries" : "orders"}…</p>}
       {data && <>
-        <p className="dispatch-observed">Snapshot loaded {financeDate(data.observedAt)} (West Africa Time). Delay flags are investigation prompts, not guaranteed delivery deadlines.</p>
+        <p className="dispatch-observed">{data.total} matching {dispatch ? "deliveries" : "orders"} · Updated {financeDate(data.observedAt)} (WAT). Refreshes automatically.</p>
         <div className="live-table-wrap">
-          <table className="dispatch-queue">
-            <thead><tr><th>Order / parties</th><th>{dispatch ? "Booking / courier" : "Payment"}</th><th>Farmer / fulfillment</th><th>{dispatch ? "Rider / packages" : "Delivery"}</th><th>Latest updates</th><th>Needs attention</th><th>Review</th></tr></thead>
-            <tbody>{data.items.map(order => <tr key={order.id} className={order.id === orderId ? "selected" : undefined}>
-              <td><strong>{order.reference}</strong><small>{order.listing.title} · {order.quantity} {order.listing.unitCode}</small><small>Buyer: {order.buyer.name}</small><small>Farmer: {order.farmer.farmName}</small><small>{financeLabel(order.status)} · {financeDate(order.createdAt)}</small></td>
-              <td>{dispatch ? <>
-                <strong>{order.delivery?.label || "No delivery arrangement"}</strong><small>{order.delivery?.courier || "Courier not confirmed"}</small><small>{order.delivery?.provider}</small>
-                <small>{[order.delivery?.pickupState, order.delivery?.destinationState].filter(Boolean).join(" → ") || "Route not recorded"}</small>
-                <small className="delivery-reference">{order.delivery?.providerShipmentId || order.delivery?.trackingRef || order.delivery?.legacyTrackingRef || "No shipment ID yet"}</small>
-              </> : <><strong>{order.payment.title}</strong><small>{order.payment.source}</small><small>Produce: {formatMoney(order.totalMinor)}</small><small>Held: {formatMoney(order.payment.heldMinor)}</small><small>Farmer payment: {order.payment.transfer}</small></>}</td>
-              <td><strong>{financeLabel(order.farmer.decision)}</strong><small>{order.farmer.decidedAt ? financeDate(order.farmer.decidedAt) : "Decision not recorded yet"}</small><small>{order.fulfillment.status} · {order.fulfillment.method}</small>
-                {order.fulfillment.readyAt && <small>Ready: {financeDate(order.fulfillment.readyAt)}</small>}
-                {order.fulfillment.dispatchedAt && <small>Farmer handoff: {financeDate(order.fulfillment.dispatchedAt)}</small>}
-                <small>{order.fulfillment.receiptConfirmedAt ? `${order.fulfillment.receiptSource === "legacy-staff" ? "Legacy staff confirmation" : "Buyer receipt"}: ${financeDate(order.fulfillment.receiptConfirmedAt)}` : "Buyer receipt not confirmed"}</small>
-              </td>
-              <td>{dispatch ? order.delivery?.assignments.map((assignment, index) => <div key={index} className="dispatch-package">
-                {order.delivery!.packageCount > 1 && <strong>Package {(assignment.parcelIndex ?? index) + 1} · {deliveryStatusCopy(assignment.status).label}</strong>}
-                <small>{assignment.rider ? [assignment.rider.name, assignment.rider.phone].filter(Boolean).join(" · ") : order.delivery?.provider === "Shipbubble" ? "Rider details not supplied by provider" : "Rider details not recorded"}</small>
-                {assignment.courier.phone && <small>Courier contact: {assignment.courier.phone}</small>}
-                {assignment.trackingUrl && safeTrackingUrl(assignment.trackingUrl) && <a href={assignment.trackingUrl} target="_blank" rel="noopener noreferrer">Open provider tracking{order.delivery!.packageCount > 1 ? ` · Package ${(assignment.parcelIndex ?? index) + 1}` : ""}</a>}
-              </div>) : <><strong>{order.delivery?.label || (order.fulfillment.method === "Pickup" ? "Buyer collection" : "Not arranged")}</strong><small>{order.delivery?.courier}</small></>}
-                {order.delivery && <small>{order.delivery.deliveredPackages} of {order.delivery.packageCount} packages delivered</small>}
-              </td>
-              <td><small>Courier check: {order.delivery?.lastSyncedAt ? financeDate(order.delivery.lastSyncedAt) : "Not recorded"}</small><small>Progress: {order.delivery?.lastProgressAt ? financeDate(order.delivery.lastProgressAt) : "Not recorded"}</small></td>
-              <td>{order.issues.length ? order.issues.map(issue => <p key={issue.code} className="dispatch-issue" title={issue.body}>{issue.title}</p>) : <small>No flagged issue</small>}</td>
-              <td><button className="secondary" onClick={() => filters({ id: order.id })} aria-label={`Investigate ${order.reference}`}>Investigate →</button></td>
-            </tr>)}</tbody>
+          <table className="operations-queue" role="table" aria-label={dispatch ? "Deliveries" : "Orders"}>
+            <thead role="rowgroup"><tr role="row"><th scope="col">{dispatch ? "Delivery / route" : "Order / produce"}</th><th scope="col">{dispatch ? "Courier / rider" : "Buyer / farmer"}</th><th scope="col">{dispatch ? "Delivery progress" : "Payment"}</th><th scope="col">{dispatch ? "Attention" : "Fulfillment"}</th><th scope="col">Details</th></tr></thead>
+            <tbody role="rowgroup">{data.items.map(order => {
+              const href = operationsDetailLink(base, order.id, returnTo);
+              return <tr key={order.id} role="row">
+                <td role="cell" data-label={dispatch ? "Delivery / route" : "Order / produce"}><Link className="operations-record-link" href={href}>{order.reference}</Link><small>{order.listing.title} · {order.quantity} {order.listing.unitCode}</small>
+                  {dispatch ? <small>{[order.delivery?.pickupState, order.delivery?.destinationState].filter(Boolean).join(" → ") || "Route available in delivery details"}</small>
+                    : <><small>{financeDate(order.createdAt)}</small><OperationsBadge value={order.status} label={orderStatusLabel(order.status)} /></>}
+                </td>
+                <td role="cell" data-label={dispatch ? "Courier / rider" : "Buyer / farmer"}>{dispatch ? <CourierSummary order={order} /> : <><strong>{order.buyer.name}</strong><small>Farmer: {order.farmer.farmName}</small></>}</td>
+                <td role="cell" data-label={dispatch ? "Delivery progress" : "Payment"}>{dispatch ? <>
+                  <OperationsBadge value={order.delivery?.status || "PENDING"} label={order.delivery?.label} />
+                  {order.delivery && order.delivery.packageCount > 1 && <small>{order.delivery.deliveredPackages} of {order.delivery.packageCount} packages delivered</small>}
+                  <small>{order.delivery?.lastSyncedAt ? `Last checked ${financeDate(order.delivery.lastSyncedAt)}` : "No courier update yet"}</small>
+                </> : <><strong>{formatMoney(order.totalMinor)}</strong><small>{order.payment.title}</small>{order.payment.source === "Manual escrow" && <small>Manually recorded</small>}</>}</td>
+                <td role="cell" data-label={dispatch ? "Attention" : "Fulfillment"}>{dispatch ? <IssueSummary order={order} /> : <>
+                  <strong>{order.status === "AWAITING_PAYMENT" ? "Waiting for payment" : order.farmer.decision === "PENDING" && order.status === "FUNDED" ? "Awaiting farmer acceptance" : order.fulfillment.status}</strong>
+                  <small>{order.fulfillment.method === "Pickup" ? "Buyer collection" : "Courier delivery"} · {farmerDecisionLabel(order.farmer.decision)}</small>
+                  {!!order.issues.length && <IssueSummary order={order} />}
+                </>}</td>
+                <td role="cell" data-label="Details"><Link className="finance-review-link" href={href} aria-label={`View ${dispatch ? "delivery" : "order"} ${order.reference}`}>View {dispatch ? "delivery" : "order"} →</Link></td>
+              </tr>;
+            })}</tbody>
           </table>
         </div>
-        {!data.items.length && <div className="live-empty"><h2>No matching {dispatch ? "deliveries" : "orders"}</h2><p>Try another status, decision or operational view.</p></div>}
-        <div className="live-pagination"><span>{data.total} records · Page {page}</span>
+        {!data.items.length && <div className="live-empty"><h2>No matching {dispatch ? "deliveries" : "orders"}</h2><p>{hasFilters ? "Try another search or clear the filters." : dispatch ? "Deliveries will appear when courier delivery is arranged. Buyer collections are managed in Orders." : "Orders will appear when a buyer places an order."}</p></div>}
+        <div className="live-pagination"><span>Page {page} of {Math.max(1, Math.ceil(data.total / data.pageSize))}</span>
           <button className="secondary" disabled={busy || page <= 1} onClick={() => filters({ page: String(page - 1) })}>Previous</button>
           <button className="secondary" disabled={busy || page * data.pageSize >= data.total} onClick={() => filters({ page: String(page + 1) })}>Next</button>
         </div>
       </>}
     </section>
-    {orderId && <section className="live-card dispatch-review" ref={detail} tabIndex={-1} aria-label="Order and delivery investigation">
-      <div className="dispatch-toolbar"><h2>Order and delivery investigation</h2><button className="secondary" onClick={() => filters({ id: null })}>Close investigation</button></div>
-      <CustomerDelivery key={orderId} id={orderId} staff staffPermissions={permissions} onChanged={() => void load()} />
-    </section>}
+    <details className="operations-other-tools"><summary>Other tools</summary><Link href={`/admin/${base}?legacy=1`}>Older {dispatch ? "shipment" : "order"} records and exports</Link></details>
   </div>;
+}
+
+function IssueSummary({ order }: { order: QueueOrder }) {
+  return order.issues.length ? <p className="dispatch-issue">{order.issues[0].title}{order.issues.length > 1 && <span> · +{order.issues.length - 1} more</span>}</p> : <small>No issues flagged</small>;
+}
+
+function CourierSummary({ order }: { order: QueueOrder }) {
+  const riders = [...new Set(order.delivery?.assignments.flatMap(assignment => assignment.rider?.name ? [assignment.rider.name] : []) || [])];
+  return <><strong>{order.delivery?.courier || "Courier not assigned"}</strong><small>{riders.length ? `Rider: ${riders.join(", ")}` : "Rider details not available yet"}</small></>;
 }

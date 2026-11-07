@@ -8,19 +8,9 @@ import { FinanceStatus, financeDate, financeLabel, financeRequest } from "./fina
 import { refundState } from "./refund-state";
 import { RecoveryReview } from "./finance-operations";
 import { MoneyActions } from "./money-actions";
+import { adminRecordReturnPath } from "../../lib/admin-order-navigation";
 export function financeReturnPath(value: string | null) {
-  if (!value?.startsWith("/admin/")) return "/admin/reconciliation";
-  try {
-    const url = new URL(value, "https://admin.invalid");
-    if (
-      url.origin === "https://admin.invalid" &&
-      /^\/admin\/(reconciliation|withdrawals|reports)(?:\/(?:orders\/[a-f0-9-]{36}|records\/(?:payments|operations|recoveries)\/[a-f0-9-]{36}))?$/.test(
-        url.pathname,
-      )
-    )
-      return url.pathname + url.search;
-  } catch {}
-  return "/admin/reconciliation";
+  return adminRecordReturnPath(value, "/admin/reconciliation");
 }
 export function MoneyRecordReview({
   recordType,
