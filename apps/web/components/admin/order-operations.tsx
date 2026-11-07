@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { deliveryActiveStates, deliveryPendingStates, deliveryStatusCopy } from "../../../../packages/contracts/src/delivery-visibility";
+import { deliveryActiveStates, deliveryPendingStates, deliveryStatusCopy, safeTrackingUrl } from "../../../../packages/contracts/src/delivery-visibility";
 import { formatMoney } from "../../../../packages/contracts/src/money";
 import { CustomerDelivery } from "../customer-delivery";
 import { financeDate, financeLabel, financeRequest } from "./finance-ui";
@@ -17,10 +17,10 @@ type QueueOrder = {
   payment: { title: string; source: string; heldMinor: string; releasedMinor: string; refundedMinor: string; transfer: string };
   delivery: null | {
     id: string; status: string; label: string; courier: string | null; provider: string | null;
-    providerShipmentId: string | null; legacyTrackingRef: string | null;
+    providerShipmentId: string | null; trackingRef: string | null; legacyTrackingRef: string | null;
     pickupState: string | null; destinationState: string | null;
     packageCount: number; deliveredPackages: number; lastSyncedAt: string | null; lastProgressAt: string | null;
-    assignments: { providerShipmentId: string | null; parcelIndex?: number; status: string; courier: { name: string | null; phone: string | null }; rider: { name: string | null; phone: string | null } | null }[];
+    assignments: { providerShipmentId: string | null; parcelIndex?: number; status: string; trackingUrl: string | null; courier: { name: string | null; phone: string | null }; rider: { name: string | null; phone: string | null } | null }[];
   };
   issues: { code: string; title: string; body: string }[];
 };
@@ -116,7 +116,7 @@ export function OrderOperations({ dispatch = false, permissions }: { dispatch?: 
               <td>{dispatch ? <>
                 <strong>{order.delivery?.label || "No delivery arrangement"}</strong><small>{order.delivery?.courier || "Courier not confirmed"}</small><small>{order.delivery?.provider}</small>
                 <small>{[order.delivery?.pickupState, order.delivery?.destinationState].filter(Boolean).join(" → ") || "Route not recorded"}</small>
-                <small className="delivery-reference">{order.delivery?.providerShipmentId || order.delivery?.legacyTrackingRef || "No shipment ID yet"}</small>
+                <small className="delivery-reference">{order.delivery?.providerShipmentId || order.delivery?.trackingRef || order.delivery?.legacyTrackingRef || "No shipment ID yet"}</small>
               </> : <><strong>{order.payment.title}</strong><small>{order.payment.source}</small><small>Produce: {formatMoney(order.totalMinor)}</small><small>Held: {formatMoney(order.payment.heldMinor)}</small><small>Farmer payment: {order.payment.transfer}</small></>}</td>
               <td><strong>{financeLabel(order.farmer.decision)}</strong><small>{order.farmer.decidedAt ? financeDate(order.farmer.decidedAt) : "Decision not recorded yet"}</small><small>{order.fulfillment.status} · {order.fulfillment.method}</small>
                 {order.fulfillment.readyAt && <small>Ready: {financeDate(order.fulfillment.readyAt)}</small>}
@@ -127,6 +127,7 @@ export function OrderOperations({ dispatch = false, permissions }: { dispatch?: 
                 {order.delivery!.packageCount > 1 && <strong>Package {(assignment.parcelIndex ?? index) + 1} · {deliveryStatusCopy(assignment.status).label}</strong>}
                 <small>{assignment.rider ? [assignment.rider.name, assignment.rider.phone].filter(Boolean).join(" · ") : order.delivery?.provider === "Shipbubble" ? "Rider details not supplied by provider" : "Rider details not recorded"}</small>
                 {assignment.courier.phone && <small>Courier contact: {assignment.courier.phone}</small>}
+                {assignment.trackingUrl && safeTrackingUrl(assignment.trackingUrl) && <a href={assignment.trackingUrl} target="_blank" rel="noopener noreferrer">Open provider tracking{order.delivery!.packageCount > 1 ? ` · Package ${(assignment.parcelIndex ?? index) + 1}` : ""}</a>}
               </div>) : <><strong>{order.delivery?.label || (order.fulfillment.method === "Pickup" ? "Buyer collection" : "Not arranged")}</strong><small>{order.delivery?.courier}</small></>}
                 {order.delivery && <small>{order.delivery.deliveredPackages} of {order.delivery.packageCount} packages delivered</small>}
               </td>

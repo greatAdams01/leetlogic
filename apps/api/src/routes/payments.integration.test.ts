@@ -2466,6 +2466,9 @@ suite("provider-backed payment safeguards", () => {
         : [(await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).providerShipmentId!];
       vi.mocked(shippingProvider.track).mockImplementation(async id => ({
         id, status: statuses[shipmentIds.indexOf(id)] || "pending", courier: f.q.courier,
+        courierContact: { name: f.q.courier, phone: "+2348012345678" },
+        rider: id === shipmentIds[0] ? { name: "Assigned rider", phone: "+2348098765432" } : null,
+        trackingUrl: id === shipmentIds[0] ? "https://tracking.example.test/package" : undefined,
       }));
       await prisma.delivery.update({ where: { id: f.d.id }, data: { nextSyncAt: new Date() } });
       await runDeliveryJobs();
@@ -2484,16 +2487,42 @@ suite("provider-backed payment safeguards", () => {
     it("waits for every courier parcel, accepts one buyer receipt, then settles one automatic release", async () => {
       const f = await receiptDelivery(2);
       const read = async () => (await request(app).get(f.base).set(customerAuth())).body;
+      const readRoles = async () => {
+        const buyerView = await read();
+        const farmerView = await request(app).get(f.base).set(f.farmerAuth);
+        const staffView = await request(app).get(`/v1/admin/delivery-orders/${f.o.id}/delivery`).set(staffAuth());
+        expect(farmerView.status).toBe(200); expect(staffView.status).toBe(200);
+        expect(buyerView.tracking).toEqual(farmerView.body.tracking);
+        expect(buyerView.tracking).toEqual(staffView.body.tracking);
+        expect(staffView.body.progress.canConfirm).toBe(false);
+        const queue = await request(app).get("/v1/admin/dispatch").set(staffAuth()).query({ search: f.o.reference });
+        expect(queue.status).toBe(200); expect(queue.body.total).toBe(1);
+        expect(queue.body.items[0].payment).toMatchObject({ source: "Bachs", heldMinor: buyerView.money.heldMinor, releasedMinor: buyerView.money.releasedMinor });
+        expect(queue.body.items[0].delivery).toMatchObject({ label: buyerView.tracking.label, status: buyerView.tracking.status, deliveredPackages: buyerView.tracking.deliveredPackages, assignments: buyerView.tracking.assignments });
+        return { buyerView, queue: queue.body };
+      };
       expect((await read()).progress).toMatchObject({ status: "Dispatched", canConfirm: false });
+      expect((await readRoles()).buyerView.tracking.assignments.every((a: any) => a.rider === null)).toBe(true);
       expect((await uploadReceipt(f)).body.error.code).toBe("RECEIPT_NOT_READY");
       for (const statuses of [["picked_up", "picked_up"], ["in_transit", "in_transit"], ["delivered", "in_transit"]]) {
         await trackReceipt(f, statuses);
         expect((await read()).progress.canConfirm).toBe(false);
+        const snapshot = await readRoles();
+        expect(snapshot.queue.counts.delivered).toBe(0);
+        expect(snapshot.buyerView.tracking.assignments[0]).toMatchObject({ rider: { name: "Assigned rider", phone: "+2348098765432" }, trackingUrl: "https://tracking.example.test/package" });
         expect((await uploadReceipt(f)).status).toBe(409);
         expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(0);
       }
       await trackReceipt(f, ["delivered", "delivered"]);
-      expect((await read()).progress).toMatchObject({ status: "Awaiting buyer confirmation", canConfirm: true });
+      expect((await read()).progress).toMatchObject({ status: "Delivered", canConfirm: true });
+      const delivered = await readRoles();
+      expect(delivered.queue.counts.delivered).toBe(1);
+      expect(delivered.buyerView.tracking).toMatchObject({ deliveredPackages: 2, receiptConfirmedAt: null, liveTracking: false });
+      for (const status of ["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"]) {
+        const parcelEvents = delivered.buyerView.tracking.timeline.filter((e: any) => e.status === status && e.parcelIndex !== null);
+        expect(parcelEvents).toHaveLength(2);
+        expect(parcelEvents.every((e: any) => e.recordedAt && e.providerShipmentId && e.providerTime === null)).toBe(true);
+      }
       expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ deliveryConfirmedAt: null, heldMinor: 20000n, releasedMinor: 0n });
       expect((await request(app).post(`${f.base}/confirm`).set(customerAuth()).send({ acknowledged: true })).body.error.code).toBe("RECEIPT_EVIDENCE_REQUIRED");
       expect((await uploadReceipt(f, f.farmerAuth)).status).toBe(403);
@@ -2529,6 +2558,9 @@ suite("provider-backed payment safeguards", () => {
       expect(inventory.availableQuantity.minus(after.availableQuantity).toString()).toBe("2");
       expect(inventory.reservedQuantity.minus(after.reservedQuantity).toString()).toBe("2");
       expect((await read()).progress).toMatchObject({ confirmed: true, canConfirm: false });
+      const settled = await readRoles();
+      expect(settled.buyerView.tracking.receiptConfirmedAt).toBeTruthy();
+      expect(settled.queue.items[0]).toMatchObject({ status: "COMPLETED", fulfillment: { status: "Completed" }, payment: { heldMinor: "0", releasedMinor: "20000" } });
     });
 
     it.each([

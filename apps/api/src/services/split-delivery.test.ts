@@ -1,10 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ rows: [] as any[], book: vi.fn(), track: vi.fn(), cancel: vi.fn() }));
+const h = vi.hoisted(() => ({ rows: [] as any[], book: vi.fn(), track: vi.fn(), cancel: vi.fn(), event: vi.fn() }));
 vi.mock("@leetlogic/database", () => {
   const client = {
     $queryRaw: vi.fn(),
     delivery: { update: vi.fn(), findUniqueOrThrow: async () => ({ orderId: "order" }) },
-    deliveryEvent: { upsert: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
+    deliveryEvent: { upsert: h.event, findFirst: vi.fn(), create: vi.fn() },
     deliveryParcel: {
       findUniqueOrThrow: async ({ where }: any) => ({ ...h.rows.find(row => row.id === where.id) }),
       upsert: async ({ create }: any) => {
@@ -16,6 +16,7 @@ vi.mock("@leetlogic/database", () => {
             status: "PENDING",
             providerShipmentId: null,
             actualMinor: null,
+            updatedAt: new Date(),
           });
       },
       findMany: async () => h.rows.map((row) => ({ ...row })),
@@ -24,13 +25,13 @@ vi.mock("@leetlogic/database", () => {
           Object.entries(where).every(([key, value]) => item[key] === value),
         );
         if (!row) return { count: 0 };
-        Object.assign(row, data);
+        Object.assign(row, data, { updatedAt: new Date() });
         return { count: 1 };
       },
       update: async ({ where, data }: any) =>
         Object.assign(
           h.rows.find((item) => item.id === where.id),
-          data,
+          data, { updatedAt: new Date() },
         ),
     },
   };
@@ -71,6 +72,7 @@ const recorded = () => splitParts(quote.requestToken)!.map((part, parcelIndex) =
   providerShipmentId: `SB-${parcelIndex}`,
   cancelAttemptedAt: null,
   status: "BOOKED",
+  updatedAt: new Date("2026-11-06T10:00:00Z"),
 }));
 beforeEach(() => {
   h.rows = [];
@@ -88,6 +90,7 @@ it("persists each confirmed parcel and never books it again", async () => {
   expect(h.rows.every((row) => row.status === "BOOKED")).toBe(true);
   await bookSplitDelivery({ book: h.book } as any, "delivery", quote);
   expect(h.book).toHaveBeenCalledTimes(2);
+  expect(h.event.mock.calls.map(([call]) => call.create.status)).toEqual(["BOOKED", "BOOKED"]);
 });
 it("retains a confirmed first parcel and refuses to replay an uncertain second booking", async () => {
   h.book
@@ -127,6 +130,21 @@ it("does not mark a whole order delivered until every parcel arrives", () => {
   expect(aggregateParcelStatus(["DELIVERED", "IN_TRANSIT"])).toBe("in_transit");
   expect(aggregateParcelStatus(["DELIVERED", "CANCELLED"])).toBe("failed_attempt");
   expect(aggregateParcelStatus(["DELIVERED", "DELIVERED"])).toBe("delivered");
+  expect(aggregateParcelStatus(["DELIVERED", "FAILED_ATTEMPT"])).toBe("failed_attempt");
+  expect(aggregateParcelStatus(["BOOKED", "FAILED_ATTEMPT"])).toBe("failed_attempt");
+});
+
+it("records scoped parcel transitions even without provider history and does not duplicate an unchanged poll", async () => {
+  h.rows = recorded();
+  h.track.mockImplementation(async (id) => ({ id, courier: "Courier", status: id === "SB-0" ? "picked_up" : "pending" }));
+  await trackSplitDelivery({ track: h.track } as any, "delivery");
+  expect(h.event).toHaveBeenCalledOnce();
+  expect(h.event.mock.calls[0]![0].create).toMatchObject({
+    deliveryId: "delivery", status: "PICKED_UP", source: "shipbubble", details: { providerShipmentId: "SB-0", parcelIndex: 0 },
+  });
+  expect(h.event.mock.calls[0]![0].create.details).not.toHaveProperty("providerTime");
+  await trackSplitDelivery({ track: h.track } as any, "delivery");
+  expect(h.event).toHaveBeenCalledOnce();
 });
 it("requires the exact persisted quote plan, including every parcel's tokens and costs", () => {
   const rows = recorded();

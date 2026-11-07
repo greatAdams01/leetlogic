@@ -21,7 +21,8 @@ const orderStatuses = ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "
 const dispatchStatuses = [...deliveryPendingStates, ...deliveryActiveStates, "DELIVERED", "CANCELLED", "RETURNED"];
 const deliveryState = Prisma.sql`COALESCE(d.status, CASE WHEN s.status = 'ASSIGNED' THEN 'MANUAL_ASSIGNED' ELSE s.status END, 'UNARRANGED')`;
 const packageCount = Prisma.sql`CASE WHEN jsonb_typeof(d.package->'packageCount') = 'number'
-  THEN GREATEST((d.package->>'packageCount')::numeric, 1) ELSE 1 END`;
+  AND (d.package->>'packageCount')::numeric > 0 AND (d.package->>'packageCount')::numeric = TRUNC((d.package->>'packageCount')::numeric)
+  THEN (d.package->>'packageCount')::numeric ELSE 1 END`;
 const joins = Prisma.sql`FROM trade_orders o
   LEFT JOIN deliveries d ON d."orderId" = o.id
   LEFT JOIN shipments s ON s."orderId" = o.id
@@ -45,14 +46,16 @@ function queueViews(now: Date, currentMode: string): Record<View, Prisma.Sql> {
   const delayed = Prisma.sql`(${ongoing} AND ${deliveryState} IN ('BOOKED', 'MANUAL_ASSIGNED', 'PICKED_UP', 'IN_TRANSIT') AND (
     (${deliveryState} IN ('BOOKED', 'MANUAL_ASSIGNED') AND d.package->>'pickupDate' ~ '^\\d{4}-\\d{2}-\\d{2}$' AND d.package->>'pickupDate' < ${today})
     OR (${progressAt} <= ${progressBefore} AND (d.package->>'pickupDate' IS NULL OR d.package->>'pickupDate' <= ${today} OR ${deliveryState} IN ('PICKED_UP', 'IN_TRANSIT')))))`;
+  const incomplete = Prisma.sql`(d.status = 'DELIVERED' AND (d."providerShipmentId" LIKE 'split:%' OR (d."providerShipmentId" IS NOT NULL AND ${packageCount} > 1) OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id)) AND (
+    d."selectedQuoteId" IS NULL OR ${packageCount} <= 1 OR (SELECT COUNT(*) FROM delivery_parcels p WHERE p."deliveryId" = d.id) <> ${packageCount}
+    OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id AND (p.status <> 'DELIVERED' OR p."providerShipmentId" IS NULL OR p."quoteId" IS DISTINCT FROM d."selectedQuoteId" OR p."parcelIndex" < 0 OR p."parcelIndex" >= ${packageCount}))))`;
   const attention = Prisma.sql`(o.financial_hold OR ${deliveryState} IN (${Prisma.join(deliveryProblemStates)})
     OR d."failureCode" IS NOT NULL OR ${stale} OR ${delayed}
+    OR (o.farmer_decision = 'REJECTED' AND o.status IN ('FUNDED', 'DELIVERED'))
     OR (d.status = 'BOOKING' AND d."leaseUntil" <= ${now})
     OR EXISTS (SELECT 1 FROM support_tickets t WHERE t."orderId" = o.id AND t.kind = 'DISPUTE' AND t.status <> 'RESOLVED')
     OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id AND (p."failureCode" IS NOT NULL OR p.status IN ('FAILED_ATTEMPT', 'RETURNING', 'RETURNED', 'CANCELLED', 'BOOKING_UNCERTAIN')))
-    OR (d.status = 'DELIVERED' AND (d."providerShipmentId" LIKE 'split:%' OR (d."providerShipmentId" IS NOT NULL AND ${packageCount} > 1) OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id)) AND (
-      d."selectedQuoteId" IS NULL OR ${packageCount} <= 1 OR (SELECT COUNT(*) FROM delivery_parcels p WHERE p."deliveryId" = d.id) <> ${packageCount}
-      OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id AND (p.status <> 'DELIVERED' OR p."providerShipmentId" IS NULL OR p."quoteId" IS DISTINCT FROM d."selectedQuoteId" OR p."parcelIndex" < 0 OR p."parcelIndex" >= ${packageCount}))))
+    OR ${incomplete}
     OR EXISTS (SELECT 1 FROM money_operations m WHERE m."orderId" = o.id AND m.mode = ${currentMode}
       AND m.kind IN ('RELEASE', 'REFUND', 'REFUND_TRANSFER', 'REFUND_PAYOUT') AND m.status IN ('FAILED', 'BLOCKED', 'UNKNOWN'))
     OR EXISTS (SELECT 1 FROM payment_attempts p WHERE p."orderId" = o.id AND p.mode = ${currentMode} AND p.status IN ('EXCEPTION', 'BLOCKED'))
@@ -62,7 +65,7 @@ function queueViews(now: Date, currentMode: string): Record<View, Prisma.Sql> {
     ALL: Prisma.sql`TRUE`, ATTENTION: attention, STALE: stale, DELAYED: delayed, FAILED: failed,
     PENDING: Prisma.sql`(${ongoing} AND ${deliveryState} IN (${Prisma.join(deliveryPendingStates)}))`,
     ACTIVE: Prisma.sql`(${ongoing} AND ${deliveryState} IN (${Prisma.join(deliveryActiveStates)}))`,
-    DELIVERED: Prisma.sql`${deliveryState} = 'DELIVERED'`,
+    DELIVERED: Prisma.sql`(${deliveryState} = 'DELIVERED' AND NOT COALESCE(${incomplete}, FALSE))`,
   };
 }
 
@@ -117,18 +120,19 @@ export async function readAdminOrderQueue(query: unknown, dispatch = false, now 
     const verified = paymentRows.some(p => p.kind === "ORDER" && ["SUCCEEDED", "REFUNDED"].includes(p.status) && !!p.confirmedAt && p.produceMinor === order.totalMinor);
     const deadline = deadlines.find(d => d.orderId === order.id) || null;
     const progress = fulfillmentProjection(order, false, false, {
-      parcels: d?.parcels || [], events: d?.events || [], manual: d?.status === "MANUAL_ASSIGNED" ? shipment : null,
+      parcels: d?.parcels || [], events: d?.events || [], manual: !d || d.status === "MANUAL_ASSIGNED" ? shipment : null,
       disputed: !!order.tickets.length, settlement: ops.some(o => o.status !== "FAILED"),
     });
     const collection = progress.method === "Pickup";
-    const tracking = d && !collection ? deliveryVisibility({ ...d, orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt }, now)
+    const tracking = d && !collection ? deliveryVisibility({ ...d, trackingRef: shipment?.trackingRef, orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt }, now)
       : !d && shipment ? deliveryVisibility({ status: shipment.status === "ASSIGNED" ? "MANUAL_ASSIGNED" : shipment.status,
-        courier: shipment.carrier, createdAt: shipment.createdAt, bookingStartedAt: shipment.updatedAt,
-        orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt }, now) : null;
+        courier: shipment.carrier, trackingRef: shipment.trackingRef, createdAt: shipment.createdAt, bookingStartedAt: shipment.updatedAt,
+        orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt, receiptSource: "legacy-staff" }, now) : null;
     const payment = paymentProgressView(order, { verified, release, disputed: !!order.tickets.length });
     const issues = [...(tracking?.warnings || [])];
     if (order.financialHold) issues.push({ code: "FINANCIAL_HOLD", title: "Financial review", body: "Fulfillment and settlement are paused for review." });
     if (order.tickets.length) issues.push({ code: "DISPUTE_OPEN", title: "Open dispute", body: "Investigate the dispute before receipt or settlement." });
+    if (order.farmerDecision === "REJECTED" && ["FUNDED", "DELIVERED"].includes(order.status)) issues.push({ code: "FARMER_REJECTED", title: "Farmer declined — refund review", body: "Follow the existing refund workflow before dispatch or settlement." });
     if (ops.some(o => o.mode === currentMode && ["FAILED", "BLOCKED", "UNKNOWN"].includes(o.status))) issues.push({ code: "SETTLEMENT_REVIEW", title: "Settlement needs attention", body: "Use payment reconciliation. Do not create a replacement transfer or refund." });
     if (paymentRows.some(p => ["EXCEPTION", "BLOCKED"].includes(p.status))) issues.push({ code: "PAYMENT_REVIEW", title: "Payment needs reconciliation", body: "Check the recorded payment before requesting another charge." });
     if (deadline && !["SECURED", "REFUNDED"].includes(deadline.state) && (deadline.state !== "ACTIVE" || deadline.refundDueAt <= now)) issues.push({ code: "FULFILLMENT_DEADLINE", title: "Fulfillment deadline needs attention", body: "Follow the existing recovery or refund workflow; the deadline has not been extended." });

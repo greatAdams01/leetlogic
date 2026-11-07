@@ -733,15 +733,31 @@ suite("delivery and language database workflows", () => {
       include: { delivery: true },
     });
     const base = `/v1/admin/delivery-orders/${order.id}/delivery`;
+    const trackingRef = `LOCAL-${randomUUID()}`;
+    const readTracking = async () => {
+      const views = await Promise.all([
+        request(app).get(`/v1/orders/${order.id}/delivery`).set(customer()),
+        request(app).get(`/v1/orders/${order.id}/delivery`).set({ Authorization: `Bearer ${seller}` }),
+        request(app).get(base).set(admin()),
+      ]);
+      expect(views.map(v => v.status)).toEqual([200, 200, 200]);
+      expect(views[0]!.body.tracking).toEqual(views[1]!.body.tracking);
+      expect(views[0]!.body.tracking).toEqual(views[2]!.body.tracking);
+      expect(views[2]!.body.staffContext.buyer.name).toBe("buyer");
+      return views[0]!.body;
+    };
     expect(
       (
         await request(app).post(`${base}/manual-dispatch`).set(admin()).send({
           carrier: "Local carrier",
-          trackingRef: randomUUID(),
+          trackingRef,
           reason: "Confirmed manual produce transport arrangement",
         })
       ).status,
     ).toBe(200);
+    const assigned = await readTracking();
+    expect(assigned.tracking).toMatchObject({ status: "MANUAL_ASSIGNED", provider: "Manual dispatch", trackingRef, receiptConfirmedAt: null, liveTracking: false });
+    expect(assigned.tracking.assignments[0]).toMatchObject({ trackingRef, rider: null, trackingUrl: null });
     expect(
       (
         await request(app)
@@ -758,6 +774,7 @@ suite("delivery and language database workflows", () => {
           .send({ status: "IN_TRANSIT", evidence: "Carrier confirmed pickup and departure" })
       ).status,
     ).toBe(200);
+    expect((await readTracking()).tracking.status).toBe("IN_TRANSIT");
     expect(
       (
         await request(app)
@@ -766,6 +783,14 @@ suite("delivery and language database workflows", () => {
           .send({ status: "DELIVERED", evidence: "Carrier reported package arrived" })
       ).status,
     ).toBe(200);
+    const delivered = await readTracking();
+    expect(delivered.tracking).toMatchObject({ status: "DELIVERED", label: "Delivered", receiptConfirmedAt: null });
+    expect(delivered.progress.canConfirm).toBe(true);
+    expect(delivered.tracking.timeline.map((e: any) => e.status)).toEqual(["MANUAL_ASSIGNED", "IN_TRANSIT", "DELIVERED"]);
+    expect(delivered.tracking.timeline.every((e: any) => e.recordedAt && e.source === "admin")).toBe(true);
+    const queue = await request(app).get(`/v1/admin/dispatch?search=${order.reference}`).set(admin());
+    expect(queue.status).toBe(200);
+    expect(queue.body.items[0].delivery).toMatchObject({ status: "DELIVERED", trackingRef, provider: "Manual dispatch" });
     expect(
       (await prisma.tradeOrder.findUniqueOrThrow({ where: { id: order.id } })).deliveryConfirmedAt,
     ).toBeNull();
@@ -2037,6 +2062,136 @@ suite("delivery and language database workflows", () => {
     expect(bySeller.body.items.every((i: any) => i.id !== other.id)).toBe(true);
     const byProduce = await get({ q: "Dry beans" }); expect(byProduce.body.items.some((i: any) => i.id === owned[0]!.id)).toBe(true);
     expect(JSON.stringify(bySeller.body)).not.toContain("phoneE164");
+  });
+
+  describe("admin order operations and dispatch visibility", () => {
+    const fixture = (prefix: string, status: string, delivery: Prisma.DeliveryCreateWithoutOrderInput = {}, farmerDecision = "ACCEPTED") => prisma.tradeOrder.create({
+      data: {
+        reference: `${prefix}-${randomUUID().slice(0, 8)}`, buyerId: verifyAccessToken(buyer, "customer").sub,
+        farmerProfileId: farmerId, listingId, quantity: "1", totalMinor: 10000n, heldMinor: 10000n,
+        status: "FUNDED", farmerDecision,
+        delivery: { create: { status, createdAt: new Date(), nextSyncAt: new Date("2099-01-01"), ...delivery } },
+      }, include: { delivery: true },
+    });
+    const queue = (search: string, query: Record<string, string | number> = {}, dispatch = true) => request(app)
+      .get(`/v1/admin/${dispatch ? "dispatch" : "order-operations"}`).set(admin()).query({ search, ...query });
+
+    it("restricts the queues to staff with order-read permission and validates filters", async () => {
+      expect((await request(app).get("/v1/admin/dispatch")).status).toBe(401);
+      expect((await request(app).get("/v1/admin/dispatch").set(customer())).status).toBe(401);
+      const account = await prisma.adminAccount.create({ data: { email: `no-orders-${randomUUID()}@example.test`, fullName: "Unpermitted operator", status: "ACTIVE" } });
+      const session = await createSession({ subject: "ADMIN", principalId: account.id, deviceId: randomUUID() });
+      expect((await request(app).get("/v1/admin/order-operations").set("Authorization", `Bearer ${session.accessToken}`)).status).toBe(403);
+      for (const query of [{ status: "PICKUP_READY" }, { view: "UNKNOWN" }, { farmer: "UNKNOWN" }, { page: 0 }, { page: 1.5 }])
+        expect((await queue("", query)).status).toBe(422);
+    });
+
+    it("includes pending bookings and manual assignments but keeps buyer collection out of dispatch", async () => {
+      const prefix = `OPS-${randomUUID()}`;
+      const pending = await fixture(prefix, "PAID", {}, "PENDING");
+      const booked = await fixture(prefix, "BOOKED", { courier: "Courier", providerShipmentId: `SB-${randomUUID()}`, lastSyncedAt: new Date() });
+      const uncertain = await fixture(prefix, "BOOKING_UNCERTAIN", { failureCode: "BOOKING_RESULT_UNKNOWN" });
+      const manual = await fixture(prefix, "MANUAL_ASSIGNED", { courier: "Local carrier" });
+      await prisma.shipment.create({ data: { orderId: manual.id, carrier: "Local carrier", trackingRef: `LOCAL-${randomUUID()}` } });
+      const pickup = await fixture(prefix, "PICKUP_PREPARING");
+      const result = await queue(prefix);
+      expect(result.status).toBe(200);
+      expect(result.headers["cache-control"]).toBe("private, no-store");
+      expect(result.body.total).toBe(4);
+      expect(result.body.counts).toEqual({ pending: 2, active: 2, attention: 1, delivered: 0 });
+      expect(result.body.items.map((i: any) => i.id).sort()).toEqual([pending.id, booked.id, uncertain.id, manual.id].sort());
+      expect((await queue(prefix, { view: "PENDING", farmer: "PENDING" })).body.items.map((i: any) => i.id)).toEqual([pending.id]);
+      expect((await queue(prefix, { status: "BOOKING_UNCERTAIN", view: "ATTENTION" })).body.items.map((i: any) => i.id)).toEqual([uncertain.id]);
+      const orders = await queue(prefix, { status: "FUNDED" }, false);
+      expect(orders.status).toBe(200);
+      expect(orders.body.items.some((i: any) => i.id === pickup.id && i.fulfillment.method === "Pickup")).toBe(true);
+    });
+
+    it("separates stale provider checks, possible delay, parcel problems and declined orders", async () => {
+      const prefix = `FLAGS-${randomUUID()}`, old = new Date(Date.now() - 3 * 86400000);
+      const common = { courier: "Courier", createdAt: old, bookingStartedAt: old, lastSyncedAt: new Date() };
+      const stale = await fixture(prefix, "BOOKED", { ...common, providerShipmentId: `SB-${randomUUID()}`, lastSyncedAt: old, package: { pickupDate: "2099-01-01" } });
+      const delayed = await fixture(prefix, "BOOKED", { ...common, providerShipmentId: `SB-${randomUUID()}`, package: { pickupDate: "2020-01-01" } });
+      const progressing = await fixture(prefix, "IN_TRANSIT", { ...common, providerShipmentId: `SB-${randomUUID()}`, events: { create: { status: "IN_TRANSIT", source: "shipbubble", dedupeKey: randomUUID() } } });
+      const failed = await fixture(prefix, "FAILED_ATTEMPT", { ...common, providerShipmentId: `SB-${randomUUID()}` });
+      const declined = await fixture(prefix, "PAID", {}, "REJECTED");
+      expect((await queue(prefix, { view: "STALE" })).body.items.map((i: any) => i.id)).toEqual([stale.id]);
+      expect((await queue(prefix, { view: "DELAYED" })).body.items.map((i: any) => i.id)).toEqual([delayed.id]);
+      expect((await queue(prefix, { view: "FAILED" })).body.items.map((i: any) => i.id)).toEqual([failed.id]);
+      const attention = await queue(prefix, { view: "ATTENTION" });
+      expect(attention.status).toBe(200);
+      expect(attention.body.items.map((i: any) => i.id).sort()).toEqual([stale.id, delayed.id, failed.id, declined.id].sort());
+      expect(attention.body.items.find((i: any) => i.id === declined.id).issues.map((i: any) => i.code)).toContain("FARMER_REJECTED");
+      const good = await queue(progressing.reference);
+      expect(good.body.items[0].issues).toEqual([]);
+    });
+
+    it("counts only a complete matching split as delivered and flags a stale delivered parent", async () => {
+      const prefix = `SPLIT-${randomUUID()}`;
+      const split = async (statuses: string[], packageCount = 2) => {
+        const order = await fixture(prefix, "DELIVERED", { package: { packageCount }, courier: "Courier", lastSyncedAt: new Date() });
+        const quote = await prisma.deliveryQuote.create({ data: { deliveryId: order.delivery!.id, requestToken: "recorded-plan", serviceCode: "pickup", courier: "Courier", amountMinor: 2000n, inputHash: "a".repeat(64), expiresAt: new Date("2099-01-01") } });
+        await prisma.delivery.update({ where: { id: order.delivery!.id }, data: { selectedQuoteId: quote.id, providerShipmentId: `split:${order.delivery!.id}` } });
+        await prisma.deliveryParcel.createMany({ data: statuses.map((status, parcelIndex) => ({
+          deliveryId: order.delivery!.id, quoteId: quote.id, parcelIndex, status, providerShipmentId: `SB-${randomUUID()}`,
+          requestToken: `part-${parcelIndex}`, courierId: "courier", serviceCode: "pickup", amountMinor: 1000n, walletMinor: 1000n,
+        })) });
+        return order;
+      };
+      const incomplete = await split(["DELIVERED", "IN_TRANSIT"]);
+      const complete = await split(["DELIVERED", "DELIVERED"]);
+      const invalidCount = await split(["DELIVERED", "DELIVERED"], 2.5);
+      const all = await queue(prefix);
+      expect(all.status).toBe(200);
+      expect(all.body.counts.delivered).toBe(1);
+      const review = all.body.items.find((i: any) => i.id === incomplete.id);
+      expect(review.delivery).toMatchObject({ label: "Delivery completion needs review", deliveredPackages: 1, packageCount: 2 });
+      expect(review.issues.map((i: any) => i.code)).toContain("PARCEL_REVIEW");
+      expect((await queue(prefix, { view: "DELIVERED" })).body.items.map((i: any) => i.id)).toEqual([complete.id]);
+      expect((await queue(prefix, { view: "ATTENTION" })).body.items.map((i: any) => i.id).sort()).toEqual([incomplete.id, invalidCount.id].sort());
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: complete.id } })).deliveryConfirmedAt).toBeNull();
+    });
+
+    it("preserves legacy shipment references and read-only stages across all roles", async () => {
+      const reference = `LEGACY-${randomUUID()}`, trackingRef = `LOCAL-${randomUUID()}`;
+      const order = await prisma.tradeOrder.create({ data: {
+        reference, buyerId: verifyAccessToken(buyer, "customer").sub, farmerProfileId: farmerId, listingId,
+        quantity: "1", totalMinor: 10000n, heldMinor: 10000n, status: "FUNDED",
+        shipment: { create: { carrier: "Legacy local carrier", trackingRef, status: "IN_TRANSIT" } },
+      } });
+      const views = await Promise.all([
+        request(app).get(`/v1/orders/${order.id}/delivery`).set(customer()),
+        request(app).get(`/v1/orders/${order.id}/delivery`).set({ Authorization: `Bearer ${seller}` }),
+        request(app).get(`/v1/admin/delivery-orders/${order.id}/delivery`).set(admin()),
+      ]);
+      for (const view of views) {
+        expect(view.status).toBe(200);
+        expect(view.body.tracking).toMatchObject({ status: "IN_TRANSIT", provider: "Manual dispatch", trackingRef, receiptSource: "legacy-staff" });
+        expect(view.body.progress).toMatchObject({ status: "In Transit", canReady: false, canDispatch: false, canConfirm: false, legacyShipment: true });
+      }
+      expect(views[0]!.body.tracking).toEqual(views[2]!.body.tracking);
+      const result = await queue(reference);
+      expect(result.status).toBe(200);
+      expect(result.body.items[0].fulfillment).toMatchObject({ status: "In Transit", receiptSource: "legacy-staff" });
+      expect(result.body.items[0].delivery.trackingRef).toBe(trackingRef);
+    });
+
+    it("paginates the filtered order queue deterministically and treats search wildcards literally", async () => {
+      const prefix = `PAGE-${randomUUID()}`;
+      await prisma.tradeOrder.createMany({ data: Array.from({ length: 27 }, (_, index) => ({
+        reference: `${prefix}-${index}`, buyerId: verifyAccessToken(buyer, "customer").sub, farmerProfileId: farmerId, listingId,
+        quantity: "1", totalMinor: 10000n, status: "FUNDED", farmerDecision: "ACCEPTED", createdAt: new Date(Date.now() + index * 1000),
+      })) });
+      const first = await queue(prefix, { page: 1, status: "FUNDED", farmer: "ACCEPTED" }, false);
+      const second = await queue(prefix, { page: 2, status: "FUNDED", farmer: "ACCEPTED" }, false);
+      expect(first.status).toBe(200); expect(second.status).toBe(200);
+      expect(first.body).toMatchObject({ total: 27, pageSize: 25 });
+      expect(first.body.items).toHaveLength(25); expect(second.body.items).toHaveLength(2);
+      expect(new Set([...first.body.items, ...second.body.items].map((i: any) => i.id)).size).toBe(27);
+      const special = await fixture("LITERAL-%_", "PAID");
+      expect((await queue("LITERAL-%_", {}, false)).body.items.map((i: any) => i.id)).toEqual([special.id]);
+      expect((await queue("' OR TRUE --", {}, false)).body.total).toBe(0);
+    });
   });
 
 });

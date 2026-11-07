@@ -7,6 +7,32 @@ import { normalizeDeliveryStatus } from "./delivery-policy.js";
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const text = (value: unknown, max: number) => typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
 
+export const trackedStatusTime = (tracked: TrackedShipment, status: string) =>
+  tracked.updates?.filter(update => normalizeDeliveryStatus(update.status) === status).at(-1)?.datetime ||
+  (normalizeDeliveryStatus(tracked.status) === status ? tracked.observedAt : undefined);
+
+/** Called with a persisted parcel transition under the order lock. No per-parcel notification flood. */
+export async function recordParcelStatus(
+  tx: Prisma.TransactionClient,
+  deliveryId: string,
+  tracked: TrackedShipment,
+  parcelIndex: number,
+  status: string,
+  revision = "booking",
+  source = "shipbubble",
+  actorId?: string,
+) {
+  const providerTime = text(trackedStatusTime(tracked, status), 80);
+  const dedupeKey = `${deliveryId}:parcel:${hash({ shipment: tracked.id, parcelIndex, status, revision })}`;
+  await tx.deliveryEvent.upsert({
+    where: { dedupeKey },
+    create: { deliveryId, status, source, actorId, dedupeKey, details: {
+      providerShipmentId: tracked.id, parcelIndex, ...(providerTime ? { providerTime } : {}),
+    } },
+    update: {},
+  });
+}
+
 /** Store only documented tracking/contact fields, never raw provider responses or rider coordinates. */
 export async function recordProviderTracking(
   tx: Prisma.TransactionClient,

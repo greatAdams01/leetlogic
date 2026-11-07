@@ -23,6 +23,7 @@ export type FulfillmentFacts = {
 /** The same authorization projection is used by buyer, farmer and staff read models. */
 export function fulfillmentProjection(order: FulfillmentOrder, buyer: boolean, farmer: boolean, facts: FulfillmentFacts) {
   const d = order.delivery, { parcels, events, manual } = facts;
+  const legacyShipment = !d && !!manual;
   const count = (d?.package as { packageCount?: number } | null)?.packageCount || 1;
   const booked = !!(manual && manual.carrier === d?.courier && manual.trackingRef && manual.status === "ASSIGNED") ||
     !!d?.providerShipmentId &&
@@ -38,7 +39,7 @@ export function fulfillmentProjection(order: FulfillmentOrder, buyer: boolean, f
     confirmed: !!order.deliveryConfirmedAt,
     blocked,
     buyer, farmer,
-    status: d?.status || "",
+    status: d?.status || (manual?.status === "ASSIGNED" ? "MANUAL_ASSIGNED" : manual?.status) || "",
     bookingFailureCode: d?.failureCode,
     ready: events.some(e => e.status === "READY_FOR_PICKUP"),
     dispatched: events.some(e => e.status === "FARMER_DISPATCHED"),
@@ -46,6 +47,7 @@ export function fulfillmentProjection(order: FulfillmentOrder, buyer: boolean, f
     receiptReady: deliveryReceiptReady(d ? { ...d, parcels } : null),
     collection: !!d?.status.startsWith("PICKUP_") ||
       (d?.status === "DELIVERED" && !d.selectedQuoteId && !d.providerShipmentId && !d.courier),
+    legacyShipment,
   });
 }
 
@@ -54,7 +56,7 @@ export async function fulfillmentView(order: FulfillmentOrder, buyer: boolean, f
   const [parcels, events, manual, disputed, settlement] = await Promise.all([
     d ? tx.deliveryParcel.findMany({ where: { deliveryId: d.id } }) : [],
     d ? tx.deliveryEvent.findMany({ where: { deliveryId: d.id }, select: { status: true } }) : [],
-    d?.status === "MANUAL_ASSIGNED" ? tx.shipment.findUnique({ where: { orderId: order.id } }) : null,
+    !d || d.status === "MANUAL_ASSIGNED" ? tx.shipment.findUnique({ where: { orderId: order.id } }) : null,
     tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } }),
     hasDeliverySettlement(order.id, tx),
   ]);

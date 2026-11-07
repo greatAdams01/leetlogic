@@ -37,7 +37,8 @@ export const farmerDeliveryStatusCopy = (status: string, dispatched = false) => 
       ? "The courier has reported that the goods are in transit. Buyer receipt confirmation is still required."
       : status === "PICKED_UP"
         ? "The courier has reported pickup. Follow delivery updates until the buyer receives every package."
-        : dispatched ? "Farmer handover is recorded. Waiting for the courier’s pickup or transit update." : copy.body };
+         : dispatched && ["BOOKED", "MANUAL_ASSIGNED"].includes(status)
+           ? "Farmer handover is recorded. Waiting for the courier’s pickup or transit update." : copy.body };
 };
 
 type Stamp = string | Date | null | undefined;
@@ -64,6 +65,7 @@ export type DeliveryVisibilityInput = {
   selectedQuoteId?: string | null;
   trackingUrl?: string | null;
   lastSyncedAt?: Stamp;
+  trackingRef?: string | null;
   bookingStartedAt?: Stamp;
   createdAt?: Stamp;
   failureCode?: string | null;
@@ -71,6 +73,7 @@ export type DeliveryVisibilityInput = {
   events?: DeliveryVisibilityEvent[];
   parcels?: DeliveryVisibilityParcel[];
   receiptConfirmedAt?: Stamp;
+  receiptSource?: "buyer" | "legacy-staff";
   orderStatus?: string;
 };
 const object = (value: unknown): Record<string, unknown> =>
@@ -109,14 +112,22 @@ export const deliveryEventLabel = (status: string) => ({
   FARMER_DISPATCHED: "Farmer confirmed dispatch",
   FARMER_ACCEPTED: "Farmer accepted the order",
   FARMER_REJECTED: "Farmer declined the order",
+  ORDER_ACCEPTED: "Farmer accepted the order",
+  ORDER_REJECTED: "Farmer declined the order",
   FARMER_HANDED_OVER: "Farmer handed goods to buyer",
+  BUYER_COLLECTED: "Farmer handed goods to buyer",
   BUYER_RECEIPT_CONFIRMED: "Buyer confirmed receipt",
   COURIER_ASSIGNED: "Courier assigned",
   PROVIDER_CONTACT_UPDATED: "Courier contact details updated",
   QUOTE_REFRESHED: "Delivery quote refreshed",
   PAID: "Delivery payment confirmed",
   CANCEL_REQUESTED: "Delivery cancellation requested",
+  PAYMENT_RELEASED: "Farmer payment released",
 } as Record<string, string>)[status] || deliveryStatusCopy(status).label;
+
+export const deliveryEventSource = (source: string) => ({
+  shipbubble: "Shipbubble", admin: "Staff", farmer: "Farmer", buyer: "Buyer", customer: "Customer",
+} as Record<string, string>)[source] || "LeetLogic";
 
 export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Date()) {
   const events = [...(input.events || [])].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -128,9 +139,12 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
   const matchingPlan = packageCount > 1 && !!input.selectedQuoteId && parcels.length === packageCount && new Set(parcels.map(p => p.parcelIndex)).size === packageCount &&
     parcels.every(p => !!p.providerShipmentId && p.parcelIndex >= 0 && p.parcelIndex < packageCount && p.quoteId === input.selectedQuoteId);
   const incomplete = split && (!matchingPlan || parcels.some(p => p.status !== "DELIVERED"));
+  const receiptConfirmedAt = stamp(input.receiptConfirmedAt);
   const copy = input.status === "DELIVERED" && incomplete
     ? { label: "Delivery completion needs review", title: "Delivery completion needs review", body: "Not every planned package has a matching delivery confirmation. Contact support before confirming receipt." }
-    : deliveryStatusCopy(input.status, dispatched);
+    : input.status === "DELIVERED" && receiptConfirmedAt
+      ? { ...deliveryStatusCopy(input.status, dispatched), body: "Receipt confirmation is recorded. Follow the payment updates for settlement." }
+      : deliveryStatusCopy(input.status, dispatched);
   const lastSyncedAt = stamp(input.lastSyncedAt);
   const latestProgress = events.filter(e => progressStates.includes(e.status)).at(-1);
   const lastProgressAt = stamp(latestProgress?.createdAt || input.bookingStartedAt || input.createdAt);
@@ -155,12 +169,15 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
     warnings.push({ code: "DELIVERY_REVIEW", title: "Delivery needs review", body: "Staff need to check this delivery. Follow the support and payment updates before taking another action." });
   const shipments = split ? parcels.map(p => ({ id: p.providerShipmentId || null, parcelIndex: p.parcelIndex, trackingUrl: p.trackingUrl, status: p.status }))
     : [{ id: input.providerShipmentId || null, parcelIndex: undefined, trackingUrl: input.trackingUrl, status: input.status }];
+  const trackingRef = !input.providerShipmentId ? text(input.trackingRef) : null;
+  const manual = !input.providerShipmentId && (!!trackingRef || input.status === "MANUAL_ASSIGNED" || (!input.selectedQuoteId && !!input.courier));
   const assignments = shipments.map(shipment => {
     const snapshot = [...events].reverse().find(e => e.status === "PROVIDER_CONTACT_UPDATED" && object(e.details).providerShipmentId === shipment.id);
     const details = object(snapshot?.details), rider = object(details.rider), courier = object(details.courier);
     return {
       providerShipmentId: shipment.id, parcelIndex: shipment.parcelIndex,
       status: shipment.status, trackingUrl: safeTrackingUrl(shipment.trackingUrl),
+      trackingRef: split ? null : trackingRef,
       courier: { name: text(courier.name) || input.courier || null, phone: text(courier.phone, 40) },
       rider: text(rider.name) || text(rider.phone, 40) ? { name: text(rider.name), phone: text(rider.phone, 40) } : null,
       reportedAt: stamp(snapshot?.createdAt),
@@ -179,17 +196,18 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
     };
   });
   const milestones = ["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"].map(status => {
-    const event = timeline.find(e => e.status === status && e.parcelIndex === null && (!e.providerShipmentId || e.providerShipmentId === input.providerShipmentId));
-    return { status, label: status === "BOOKED" ? "Booking confirmed" : deliveryStatusCopy(status).label,
+    const event = timeline.find(e => (e.status === status || (status === "BOOKED" && e.status === "MANUAL_ASSIGNED")) && e.parcelIndex === null && (!e.providerShipmentId || e.providerShipmentId === input.providerShipmentId));
+    return { status, label: status === "BOOKED" ? manual ? "Courier assigned" : "Booking confirmed" : deliveryStatusCopy(status).label,
       reported: !(status === "DELIVERED" && incomplete) && (!!event || input.status === status || (status === "BOOKED" && input.status === "MANUAL_ASSIGNED")),
       recordedAt: event?.recordedAt || null, occurredAt: event?.occurredAt || null, providerTime: event?.providerTime || null };
   });
   return {
     ...copy, status: input.status, dispatched, liveTracking: false as const,
-    provider: input.providerShipmentId ? "Shipbubble" : input.courier ? "Manual dispatch" : null,
+    provider: manual ? "Manual dispatch" : input.providerShipmentId || input.selectedQuoteId ? "Shipbubble" : null,
     courier: input.courier || null, trackingUrl: safeTrackingUrl(input.trackingUrl),
+    trackingRef,
     lastSyncedAt, lastProgressAt, pickupDate,
-    receiptConfirmedAt: stamp(input.receiptConfirmedAt),
+    receiptConfirmedAt, receiptSource: input.receiptSource || "buyer",
     packageCount, deliveredPackages: split ? new Set(parcels.filter(p => p.status === "DELIVERED" && !!p.providerShipmentId && !!input.selectedQuoteId && p.quoteId === input.selectedQuoteId && p.parcelIndex >= 0 && p.parcelIndex < packageCount).map(p => p.parcelIndex)).size : input.status === "DELIVERED" ? packageCount : 0,
     warnings, assignments, milestones, timeline,
   };

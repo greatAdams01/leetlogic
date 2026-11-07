@@ -141,3 +141,11 @@ it("enables the existing receipt action only when the server says confirmation i
     });
   }
 });
+it("keeps legacy shipment tracking visible without offering the buyer a receipt action", () => {
+  const progress = orderFulfillment({ ...base, collection: false, farmerDecision: "LEGACY", legacyShipment: true, status: "IN_TRANSIT" });
+  for (const buyer of [true, false]) {
+    const journey = orderJourney({ buyer, progress, orderStatus: "FUNDED" });
+    expect(journey).toMatchObject({ action: null, receiptPending: false, body: progress.next });
+    expect(journey.title).not.toContain("preparing");
+  }
+});

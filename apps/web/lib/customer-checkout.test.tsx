@@ -717,16 +717,20 @@ it("offers the existing dispute process instead of forcing buyer receipt confirm
 
 it("uses a plain handoff question before a farmer reports rider collection",async()=>{
   Object.assign(h.delivery.order,{status:"FUNDED",isBuyer:false});
-  h.delivery.progress={method:"Delivery",status:"Ready for Pickup",next:"Confirm dispatch only after handing all parcels to the courier.",steps:[],stage:1,canReady:false,canDispatch:true,canConfirm:false,confirmed:false};
+  Object.assign(h.delivery.delivery,{status:"BOOKED",providerShipmentId:"SB-order",events:[{id:"ready",status:"READY_FOR_PICKUP",source:"farmer",createdAt:new Date().toISOString()}]});
+  const progress = () => orderFulfillment({paid:true,confirmed:false,blocked:false,buyer:false,farmer:true,status:"BOOKED",ready:true,dispatched:h.delivery.delivery.events.some((e:any)=>e.status==="FARMER_DISPATCHED"),booked:true,receiptReady:false,collection:false});
+  h.delivery.progress=progress();
   const original=h.api.getMockImplementation()!;
-  h.api.mockImplementation(async(path:string,body:any)=>{if(path.endsWith("/delivery/dispatch")){h.delivery.progress={...h.delivery.progress,status:"Dispatched",canDispatch:false};return {};}return original(path,body);});
+  h.api.mockImplementation(async(path:string,body:any)=>{if(path.endsWith("/delivery/dispatch")){h.delivery.delivery.events.push({id:"dispatch",status:"FARMER_DISPATCHED",source:"farmer",createdAt:new Date().toISOString()});h.delivery.progress=progress();return {};}return original(path,body);});
   await mountDelivery();
   await click("Rider Collected Goods");
   expect(h.api.mock.calls.some(([path])=>String(path).endsWith("/delivery/dispatch"))).toBe(false);
   expect(screen.getByText("Have all goods been handed over?")).toBeTruthy();
   await click("Rider Collected Goods");
   expect(h.api).toHaveBeenCalledWith("orders/order/delivery/dispatch",{});
-  expect(screen.getByText("Waiting for buyer confirmation")).toBeTruthy();
+  expect(screen.getAllByText("Dispatched").length).toBeGreaterThan(0);
+  expect(screen.getByText("Farmer handover is recorded. Waiting for the courier’s pickup or transit update.")).toBeTruthy();
+  expect(screen.queryByText("Awaiting delivery payment")).toBeNull();
   expect(button("Rider Collected Goods")).toBeNull();
 });
 

@@ -6,7 +6,7 @@ import { imageType } from "./produce-photos.js";
 import { mode, queueReceiptRelease } from "../services/payments.js";
 import { deliveryVisibility, orderFulfillment } from "@leetlogic/contracts";
 import { fulfillmentView } from "../services/order-fulfillment-view.js";
-import { recordProviderTracking, trackedUrl } from "../services/delivery-tracking.js";
+import { recordParcelStatus, recordProviderTracking, trackedUrl } from "../services/delivery-tracking.js";
 import { notificationInbox, readNotifications } from "../services/notification-inbox.js";
 import { buyerPickupContactAvailable, pickupContactView } from "../services/pickup-contact.js";
 import { financeEnabled, markFulfillmentSecured, readFulfillment, assertFulfillmentOpen } from "../services/fulfillment-deadline.js";
@@ -467,11 +467,11 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         observedAt: new Date().toISOString(),
         ...(staffContext ? { staffContext } : {}),
         tracking: delivery && !delivery.status.startsWith("PICKUP_") && !(delivery.status === "DELIVERED" && !delivery.selectedQuoteId && !delivery.providerShipmentId && !delivery.courier)
-          ? deliveryVisibility({ ...delivery, parcels, orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt })
+          ? deliveryVisibility({ ...delivery, parcels, trackingRef: order.shipment?.trackingRef, orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt })
           : !delivery && order.shipment ? deliveryVisibility({
             status: order.shipment.status === "ASSIGNED" ? "MANUAL_ASSIGNED" : order.shipment.status,
-            courier: order.shipment.carrier, createdAt: order.shipment.createdAt, bookingStartedAt: order.shipment.updatedAt,
-            orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt,
+            courier: order.shipment.carrier, trackingRef: order.shipment.trackingRef, createdAt: order.shipment.createdAt, bookingStartedAt: order.shipment.updatedAt,
+            orderStatus: order.status, receiptConfirmedAt: order.deliveryConfirmedAt, receiptSource: "legacy-staff",
           }) : null,
         legacyShipment: !delivery && order.shipment ? {
           id: order.shipment.id, carrier: order.shipment.carrier, trackingRef: order.shipment.trackingRef,
@@ -955,6 +955,7 @@ staffDeliveryRouter.post(
       });
       if (!changed.count)
         throw new AppError(409, "STALE_RECORD", "Parcel changed. Refresh and try again.");
+      await recordParcelStatus(tx, current.id, tracked, parcel.parcelIndex, "BOOKED", "booking", "admin", req.auth!.sub);
       await recordProviderTracking(tx, current.id, tracked, parcel.parcelIndex);
       const parcels = await tx.deliveryParcel.findMany({ where: { deliveryId: current.id } });
       const recorded = recordedSplitBooking(current.id, quote, parcels);

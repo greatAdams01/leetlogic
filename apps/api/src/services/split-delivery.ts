@@ -5,7 +5,7 @@ import {
   type TrackedShipment,
 } from "../providers/shipping/shipbubble.js";
 import { canAdvanceDelivery, normalizeDeliveryStatus } from "./delivery-policy.js";
-import { recordProviderTracking, trackedUrl } from "./delivery-tracking.js";
+import { recordParcelStatus, recordProviderTracking, trackedUrl } from "./delivery-tracking.js";
 
 type SplitQuote = { id: string; requestToken: string; courier: string };
 export function splitPlanMatches(quote: SplitQuote, parcels: DeliveryParcel[]) {
@@ -81,6 +81,8 @@ export async function bookSplitDelivery(
     try {
       const result = await provider.book(parcel);
       await prisma.$transaction(async tx => {
+        const owner = await tx.delivery.findUniqueOrThrow({ where: { id: deliveryId }, select: { orderId: true } });
+        await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${owner.orderId}::uuid FOR UPDATE`;
         await tx.deliveryParcel.update({
           where: { id: parcel.id },
           data: {
@@ -92,6 +94,7 @@ export async function bookSplitDelivery(
             failureCode: result.courier !== quote.courier ? "SHIPMENT_MISMATCH" : null,
           },
         });
+        await recordParcelStatus(tx, deliveryId, result, parcel.parcelIndex, "BOOKED");
         await recordProviderTracking(tx, deliveryId, result, parcel.parcelIndex);
       });
     } catch (error) {
@@ -116,6 +119,7 @@ export function aggregateParcelStatus(statuses: string[]): string {
   // A mixed terminal result needs reconciliation; never claim the whole order was delivered.
   if (statuses.some((status) => ["CANCELLED", "RETURNED", "RETURNING"].includes(status)))
     return "failed_attempt";
+  if (statuses.some((status) => status === "FAILED_ATTEMPT")) return "failed_attempt";
   if (statuses.every((status) => ["IN_TRANSIT", "DELIVERED", "FAILED_ATTEMPT"].includes(status)))
     return "in_transit";
   if (
@@ -168,13 +172,16 @@ export async function trackSplitDelivery(
         await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${owner.orderId}::uuid FOR UPDATE`;
         const current = await tx.deliveryParcel.findUniqueOrThrow({ where: { id: parcel.id } });
         if (current.providerShipmentId !== tracked.id) throw new Error("SHIPMENT_MISMATCH");
+        const advance = next && canAdvanceDelivery(current.status, next);
         await tx.deliveryParcel.update({
           where: { id: parcel.id },
           data: {
-            ...(next && canAdvanceDelivery(current.status, next) ? { status: next } : {}),
+            ...(advance ? { status: next } : {}),
             trackingUrl: trackedUrl(tracked),
           },
         });
+        if (next && advance)
+          await recordParcelStatus(tx, deliveryId, tracked, parcel.parcelIndex, next, `${current.status}:${current.updatedAt.toISOString()}`);
         await recordProviderTracking(tx, deliveryId, tracked, parcel.parcelIndex);
       });
     } catch (error) {

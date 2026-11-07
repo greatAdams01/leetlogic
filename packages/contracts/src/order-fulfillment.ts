@@ -24,6 +24,7 @@ export function orderFulfillment(input: {
   booked: boolean;
   receiptReady: boolean;
   collection: boolean;
+  legacyShipment?: boolean;
 }) {
   const {
     paid,
@@ -39,13 +40,14 @@ export function orderFulfillment(input: {
     collection,
   } = input;
   const awaitingAcceptance = input.farmerDecision === "PENDING";
+  const participantActions = !input.legacyShipment;
   const rejected = input.farmerDecision === "REJECTED";
   const accepted = !awaitingAcceptance && !rejected && !input.review;
   const bookingBlocked = status === "BOOKING_BLOCKED";
   const bookingQueued = ["BOOKING_QUEUED", "BOOKING"].includes(status);
   const awaitingBooking = !collection && ready && !booked && status === "PAID";
   const topup = status === "TOPUP_REQUIRED";
-  const incompleteDelivery = !collection && status === "DELIVERED" && !receiptReady;
+  const incompleteDelivery = !collection && status === "DELIVERED" && !receiptReady && !input.legacyShipment;
   const bookingNext = topup
     ? buyer
       ? "Payment is confirmed. Review and pay only the additional delivery amount to continue."
@@ -59,8 +61,9 @@ export function orderFulfillment(input: {
       : bookingQueued
         ? "Payment is confirmed. We are booking the courier; no booking is confirmed yet."
         : "Produce is ready. Waiting for a confirmed courier booking.";
-  const canAccept = farmer && paid && awaitingAcceptance && !blocked && !input.review && !confirmed;
+  const canAccept = participantActions && farmer && paid && awaitingAcceptance && !blocked && !input.review && !confirmed;
   const canHandover =
+    participantActions &&
     farmer &&
     paid &&
     accepted &&
@@ -71,6 +74,7 @@ export function orderFulfillment(input: {
     !confirmed;
   const terminal = ["CANCELLED", "REFUNDED"].includes(input.orderStatus || "");
   const canReady =
+    participantActions &&
     !terminal &&
     farmer &&
     accepted &&
@@ -88,6 +92,7 @@ export function orderFulfillment(input: {
       "MANUAL_ASSIGNED",
     ].includes(status);
   const canDispatch =
+    participantActions &&
     !terminal &&
     farmer &&
     accepted &&
@@ -100,7 +105,7 @@ export function orderFulfillment(input: {
     booked &&
     ["BOOKED", "MANUAL_ASSIGNED"].includes(status);
   const canConfirm =
-    !terminal && accepted && buyer && paid && !confirmed && !blocked && receiptReady;
+    participantActions && !terminal && accepted && buyer && paid && !confirmed && !blocked && receiptReady;
   const stage = !paid
     ? -1
     : confirmed
@@ -128,9 +133,11 @@ export function orderFulfillment(input: {
             ? "Receipt confirmed. Fulfillment is complete."
             : blocked
               ? "This order needs review. Fulfillment actions are paused."
-              : !paid
-                ? "Payment must be verified before preparation or collection."
-                : canConfirm
+               : !paid
+                 ? "Payment must be verified before preparation or collection."
+                 : input.legacyShipment
+                   ? "Follow the recorded shipment updates. Contact support for legacy receipt or settlement review."
+                 : canConfirm
                   ? collection ? "Confirm only after collecting and inspecting your produce." : deliveryStatusCopy("DELIVERED").body
                   : canReady
                     ? "Prepare the produce, then mark it ready."
@@ -174,7 +181,9 @@ export function orderFulfillment(input: {
                   : collection
                     ? status === "PICKUP_READY"
                       ? "Ready for Pickup"
-                      : "Preparing for Pickup"
+                       : "Preparing for Pickup"
+                    : input.legacyShipment
+                      ? deliveryStatusCopy(status).label
                     : status === "DELIVERED"
                       ? incompleteDelivery ? "Delivery completion needs review" : "Delivered"
                       : status === "PICKED_UP"
@@ -198,6 +207,7 @@ export function orderFulfillment(input: {
                                        : "Preparing for Pickup",
     stage,
     deliveryStatus: collection ? null : status,
+    legacyShipment: !!input.legacyShipment,
     deliveryComplete: receiptReady,
     steps: collection
       ? ["Payment confirmed", "Preparing", "Ready for Pickup", "Collected", "Completed"]

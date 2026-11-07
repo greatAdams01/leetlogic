@@ -13,7 +13,33 @@ import {
   localizedStatus,
 } from "./localization";
 import { en } from "../../../../packages/localization/src/customer-messages";
+import { deliveryActiveStates, deliveryPendingStates, deliveryProblemStates, deliveryStatusCopy, farmerDeliveryStatusCopy, deliveryVisibility, deliveryEventLabel } from "../../../../packages/contracts/src/delivery-visibility";
 describe("complete mobile interface localization", () => {
+  it("localizes shared delivery stages, participant guidance and warnings without leaving package placeholders", () => {
+    const phrases = new Set<string>(["Manual dispatch", "Legacy staff confirmation"]);
+    const now = new Date("2026-11-07T12:00:00Z");
+    for (const status of new Set([...deliveryActiveStates, ...deliveryPendingStates, ...deliveryProblemStates, "PENDING", "ASSIGNED", "DELIVERED", "UNKNOWN"])) {
+      for (const dispatched of [false, true]) {
+        for (const copy of [deliveryStatusCopy(status, dispatched), farmerDeliveryStatusCopy(status, dispatched)])
+          for (const phrase of Object.values(copy)) phrases.add(phrase);
+      }
+      const view = deliveryVisibility({ status, providerShipmentId: "SB-fixture", createdAt: "2026-11-03T10:00:00Z", lastSyncedAt: "2026-11-03T10:00:00Z", package: { pickupDate: "2026-11-04" } }, now);
+      for (const warning of view.warnings) { phrases.add(warning.title); phrases.add(warning.body); }
+    }
+    const split = deliveryVisibility({ status: "DELIVERED", providerShipmentId: "split:fixture", package: { packageCount: 2 }, parcels: [] }, now);
+    phrases.add(split.body); phrases.add(split.label);
+    for (const warning of split.warnings) { phrases.add(warning.title); phrases.add(warning.body); }
+    for (const status of ["READY_FOR_PICKUP", "ORDER_ACCEPTED", "ORDER_REJECTED", "BUYER_COLLECTED", "BUYER_RECEIPT_CONFIRMED", "COURIER_ASSIGNED", "PROVIDER_CONTACT_UPDATED", "QUOTE_REFRESHED", "PAID", "CANCEL_REQUESTED", "PAYMENT_RELEASED"])
+      phrases.add(deliveryEventLabel(status));
+    for (const phrase of phrases) for (const locale of localeOrder) {
+      expect(catalogue[phrase]?.[locale], `${locale}: ${phrase}`).toBeTruthy();
+      expect(ui(locale, phrase)).toBe(catalogue[phrase]![locale]);
+    }
+    for (const locale of localeOrder) {
+      const count = ui(locale, "{number} of {total} packages delivered", { number: 1, total: 2 });
+      expect(count).toContain("1"); expect(count).toContain("2"); expect(count).not.toMatch(/\{\w+\}/);
+    }
+  });
   it("localizes the reason buyer receipt is unavailable while courier delivery is pending", () => {
     const copy = "Available after the courier confirms delivery of every package.";
     for (const locale of localeOrder) {
@@ -119,6 +145,7 @@ describe("complete mobile interface localization", () => {
         .filter((f) => f.endsWith(".tsx"))
         .map((f) => resolve("src/screens", f)),
       resolve("src/components/order-payment.tsx"),
+      resolve("src/components/delivery-tracking.tsx"),
       resolve("src/components/seller-listing-controls.tsx"),
       resolve("src/components/navigation.tsx"),
       resolve("src/components/listing-layout.tsx"),

@@ -63,6 +63,11 @@ export function orderJourney(input: {
     body = released
       ? "Receipt and farmer payment are confirmed."
       : "Receipt confirmed. We’ll update you when payment is released.";
+  } else if (p?.legacyShipment) {
+    const copy = buyer ? deliveryStatusCopy(p.deliveryStatus || "") : farmerDeliveryStatusCopy(p.deliveryStatus || "");
+    title = copy.title;
+    body = p.next;
+    stage = ["IN_TRANSIT", "DELIVERED", "FAILED_ATTEMPT", "RETURNING", "RETURNED"].includes(p.deliveryStatus || "") ? 3 : 2;
   } else if (p?.awaitingAcceptance || input.decision === "PENDING") {
     title = buyer ? "Waiting for the farmer" : "New Order";
     body = buyer

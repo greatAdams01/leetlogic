@@ -461,7 +461,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
         catch (e) { setError(a.error(e)); }
         finally { running.current = false; setBusy(false); }
       } }])} />}
-      {!collection && <Label style={checkout.liveBadge}>Live hub routing active</Label>}
+      {!collection && <Label style={checkout.liveBadge}>Courier options are based on your delivery details.</Label>}
       {!collection && (
         <Label>
           {data.order.suggestedPickup.state} → {d?.destination?.state || address?.state}

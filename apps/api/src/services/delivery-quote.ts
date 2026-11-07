@@ -14,7 +14,7 @@ import { deliveryQuoteConfiguration } from "./delivery-configuration.js";
 import { orderShipping, packageSuggestion } from "./packaging.js";
 
 export const shippingOrderInclude = {
-  buyer: { include: { addresses: { where: { deletedAt: null } } } },
+  buyer: { include: { profile: { select: { fullName: true, displayName: true } }, addresses: { where: { deletedAt: null } } } },
   listing: { include: { locationAddress: true } },
   farmerProfile: {
     include: { user: { include: { profile: true, addresses: { where: { deletedAt: null } } } } },

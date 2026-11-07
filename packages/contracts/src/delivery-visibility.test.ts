@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deliveryVisibility, deliveryStatusCopy, providerTimestamp, safeTrackingUrl } from "./delivery-visibility.js";
+import { deliveryEventLabel, deliveryEventSource, deliveryVisibility, deliveryStatusCopy, farmerDeliveryStatusCopy, providerTimestamp, safeTrackingUrl } from "./delivery-visibility.js";
 const now = new Date("2026-11-06T12:00:00Z");
 const event = (status: string, time = now.toISOString(), details?: unknown) => ({ id: `${status}:${time}`, status, createdAt: time, source: "shipbubble", details });
 const base = { status: "BOOKED", providerShipmentId: "SB-one", courier: "Courier", createdAt: now.toISOString(), lastSyncedAt: now.toISOString() };
@@ -65,5 +65,42 @@ describe("shared delivery visibility", () => {
     for (const url of ["http://example.test", "javascript:alert(1)", "https://", "https://user:secret@example.test", "https:// example.test"])
       expect(safeTrackingUrl(url)).toBeNull();
     expect(safeTrackingUrl("https://example.test/track")).toBe("https://example.test/track");
+  });
+  it("uses the actual farmer decision and handover event names and their recorded source", () => {
+    expect(deliveryEventLabel("ORDER_ACCEPTED")).toBe("Farmer accepted the order");
+    expect(deliveryEventLabel("ORDER_REJECTED")).toBe("Farmer declined the order");
+    expect(deliveryEventLabel("BUYER_COLLECTED")).toBe("Farmer handed goods to buyer");
+    expect(deliveryEventSource("farmer")).toBe("Farmer");
+    expect(deliveryEventSource("buyer")).toBe("Buyer");
+    expect(deliveryEventSource("admin")).toBe("Staff");
+  });
+  it("does not hide failure or return guidance after farmer handover", () => {
+    for (const status of ["FAILED_ATTEMPT", "RETURNING", "RETURNED", "CANCELLED"])
+      expect(farmerDeliveryStatusCopy(status, true).body).toBe(deliveryStatusCopy(status).body);
+  });
+  it("preserves manual tracking references as text and uses assignment timestamps without inventing rider data", () => {
+    const view = deliveryVisibility({ status: "MANUAL_ASSIGNED", courier: "Local carrier", trackingRef: " LOCAL-123 ",
+      events: [event("MANUAL_ASSIGNED", "2026-11-06T10:00:00Z")], receiptSource: "legacy-staff" }, now);
+    expect(view).toMatchObject({ provider: "Manual dispatch", trackingRef: "LOCAL-123", liveTracking: false, receiptSource: "legacy-staff" });
+    expect(view.assignments[0]).toMatchObject({ trackingRef: "LOCAL-123", providerShipmentId: null, rider: null, trackingUrl: null });
+    expect(view.milestones[0]).toMatchObject({ label: "Courier assigned", reported: true, recordedAt: "2026-11-06T10:00:00.000Z" });
+    expect(deliveryVisibility({ status: "IN_TRANSIT", courier: "Local carrier", trackingRef: "LOCAL-123", selectedQuoteId: "old-quote" }, now).provider).toBe("Manual dispatch");
+    expect(deliveryVisibility({ ...base, selectedQuoteId: "q", providerShipmentId: null, status: "PAID" }, now).provider).toBe("Shipbubble");
+  });
+  it("keeps completed buyer receipt separate from courier delivery and stops asking for repeat confirmation", () => {
+    const view = deliveryVisibility({ ...base, status: "DELIVERED", receiptConfirmedAt: now }, now);
+    expect(view.label).toBe("Delivered");
+    expect(view.receiptConfirmedAt).toBe(now.toISOString());
+    expect(view.body).toContain("Receipt confirmation is recorded");
+    expect(view.body).not.toContain("then confirm");
+  });
+  it("does not turn a contact change or historical provider backfill into recent delivery progress", () => {
+    const view = deliveryVisibility({ ...base, status: "IN_TRANSIT", createdAt: "2026-11-03T10:00:00Z", events: [
+      event("IN_TRANSIT", "2026-11-04T10:00:00Z"),
+      event("PROVIDER_CONTACT_UPDATED"),
+      event("PROVIDER_UPDATE", now.toISOString(), { normalizedStatus: "PICKED_UP", providerTime: "2026-11-03T10:00:00Z" }),
+    ] }, now);
+    expect(view.lastProgressAt).toBe("2026-11-04T10:00:00.000Z");
+    expect(view.warnings.map(w => w.code)).toContain("POSSIBLE_DELAY");
   });
 });

@@ -9,7 +9,7 @@ import { getConfig } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { AppError } from "../lib/errors.js";
 import { assertCurrentDeliveryQuote, assertNoActiveCheckout, shippingOrderInclude, storedDeliveryInput } from "./delivery-quote.js";
-import { recordProviderTracking, trackedUrl } from "./delivery-tracking.js";
+import { recordProviderTracking, trackedStatusTime, trackedUrl } from "./delivery-tracking.js";
 export const shippingProvider = new Shipbubble();
 const bookingRetryMs = 5 * 60000;
 // Only failures before the irreversible label purchase are eligible for automatic retry.
@@ -290,9 +290,9 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
     const d = await tx.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
     if (d.providerShipmentId !== tracked.id) throw new Error("SHIPMENT_MISMATCH");
     const next = normalizeDeliveryStatus(tracked.status);
-    const observedAt = tracked.updates?.filter(update => normalizeDeliveryStatus(update.status) === next).at(-1)?.datetime || tracked.observedAt;
+    const observedAt = next ? trackedStatusTime(tracked, next) : undefined;
     const advance = next && (canAdvanceDelivery(d.status, next) ||
-      (d.providerShipmentId?.startsWith("split:") && tracked.requiresReview));
+      (d.providerShipmentId?.startsWith("split:") && tracked.requiresReview && d.status !== next));
     const review = tracked.requiresReview || next === "RETURNING" || next === "RETURNED";
     if (!tracked.id.startsWith("split:")) await recordProviderTracking(tx, d.id, tracked);
     await tx.delivery.update({
@@ -314,7 +314,7 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
         d.id,
         next,
         "shipbubble",
-        `${d.id}:provider:${next}:${hashInput(observedAt ?? next)}`,
+        `${d.id}:provider:${next}:${hashInput({ observedAt: observedAt || null, previous: d.status, revision: d.updatedAt })}`,
         undefined,
         { providerShipmentId: tracked.id, ...(observedAt ? { providerTime: observedAt } : {}) },
       );

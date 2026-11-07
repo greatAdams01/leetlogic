@@ -103,3 +103,11 @@ it("asks the farmer to wait for buyer price review rather than to pay the delive
   expect(view.next).toContain("Waiting for the buyer");
   expect(view.next).not.toContain("Review and pay");
 });
+it("shows legacy shipment stages without enabling new farmer or buyer actions", () => {
+  for (const status of ["MANUAL_ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"]) {
+    const view = orderFulfillment({ ...base, status, buyer: true, ready: true, legacyShipment: true });
+    expect(view).toMatchObject({ canAccept: false, canReady: false, canDispatch: false, canHandover: false, canConfirm: false, confirmed: false });
+    expect(view.next).toContain("legacy receipt or settlement review");
+    if (status === "DELIVERED") expect(view.status).toBe("Delivered");
+  }
+});
