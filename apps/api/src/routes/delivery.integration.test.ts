@@ -729,6 +729,15 @@ suite("delivery and language database workflows", () => {
         heldMinor: 10000n,
         status: "FUNDED",
         delivery: { create: { status: "MANUAL_REVIEW" } },
+        ledger: {
+          create: {
+            kind: "FUND",
+            amountMinor: 10000n,
+            mutationKey: randomUUID(),
+            actorId: verifyAccessToken(staff, "admin").sub,
+            reason: "Manual delivery fixture funding",
+          },
+        },
       },
       include: { delivery: true },
     });
@@ -2082,7 +2091,8 @@ suite("delivery and language database workflows", () => {
       const account = await prisma.adminAccount.create({ data: { email: `no-orders-${randomUUID()}@example.test`, fullName: "Unpermitted operator", status: "ACTIVE" } });
       const session = await createSession({ subject: "ADMIN", principalId: account.id, deviceId: randomUUID() });
       expect((await request(app).get("/v1/admin/order-operations").set("Authorization", `Bearer ${session.accessToken}`)).status).toBe(403);
-      for (const query of [{ status: "PICKUP_READY" }, { view: "UNKNOWN" }, { farmer: "UNKNOWN" }, { page: 0 }, { page: 1.5 }])
+      const invalidQueries: Record<string, string | number>[] = [{ status: "PICKUP_READY" }, { view: "UNKNOWN" }, { farmer: "UNKNOWN" }, { page: 0 }, { page: 1.5 }];
+      for (const query of invalidQueries)
         expect((await queue("", query)).status).toBe(422);
     });
 
@@ -2158,6 +2168,7 @@ suite("delivery and language database workflows", () => {
         reference, buyerId: verifyAccessToken(buyer, "customer").sub, farmerProfileId: farmerId, listingId,
         quantity: "1", totalMinor: 10000n, heldMinor: 10000n, status: "FUNDED",
         shipment: { create: { carrier: "Legacy local carrier", trackingRef, status: "IN_TRANSIT" } },
+        ledger: { create: { kind: "FUND", amountMinor: 10000n, mutationKey: randomUUID(), actorId: verifyAccessToken(staff, "admin").sub, reason: "Legacy delivery fixture funding" } },
       } });
       const views = await Promise.all([
         request(app).get(`/v1/orders/${order.id}/delivery`).set(customer()),

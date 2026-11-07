@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@leetlogic/database";
 import { getConfig } from "../config.js";
 import { AppError } from "../lib/errors.js";
+import { dependencyError } from "../lib/dependency-errors.js";
 import { logger } from "../lib/logger.js";
 import { audit } from "./audit.js";
 import { createOperation, mode, systemRequest, reconcilePayment } from "./payments.js";
@@ -166,7 +167,25 @@ export function startRecoveryWorker() {
       await scanFulfillmentDeadlines();
       const heart = await prisma.financeHeartbeat.findUnique({ where: { id: `payment:${mode()}` } });
       if (!heart?.walletCheckedAt || Date.now() - heart.walletCheckedAt.getTime() >= 60000) await refreshShippingWallet();
-    } catch { logger.error({ reason: "RECOVERY_WORKER_FAILED" }, "Recovery worker requires attention"); }
+    } catch (error) {
+      const dependency = dependencyError(error);
+      const appError = error instanceof AppError ? error : undefined;
+      logger.error(
+        {
+          reason: "RECOVERY_WORKER_FAILED",
+          err: {
+            type: error instanceof Error ? error.name : "Error",
+            code: dependency?.code || appError?.code || "RECOVERY_WORKER_FAILED",
+            message:
+              dependency?.message || appError?.message || "Recovery background processing failed.",
+            ...(dependency ? { hint: dependency.hint } : {}),
+            ...(dependency?.database ? { database: dependency.database } : {}),
+            ...appError?.diagnostics,
+          },
+        },
+        "Recovery worker requires attention",
+      );
+    }
     finally { running = false; }
   };
   const timer = setInterval(() => void run(), 15000); timer.unref(); void run();
