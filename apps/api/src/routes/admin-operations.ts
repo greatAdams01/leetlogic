@@ -1,5 +1,5 @@
 import { packagingSchema, salePackagingSchema, minimumPackedWeight } from "@leetlogic/contracts";
-import { queueBooking } from "../services/delivery.js";
+import { assertNoDeliverySettlement, queueBooking } from "../services/delivery.js";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma, Prisma } from "@leetlogic/database";
@@ -10,6 +10,8 @@ import { assertCurrentDeliveryQuote, assertNoActiveCheckout, shippingOrderInclud
 import { deliveryReceiptReady, deliveryRefundReady } from "../services/delivery-policy.js";
 import { shippingSnapshot } from "../services/packaging.js";
 import { readAdminOrderQueue } from "../services/admin-order-operations.js";
+import { adminMutationSchema, correctAdminOrder, mutateAdminOrder } from "../services/admin-order-management.js";
+import { readOrderHistory } from "../services/order-record-history.js";
 
 export const operationsRouter = Router();
 operationsRouter.use(requireAuth("admin"));
@@ -20,6 +22,15 @@ for (const path of ["/order-operations", "/dispatch"]) {
   });
 }
 const id = z.string().uuid();
+operationsRouter.get("/orders/:id/history", requirePermission("orders.read"), async (req, res) => {
+  const orderId = id.parse(req.params.id);
+  if (!await prisma.tradeOrder.count({ where: { id: orderId } }) && !await prisma.orderRecordHistory.count({ where: { orderId } }))
+    throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+  res.set("Cache-Control", "private, no-store").json(await readOrderHistory(orderId, req.query));
+});
+operationsRouter.post("/orders/:id/corrections", requirePermission("orders.read"), requirePermission("orders.manage"), async (req, res) => {
+  res.json(await correctAdminOrder(req, id.parse(req.params.id)));
+});
 const reasonSchema = z.object({ reason: z.string().trim().min(5).max(500) });
 const json = (value: unknown) =>
   JSON.parse(
@@ -898,24 +909,22 @@ operationsRouter.post(
 operationsRouter.post("/logistics", requirePermission("orders.manage"), async (req, res) => {
   const body = z
     .object({
+      ...adminMutationSchema.shape,
       orderId: id,
       carrier: z.string().trim().min(2).max(120),
       trackingRef: z.string().trim().min(2).max(120),
     })
     .parse(req.body);
-  const item = await prisma.$transaction(async (tx) => {
-    const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: body.orderId } });
-    if (await tx.delivery.findUnique({ where: { orderId: body.orderId } }))
+  const item = await mutateAdminOrder(req, body.orderId, "shipment.assigned", body, async (tx, order) => {
+    if (order.delivery)
       throw new AppError(409, "PROVIDER_DELIVERY_EXISTS", "Use delivery operations for this order");
     if (order.status !== "FUNDED")
       throw new AppError(409, "ORDER_NOT_FUNDED", "Fund the order before dispatch");
-    const item = await tx.shipment.create({ data: body });
-    await audit(
-      req,
-      { action: "shipment.assigned", entityType: "shipment", entityId: item.id },
-      tx,
-    );
-    return item;
+    await assertNoActiveCheckout(tx, order.id);
+    await assertNoDeliverySettlement(tx, order.id);
+    if (order.financialHold || order.shipment) throw new AppError(409, "DISPATCH_NOT_READY", "Resolve the review or existing shipment before assigning dispatch.");
+    const item = await tx.shipment.create({ data: { orderId: order.id, carrier: body.carrier, trackingRef: body.trackingRef, evidence: body.reason } });
+    return { id: item.id, orderId: item.orderId, carrier: item.carrier, trackingRef: item.trackingRef, status: item.status };
   });
   res.status(201).json(item);
 });
@@ -931,16 +940,17 @@ operationsRouter.post(
   async (req, res) => {
     const body = z
       .object({
+        ...adminMutationSchema.shape,
         status: z.enum(["IN_TRANSIT", "DELIVERED"]),
         evidence: z.string().trim().min(5).max(500),
       })
       .parse(req.body);
     const shipmentId = id.parse(req.params.id);
-    const item = await prisma.$transaction(async (tx) => {
-      const shipment = await tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
-      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${shipment.orderId}::uuid FOR UPDATE`;
-      const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: shipment.orderId } });
-      if (await tx.delivery.findUnique({ where: { orderId: order.id } }))
+    const owner = await prisma.shipment.findUniqueOrThrow({ where: { id: shipmentId }, select: { orderId: true } });
+    const item = await mutateAdminOrder(req, owner.orderId, "shipment.status.changed", body, async (tx, order) => {
+      const shipment = order.shipment;
+      if (!shipment || shipment.id !== shipmentId) throw new AppError(409, "STALE_RECORD", "Shipment changed. Refresh and try again.");
+      if (order.delivery)
         throw new AppError(
           409,
           "PROVIDER_DELIVERY_EXISTS",
@@ -948,14 +958,18 @@ operationsRouter.post(
         );
       if (!["FUNDED", "DELIVERED"].includes(order.status) || order.heldMinor <= 0n)
         throw new AppError(409, "ORDER_NOT_FUNDED", "Shipment order is no longer funded");
+      await assertNoActiveCheckout(tx, order.id);
+      await assertNoDeliverySettlement(tx, order.id);
+      if (order.financialHold || await tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } }))
+        throw new AppError(409, "ORDER_UNDER_REVIEW", "Resolve the review before recording an earlier staff delivery confirmation.");
       if (
-        shipment.status === "DELIVERED" ||
+        !["ASSIGNED", "IN_TRANSIT"].includes(shipment.status) || shipment.status === body.status ||
         (body.status === "DELIVERED" && shipment.status !== "IN_TRANSIT")
       )
         throw new AppError(409, "INVALID_TRANSITION", "Shipment status transition is invalid");
       const changed = await tx.shipment.updateMany({
         where: { id: shipmentId, status: shipment.status },
-        data: body,
+        data: { status: body.status, evidence: body.evidence },
       });
       if (!changed.count)
         throw new AppError(409, "STALE_RECORD", "Shipment changed. Refresh and retry.");
@@ -964,17 +978,6 @@ operationsRouter.post(
           where: { id: shipment.orderId },
           data: { status: "DELIVERED", deliveryConfirmedAt: new Date() },
         });
-      await audit(
-        req,
-        {
-          action: "shipment.status.changed",
-          entityType: "shipment",
-          entityId: shipmentId,
-          after: body,
-        },
-        tx,
-      );
-      return tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
     });
     res.json(item);
   },
@@ -1103,11 +1106,9 @@ operationsRouter.post(
   "/orders/:id/cancel",
   requirePermission("orders.manage"),
   async (req, res) => {
-    const body = reasonSchema.parse(req.body);
+    const body = adminMutationSchema.strict().parse(req.body);
     const orderId = id.parse(req.params.id);
-    const item = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-      const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    const item = await mutateAdminOrder(req, orderId, "order.cancelled", body, async (tx, order) => {
       await assertNoActiveCheckout(tx, orderId);
       if (order.financialHold)
         throw new AppError(409, "PAYMENT_LOCKED", "Resolve the financial review before cancelling this order.");
@@ -1117,7 +1118,7 @@ operationsRouter.post(
           "CANNOT_CANCEL",
           "Only unpaid orders can be cancelled; funded orders require refund review",
         );
-      const item = await tx.tradeOrder.update({
+      await tx.tradeOrder.update({
         where: { id: orderId },
         data: { status: "CANCELLED" },
       });
@@ -1134,12 +1135,6 @@ operationsRouter.post(
           referenceId: orderId,
         },
       });
-      await audit(
-        req,
-        { action: "order.cancelled", entityType: "order", entityId: orderId, after: body },
-        tx,
-      );
-      return item;
     });
     res.json(json(item));
   },

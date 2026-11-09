@@ -2,6 +2,7 @@ import type { DeliveryVisibility, DeliveryVisibilityEvent, DeliveryVisibilityPar
 import type { OrderFulfillment } from "../../../../packages/contracts/src/order-fulfillment";
 import type { OrderPaymentProgress } from "../../../../packages/contracts/src/order-payment-progress";
 import type { Contact } from "../../../mobile/src/lib/domain";
+import type { OrderHistoryPage } from "../../../../packages/contracts/src/admin-order-history";
 
 type Party = { name: string; phone: string };
 type Packing = {
@@ -31,6 +32,11 @@ export type QueueData = {
 export type AdminOrderRecord = {
   observedAt: string;
   staffContext: {
+    revision: string;
+    buyerContact: { name: string; phone: string; email: string } | null;
+    fulfillmentNotes: string | null;
+    activity: OrderHistoryPage;
+    corrections: { orderInformation: boolean; deliveryNotes: boolean; destination: boolean; riderAssignment: boolean; destinationRequiresNewQuote: boolean; providerControlled: boolean };
     buyer: Party; farmer: Party & { farmName: string }; farmerDecidedAt: string | null;
     createdAt: string; fundsProvider: string | null; manualFundingRecorded: boolean; financialHold: boolean;
     disputes: { id: string; subject: string; status: string }[];
@@ -56,10 +62,13 @@ export type AdminOrderRecord = {
     id: string; carrier: string; trackingRef: string; status: string; evidence: string | null;
     createdAt: string; updatedAt: string;
   } | null;
+  manualShipment: { id: string; carrier: string; trackingRef: string; status: string;
+    riderAssignment: { name: string; phone: string; reference: string } | null } | null;
   delivery: {
     id: string; status: string; courier: string | null; providerShipmentId: string | null;
     selectedQuoteId: string | null; bookingStartedAt: string | null; cancelRequestedAt: string | null;
     shippingMinor: string; paidMinor: string; failureCode: string | null;
+    operationsNotes: string | null;
     pickup: Contact | null; destination: Contact | null; package: (Partial<Packing> & { pickupDate?: string; quoteRequestId?: string }) | null;
     parcels: DeliveryVisibilityParcel[]; events: DeliveryVisibilityEvent[];
     quotes: {
@@ -72,4 +81,4 @@ export type AdminOrderRecord = {
 
 export type AdminOrderCommand = "cancel-order" | "escrow" | "legacy-status" | "assign-shipment" |
   "quotes" | "select" | "refresh-quote" | "book" | "manual-dispatch" | "manual-status" |
-  "reconcile" | "link" | "link-parcel" | "delivery-payment" | "cancel-delivery";
+  "reconcile" | "link" | "link-parcel" | "delivery-payment" | "cancel-delivery" | "correct-order" | "correct-delivery";

@@ -17,9 +17,12 @@ export async function audit(
     entityId?: string;
     before?: unknown;
     after?: unknown;
+    reason?: string;
   },
   client: Prisma.TransactionClient = prisma,
 ) {
+  const detail = input.after as { reason?: unknown; evidence?: unknown } | undefined;
+  const suppliedReason = input.reason ?? (req.auth?.subject === "admin" ? req.body?.reason : undefined) ?? detail?.reason ?? detail?.evidence;
   await client.auditLog.create({
     data: {
       actorType: req.auth?.subject ?? "system",
@@ -27,6 +30,7 @@ export async function audit(
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId,
+      reason: typeof suppliedReason === "string" ? suppliedReason.trim().slice(0, 500) || null : null,
       beforeRedacted: input.before ? redact(input.before) : undefined,
       afterRedacted: input.after ? redact(input.after) : undefined,
       ipAddress: req.ip,

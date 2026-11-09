@@ -458,10 +458,40 @@ model AuditLog {
   userAgent      String?  @map("user_agent") @db.VarChar(500)
   requestId      String   @map("request_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  // Existing logs keep a null transaction ID; new logs correlate with immutable row versions.
+  transactionId  BigInt?  @default(dbgenerated("txid_current()")) @map("transaction_id")
+  reason         String? @db.VarChar(500)
 
   @@index([entityType, entityId])
   @@index([actorId, createdAt])
+  @@index([transactionId])
   @@map("audit_logs")
+}
+
+/// Database-written, append-only operational snapshots and lifecycle events. No cascading relations.
+model OrderRecordHistory {
+  id            BigInt   @id @default(autoincrement())
+  orderId       String   @map("order_id") @db.Uuid
+  entityType    String   @map("entity_type") @db.VarChar(40)
+  entityId      String   @map("entity_id") @db.Uuid
+  kind          String   @db.VarChar(30)
+  action        String   @db.VarChar(120)
+  actorType     String   @map("actor_type") @db.VarChar(30)
+  actorId       String?  @map("actor_id") @db.Uuid
+  actorName     String   @map("actor_name") @db.VarChar(160)
+  reason        String?  @db.VarChar(500)
+  before        Json?
+  after         Json?
+  auditId       BigInt?  @map("audit_id")
+  transactionId BigInt?  @map("transaction_id")
+  requestId     String?  @map("request_id") @db.Uuid
+  occurredAt    DateTime @map("occurred_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([orderId, id])
+  @@index([orderId, transactionId])
+  @@index([auditId])
+  @@map("order_record_history")
 }
 
 model Language {
@@ -609,6 +639,8 @@ model IdempotencyRecord {
 }
 
 model TradeOrder {
+  buyerContactSnapshot Json? @map("buyer_contact_snapshot")
+  fulfillmentNotes String? @map("fulfillment_notes") @db.VarChar(700)
   // Existing orders retain their original fulfillment rules; new orders opt in at creation.
   journeyVersion Int @default(1) @map("journey_version")
   farmerDecision String @default("LEGACY") @map("farmer_decision") @db.VarChar(20)
@@ -655,6 +687,7 @@ model TradeOrder {
 }
 
 model Shipment {
+  riderAssignment Json? @map("rider_assignment")
   id          String     @id @default(uuid()) @db.Uuid
   orderId     String     @unique @db.Uuid
   carrier     String     @db.VarChar(120)
@@ -843,6 +876,7 @@ model MarketplaceSettings {
 
 
 model Delivery {
+  operationsNotes String? @map("operations_notes") @db.VarChar(700)
   id String @id @default(uuid()) @db.Uuid
   orderId String @unique @db.Uuid
   status String @default("QUOTE_REQUIRED") @db.VarChar(40)
@@ -894,6 +928,7 @@ model DeliveryQuote {
 }
 
 model DeliveryEvent {
+  transactionId BigInt? @default(dbgenerated("txid_current()")) @map("transaction_id")
   id String @id @default(uuid()) @db.Uuid
   deliveryId String @db.Uuid
   dedupeKey String @unique @db.VarChar(200)

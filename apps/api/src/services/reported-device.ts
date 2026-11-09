@@ -7,6 +7,7 @@ export function reportedDevice(req: Request): { devicePlatform?: string; deviceN
   let name: string | undefined;
   try {
     const value = decodeURIComponent(req.get("X-LeetLogic-Device-Name") || "")
+      // eslint-disable-next-line no-control-regex -- intentional sanitization of control characters from client metadata
       .replace(/[\u0000-\u001f\u007f]/g, "")
       .trim();
     if (value && value.length <= 100) name = value;

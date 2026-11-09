@@ -33,12 +33,14 @@ import { prisma, type Prisma } from "@leetlogic/database";
 import { requireAuth, requirePermission, requireRecentStepUp } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { getConfig } from "../config.js";
-import { canAdvanceDelivery, deliveryReceiptReady, deliveryRefundReady } from "../services/delivery-policy.js";
+import { canAdvanceManualDelivery, deliveryReceiptReady, deliveryRefundReady } from "../services/delivery-policy.js";
 import { audit } from "../services/audit.js";
 import { contactSchema } from "../providers/shipping/shipbubble.js";
 import { assertNoDeliverySettlement, queueBooking, deliveryEvent, finalizeDeliveryBooking, hasDeliverySettlement, hashInput, serialize, shippingProvider } from "../services/delivery.js";
 import { recordedSplitBooking, splitPlanMatches } from "../services/split-delivery.js";
 import { splitParts, type TrackedShipment } from "../providers/shipping/shipbubble.js";
+import { adminMutationSchema, adminRecordRevision, assertAdminRecordCurrent, correctAdminDelivery, correctionCapabilities, lastOrderHistoryId, mutateAdminOrder } from "../services/admin-order-management.js";
+import { readOrderHistory } from "../services/order-record-history.js";
 const uuid = z.string().uuid();
 const quoteBody = z.object({
   pickup: contactSchema,
@@ -76,6 +78,7 @@ async function orderAccess(req: Request) {
         include: {
           quotes: { orderBy: { createdAt: "desc" }, take: 30 },
           events: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+          parcels: { orderBy: { parcelIndex: "asc" } },
         },
       },
     },
@@ -434,7 +437,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     res.set("Cache-Control", "private, no-store");
     const order = await orderAccess(req);
     const delivery = order.delivery;
-    const parcels = delivery ? await prisma.deliveryParcel.findMany({ where: { deliveryId: delivery.id }, orderBy: { parcelIndex: "asc" } }) : [];
+    const parcels = delivery?.parcels || [];
     const checkout = checkoutSummary(order);
     const ownOrStaff = req.auth!.subject === "admin" || order.farmerProfile.userId === req.auth!.sub;
     const pickupContactAvailable = ownOrStaff || await buyerPickupContactAvailable(order);
@@ -472,6 +475,11 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       }
     }
     const staffContext = isStaff ? {
+      revision: adminRecordRevision(order, await lastOrderHistoryId(order.id)),
+      buyerContact: order.buyerContactSnapshot,
+      fulfillmentNotes: order.fulfillmentNotes,
+      corrections: correctionCapabilities(order, checkoutActive, order.settlementStarted),
+      activity: await readOrderHistory(order.id),
       buyer: { name: order.buyer.profile?.fullName || order.buyer.profile?.displayName || order.buyer.phoneE164, phone: order.buyer.phoneE164 },
       farmer: { name: order.farmerProfile.user.profile?.fullName || order.farmerProfile.farmName, farmName: order.farmerProfile.farmName, phone: order.farmerProfile.user.phoneE164 },
       farmerDecidedAt: order.farmerDecidedAt,
@@ -483,7 +491,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       manualDeliveryStatuses: delivery && !delivery.providerShipmentId && ["FUNDED", "DELIVERED"].includes(order.status) &&
         !["MANUAL_REVIEW", "QUOTE_REQUIRED", "PAYMENT_PENDING"].includes(delivery.status) && order.shipment
         ? ["PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED_ATTEMPT", "RETURNING", "RETURNED", "CANCELLED"].filter(status =>
-          canAdvanceDelivery(delivery.status, status) && (status !== "DELIVERED" || delivery.status === "IN_TRANSIT")) : [],
+          canAdvanceManualDelivery(delivery.status, status)) : [],
     } : undefined;
     res.json(
       serialize({
@@ -501,6 +509,8 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           status: order.shipment.status, evidence: order.shipment.evidence,
           createdAt: order.shipment.createdAt, updatedAt: order.shipment.updatedAt,
         } : null,
+        ...(isStaff ? { manualShipment: order.shipment && !delivery?.providerShipmentId && !delivery?.bookingStartedAt
+          ? { id: order.shipment.id, carrier: order.shipment.carrier, trackingRef: order.shipment.trackingRef, status: order.shipment.status, riderAssignment: order.shipment.riderAssignment } : null } : {}),
         money: {
           progress: await orderPaymentView(order),
           heldMinor: order.heldMinor, releasedMinor: order.releasedMinor, refundedMinor: order.refundedMinor,
@@ -544,6 +554,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         delivery: delivery
           ? {
               ...delivery,
+              operationsNotes: isStaff ? delivery.operationsNotes : undefined,
               pickup: pickupContactView(delivery.pickup, pickupContactAvailable),
               quotes: rankDeliveryQuotes(quotes).map(safeQuote),
               parcels: parcels.map(({ id, parcelIndex, status, trackingUrl, failureCode, providerShipmentId, quoteId }) => ({
@@ -576,6 +587,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
     const prepared = await prisma.$transaction(async (tx) => {
       await lockDeliveryRequestAddresses(tx, order, destinationId.success ? destinationId.data : undefined);
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await assertAdminRecordCurrent(req, tx, order.id);
       await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({
         where: { id: order.id },
@@ -604,6 +616,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         input = deriveDeliveryInput(current, { ...body, pickupDate: body.parcel.pickupDate });
       } catch (error) {
         if (current.delivery) await tx.delivery.update({ where: { id: current.delivery.id }, data: { failureCode: error instanceof AppError ? error.code : "VALIDATION_ERROR" } });
+        if (current.delivery) await audit(req, { action: "delivery.quote.invalidated", entityType: "delivery", entityId: current.delivery.id }, tx);
         return { error };
       }
       const suggested = packageSuggestion(current.packagingSnapshot ?? current.listing.packaging, current.quantity)!;
@@ -626,6 +639,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         where: { deliveryId: d.id },
         data: { expiresAt: new Date() },
       });
+      await audit(req, { action: "delivery.quote.requested", entityType: "delivery", entityId: d.id }, tx);
       return { current, d, input, inputHash: deliveryInputHash(current, input), quoteRequestId, expiresAt: new Date(Date.now() + 15 * 60000) };
     });
     if ("error" in prepared) throw prepared.error;
@@ -688,6 +702,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       throw new AppError(403, "FORBIDDEN", "Order management permission required");
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await assertAdminRecordCurrent(req, tx, order.id);
       await unlockedCheckout(tx, order.id);
       const current = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, shipment: true } });
       const d = await tx.delivery.findUnique({ where: { orderId: order.id } });
@@ -711,7 +726,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         tx,
         d.id,
         "PAYMENT_PENDING",
-        "customer",
+        req.auth!.subject === "admin" ? "admin" : "customer",
         `${d.id}:selected:${quote.id}`,
         req.auth!.sub,
       );
@@ -740,6 +755,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       throw new AppError(409, "DELIVERY_LOCKED", "Delivery quote cannot be refreshed");
     const prepared = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+      await assertAdminRecordCurrent(req, tx, order.id);
       await unlockedCheckout(tx, order.id);
       const currentOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: { ...shippingOrderInclude, delivery: true, shipment: true } });
       const current = currentOrder.delivery;
@@ -762,6 +778,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         status: order.status === "FUNDED" ? "BOOKING_BLOCKED" : "QUOTE_REQUIRED",
         failureCode: null,
       } });
+      await audit(req, { action: "delivery.quote.refresh.requested", entityType: "delivery", entityId: d.id }, tx);
       return { currentOrder, input, selected, inputHash: deliveryInputHash(currentOrder, input), quoteRequestId, expiresAt: new Date(Date.now() + 15 * 60000) };
     });
     let rate;
@@ -830,10 +847,16 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       throw new AppError(403, "BUYER_REQUIRED", "Only the buyer can book delivery");
     if (req.auth!.subject === "admin" && !req.auth!.permissions?.includes("orders.manage"))
       throw new AppError(403, "FORBIDDEN", "Order management permission required");
-    await queueBooking(order.id);
+    await queueBooking(order.id, req.auth!.subject === "admin" ? {
+      guard: tx => assertAdminRecordCurrent(req, tx, order.id),
+      recorded: tx => audit(req, { action: "delivery.booking.requested", entityType: "order", entityId: order.id }, tx),
+    } : undefined);
     res.status(202).json({ queued: true });
   });
 }
+staffDeliveryRouter.post("/:id/delivery/corrections", requirePermission("orders.manage"), async (req, res) => {
+  res.json(await correctAdminDelivery(req, uuid.parse(req.params.id)));
+});
 staffDeliveryRouter.post(
   "/:id/delivery/payment",
   requirePermission("payments.manage"),
@@ -848,6 +871,7 @@ staffDeliveryRouter.post(
       );
     const body = z
       .object({
+        ...adminMutationSchema.shape,
         amountMinor: z.string().regex(/^\d{1,12}$/),
         reference: z.string().trim().min(3).max(160),
       })
@@ -858,6 +882,7 @@ staffDeliveryRouter.post(
       const d = await tx.delivery.findUniqueOrThrow({ where: { orderId: order.id } });
       const currentOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: order.id }, include: shippingOrderInclude });
       if (d.paymentRef === body.reference && d.paidMinor === BigInt(body.amountMinor)) return;
+      await assertAdminRecordCurrent(req, tx, order.id);
       const quote = d.selectedQuoteId
         ? await tx.deliveryQuote.findUnique({ where: { id: d.selectedQuoteId } })
         : null;
@@ -898,16 +923,15 @@ staffDeliveryRouter.post(
   requirePermission("orders.manage"),
   async (req, res) => {
     const order = await orderAccess(req);
-    const d = order.delivery;
-    if (!d) throw new AppError(404, "DELIVERY_NOT_FOUND", "Delivery not found");
-    if (!d.providerShipmentId)
-      throw new AppError(
-        409,
-        "MANUAL_RECONCILIATION_REQUIRED",
-        "Locate the shipment in Shipbubble and link it; do not repeat an uncertain booking",
-      );
-    await prisma.delivery.update({ where: { id: d.id }, data: { nextSyncAt: new Date() } });
-    res.status(202).json({ queued: true, message: "Tracking refresh queued. The recorded status changes only after a verified provider update." });
+    const body = adminMutationSchema.strict().parse(req.body);
+    const result = await mutateAdminOrder(req, order.id, "delivery.tracking.refresh.requested", body, async (tx, current) => {
+      const d = current.delivery;
+      if (!d) throw new AppError(404, "DELIVERY_NOT_FOUND", "Delivery not found");
+      if (!d.providerShipmentId) throw new AppError(409, "MANUAL_RECONCILIATION_REQUIRED", "Locate the shipment in Shipbubble and link it; do not repeat an uncertain booking");
+      await tx.delivery.update({ where: { id: d.id }, data: { nextSyncAt: new Date() } });
+      return { queued: true, message: "Tracking refresh queued. The recorded status changes only after a verified provider update." };
+    });
+    res.status(202).json(result);
   },
 );
 staffDeliveryRouter.post(
@@ -919,6 +943,7 @@ staffDeliveryRouter.post(
       d = order.delivery;
     const body = z
       .object({
+        ...adminMutationSchema.shape,
         providerShipmentId: z.string().min(3).max(160),
         reason: z.string().trim().min(10).max(500),
       })
@@ -954,6 +979,7 @@ staffDeliveryRouter.post(
       const current = currentOrder.delivery;
       const currentParcel = current?.parcels.find((item) => item.id === parcel.id);
       if (currentParcel?.providerShipmentId === tracked.id) return;
+      await assertAdminRecordCurrent(req, tx, order.id);
       if (!current || current.status !== "BOOKING_UNCERTAIN" || current.providerShipmentId !== `split:${d.id}` ||
         !currentParcel || currentParcel.providerShipmentId || !["BOOKING", "BOOKING_UNCERTAIN"].includes(currentParcel.status))
         throw new AppError(409, "STALE_RECORD", "Parcel changed. Refresh and try again.");
@@ -1026,6 +1052,7 @@ staffDeliveryRouter.post(
     const d = order.delivery;
     const { providerShipmentId, reason } = z
       .object({
+        ...adminMutationSchema.shape,
         providerShipmentId: z.string().min(3).max(160),
         reason: z.string().trim().min(10).max(500),
       })
@@ -1045,6 +1072,7 @@ staffDeliveryRouter.post(
       });
       const current = currentOrder.delivery;
       if (current?.providerShipmentId === tracked.id) return;
+      await assertAdminRecordCurrent(req, tx, order.id);
       if (!current || current.status !== "BOOKING_UNCERTAIN" || current.providerShipmentId)
         throw new AppError(409, "STALE_RECORD", "Delivery changed");
       const quote = current.selectedQuoteId ? await tx.deliveryQuote.findUnique({ where: { id: current.selectedQuoteId } }) : null;
@@ -1095,36 +1123,19 @@ staffDeliveryRouter.post(
   requireRecentStepUp,
   async (req, res) => {
     const order = await orderAccess(req);
-    const reason = z.string().trim().min(10).max(500).parse(req.body.reason);
-    const d = order.delivery;
-    if (!d?.providerShipmentId || ["DELIVERED", "CANCELLED", "RETURNED"].includes(d.status))
-      throw new AppError(409, "CANNOT_CANCEL", "This shipment cannot be cancelled");
-    await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
-      await tx.$queryRaw`SELECT id FROM deliveries WHERE id = ${d.id}::uuid FOR UPDATE`;
+    const body = adminMutationSchema.strict().parse(req.body);
+    const result = await mutateAdminOrder(req, order.id, "delivery.cancel.requested", body, async (tx, record) => {
       await assertNoDeliverySettlement(tx, order.id);
-      const current = await tx.delivery.findUniqueOrThrow({ where: { id: d.id } });
-      if (!current.providerShipmentId || ["DELIVERED", "CANCELLED", "RETURNED"].includes(current.status))
+      const current = record.delivery;
+      if (!current?.providerShipmentId || ["DELIVERED", "CANCELLED", "RETURNED"].includes(current.status) || current.cancelRequestedAt)
         throw new AppError(409, "CANNOT_CANCEL", "This shipment cannot be cancelled");
       await tx.delivery.update({
-        where: { id: d.id },
-        data: { cancelRequestedAt: current.cancelRequestedAt || new Date(), nextSyncAt: new Date() },
+        where: { id: current.id },
+        data: { cancelRequestedAt: new Date(), nextSyncAt: new Date() },
       });
-      await audit(
-        req,
-        {
-          action: "delivery.cancel.requested",
-          entityType: "delivery",
-          entityId: d.id,
-          after: { reason },
-        },
-        tx,
-      );
+      return { requested: true, message: "Cancellation requested; wait for courier confirmation. No external refund has been issued." };
     });
-    res.status(202).json({
-      requested: true,
-      message: "Cancellation requested; no external refund has been issued.",
-    });
+    res.status(202).json(result);
   },
 );
 customerDeliveryRouter.post("/:id/delivery/confirm", async (req, res) => {
@@ -1192,20 +1203,12 @@ staffDeliveryRouter.post(
   requirePermission("orders.manage"),
   async (req, res) => {
     const order = await orderAccess(req);
-    const body = z
-      .object({
-        carrier: z.string().trim().min(2).max(120),
-        trackingRef: z.string().trim().min(2).max(120),
-        reason: z.string().trim().min(10).max(500),
-      })
+    const body = adminMutationSchema
+      .extend({ carrier: z.string().trim().min(2).max(120), trackingRef: z.string().trim().min(2).max(120) })
+      .strict()
       .parse(req.body);
-    await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+    const result = await mutateAdminOrder(req, order.id, "delivery.manual.assigned", body, async (tx, current) => {
       await unlockedCheckout(tx, order.id);
-      const current = await tx.tradeOrder.findUniqueOrThrow({
-        where: { id: order.id },
-        include: { delivery: true },
-      });
       const d = current.delivery;
       await assertNoDeliverySettlement(tx, order.id);
       if (current.status !== "FUNDED" || current.financialHold || !d || d.status !== "MANUAL_REVIEW" || d.providerShipmentId)
@@ -1234,13 +1237,8 @@ staffDeliveryRouter.post(
         `${d.id}:manual-assigned`,
         req.auth!.sub,
       );
-      await audit(
-        req,
-        { action: "delivery.manual.assigned", entityType: "delivery", entityId: d.id, after: body },
-        tx,
-      );
     });
-    res.json({ assigned: true });
+    res.json(result);
   },
 );
 staffDeliveryRouter.post(
@@ -1248,8 +1246,8 @@ staffDeliveryRouter.post(
   requirePermission("orders.manage"),
   async (req, res) => {
     const order = await orderAccess(req);
-    const body = z
-      .object({
+    const body = adminMutationSchema
+      .extend({
         status: z.enum([
           "PICKED_UP",
           "IN_TRANSIT",
@@ -1261,14 +1259,15 @@ staffDeliveryRouter.post(
         ]),
         evidence: z.string().trim().min(10).max(500),
       })
+      .strict()
       .parse(req.body);
-    await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+    if (body.status === "CANCELLED") {
+      const age = req.auth!.stepUpAt ? Math.floor(Date.now() / 1000) - req.auth!.stepUpAt : Infinity;
+      if (age > 300) throw new AppError(403, "STEP_UP_REQUIRED", "Confirm cancellation with a recent authenticator code.");
+    }
+    const result = await mutateAdminOrder(req, order.id, "delivery.manual.status", body, async (tx, current) => {
       await unlockedCheckout(tx, order.id);
-      const current = await tx.tradeOrder.findUniqueOrThrow({
-        where: { id: order.id },
-        include: { delivery: true, shipment: true },
-      });
+      await assertNoDeliverySettlement(tx, order.id);
       const d = current.delivery;
       if (
         !d ||
@@ -1276,7 +1275,7 @@ staffDeliveryRouter.post(
         d.providerShipmentId ||
         !["FUNDED", "DELIVERED"].includes(current.status) ||
         ["MANUAL_REVIEW", "QUOTE_REQUIRED", "PAYMENT_PENDING"].includes(d.status) ||
-        !canAdvanceDelivery(d.status, body.status)
+        !canAdvanceManualDelivery(d.status, body.status)
       )
         throw new AppError(
           409,
@@ -1299,15 +1298,11 @@ staffDeliveryRouter.post(
         d.id,
         body.status,
         "admin",
-        `${d.id}:manual:${body.status}`,
+        `${d.id}:manual:${body.mutationKey}`,
         req.auth!.sub,
-      );
-      await audit(
-        req,
-        { action: "delivery.manual.status", entityType: "delivery", entityId: d.id, after: body },
-        tx,
+        { evidence: body.evidence, reason: body.reason },
       );
     });
-    res.json({ updated: true });
+    res.json(result);
   },
 );

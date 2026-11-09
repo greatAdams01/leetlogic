@@ -14,11 +14,13 @@ export function orderCommandAvailable(command: AdminOrderCommand, data: AdminOrd
   const editable = order.status === "AWAITING_PAYMENT" && !order.checkoutActive && !context.financialHold &&
     !data.legacyShipment && !BigInt(d?.paidMinor || "0") && !d?.bookingStartedAt && !d?.providerShipmentId;
   switch (command) {
+    case "correct-order": return context.corrections.orderInformation;
+    case "correct-delivery": return context.corrections.deliveryNotes || context.corrections.destination || context.corrections.riderAssignment;
     case "cancel-order": return order.status === "AWAITING_PAYMENT" && !order.checkoutActive && !context.financialHold;
     case "escrow": return context.fundsProvider !== "bachs" && context.manualEscrowKinds.length > 0;
-    case "assign-shipment": return order.status === "FUNDED" && !d && !data.legacyShipment;
+    case "assign-shipment": return order.status === "FUNDED" && !d && !data.legacyShipment && !context.financialHold && !order.checkoutActive;
     case "legacy-status": return !!data.legacyShipment && ["ASSIGNED", "IN_TRANSIT"].includes(data.legacyShipment.status) &&
-      ["FUNDED", "DELIVERED"].includes(order.status) && BigInt(data.money.heldMinor) > 0n;
+      ["FUNDED", "DELIVERED"].includes(order.status) && BigInt(data.money.heldMinor) > 0n && !context.financialHold && !order.checkoutActive && !context.disputes.length;
     case "quotes": return editable && !!order.packageSuggestion;
     case "select": return editable && !!d?.quotes.some(quote => quote.available && new Date(quote.expiresAt).getTime() > Date.now());
     case "refresh-quote": return !!d?.selectedQuoteId && !d.providerShipmentId && !d.bookingStartedAt &&
@@ -106,7 +108,15 @@ export function useOrderRecord(id: string, permissions: readonly string[], onCha
     if (command === "select" && !data.delivery?.quotes.some(quote => quote.id === body.quoteId && quote.available && new Date(quote.expiresAt).getTime() > Date.now())) return false;
     if (command === "escrow" && !data.staffContext.manualEscrowKinds.includes(String(body.kind))) return false;
     if (command === "link-parcel" && !data.delivery?.parcels.some(parcel => parcel.id === body.parcelId && !parcel.providerShipmentId && ["BOOKING", "BOOKING_UNCERTAIN"].includes(parcel.status))) return false;
-    const sensitive = sensitiveCommands.includes(command);
+    if (command === "manual-status" && !data.staffContext.manualDeliveryStatuses.includes(String(body.status))) return false;
+    if (typeof body.reason !== "string" || body.reason.trim().length < 10 || typeof body.mutationKey !== "string" ||
+      (command !== "escrow" && typeof body.expectedRevision !== "string")) {
+      setActionError("Review the proposed changes and enter a reason before saving."); return false;
+    }
+    if (command !== "escrow" && body.expectedRevision !== data.staffContext.revision) {
+      setActionError("This record changed. Re-review your retained draft against the latest values."); return false;
+    }
+    const sensitive = sensitiveCommands.includes(command) || command === "manual-status" && body.status === "CANCELLED";
     if (sensitive && !/^\d{6}$/.test(code)) { setActionError("Enter the six-digit code from your authenticator."); return false; }
     const paths: Partial<Record<AdminOrderCommand, string>> = {
       "cancel-order": `orders/${id}/cancel`, escrow: `orders/${id}/escrow`,
@@ -114,6 +124,7 @@ export function useOrderRecord(id: string, permissions: readonly string[], onCha
       "delivery-payment": `delivery-orders/${id}/delivery/payment`,
       "cancel-delivery": `delivery-orders/${id}/delivery/cancel`,
       "link-parcel": `delivery-orders/${id}/delivery/parcels/${encodeURIComponent(String(body.parcelId))}/link`,
+      "correct-order": `orders/${id}/corrections`, "correct-delivery": `delivery-orders/${id}/delivery/corrections`,
     };
     const path = paths[command] || `delivery-orders/${id}/delivery/${command}`;
     const payload = { ...body };
@@ -125,6 +136,9 @@ export function useOrderRecord(id: string, permissions: readonly string[], onCha
       if (sensitive) {
         await financeRequest("auth/totp/step-up", { code });
         if (!actionCurrent() || !context.current.record || !orderCommandAvailable(command, context.current.record, context.current.permissions)) return false;
+        if (command !== "escrow" && context.current.record.staffContext.revision !== body.expectedRevision) {
+          setActionError("This record changed during verification. Re-review your draft before saving."); return false;
+        }
       }
       const result = await financeRequest(path, payload);
       if (!actionCurrent()) return false;

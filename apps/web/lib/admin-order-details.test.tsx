@@ -35,10 +35,10 @@ describe("dedicated order and delivery details", () => {
     h.params = new URLSearchParams({ returnTo: "/admin/orders?search=tomatoes&page=2" });
     const view = render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    for (const heading of ["Order & produce", "Buyer & farmer", "Payment summary", "Fulfillment", "Order activity"])
+    for (const heading of ["Order & produce", "Buyer & farmer", "Payment summary", "Fulfillment", "Activity History"])
       expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
     expect(screen.getByRole("link", { name: "← Back to Orders" }).getAttribute("href")).toBe("/admin/orders?search=tomatoes&page=2");
-    expect(screen.getByText("Bola Buyer")).toBeTruthy();
+    expect(screen.getAllByText("Bola Buyer").length).toBeGreaterThan(0);
     expect(screen.getByText("Ada’s farm")).toBeTruthy();
     expect(screen.getByRole("link", { name: "+2348011111111" }).getAttribute("href")).toBe("tel:+2348011111111");
     expect(screen.getByText("Produce funds held")).toBeTruthy();
@@ -60,7 +60,7 @@ describe("dedicated order and delivery details", () => {
     expect(screen.getByText("12 Farm Road, Benue")).toBeTruthy();
     expect(screen.getByText("24 Market Road, Lagos")).toBeTruthy();
     expect(screen.getByText(/Rider Chidi/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Refresh courier tracking" })).toBeTruthy();
+    expect(screen.getByText("Refresh courier tracking", { selector: "summary" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View related order →" }).getAttribute("href")).toContain(`/admin/orders/${orderId}`);
     expect(screen.getByRole("link", { name: "View order payments →" }).getAttribute("href")).toContain("#order-payment");
     expect(screen.queryByRole("heading", { name: "Payment summary" })).toBeNull();
@@ -87,10 +87,12 @@ describe("dedicated order and delivery details", () => {
     h.record.staffContext.fundsProvider = null; h.record.staffContext.manualFundingRecorded = true;
     h.record.staffContext.manualEscrowKinds = ["REFUND"];
     h.record.staffContext.ledger = [{ id: "manual-fund", kind: "FUND", amountMinor: "100000", feeMinor: "0", externalRef: "EXT-1042", reason: "Verified manual payment", createdAt: h.record.staffContext.createdAt }];
+    h.record.staffContext.activity.items.push({ ...h.record.staffContext.activity.items[0], id: "2", entityType: "escrow", kind: "LEDGER", action: "escrow.fund", actorType: "admin", actorName: "Test Operator", reason: "Verified manual payment", after: { externalRef: "EXT-1042", amountMinor: "100000" } });
     render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
     await screen.findByText("Manually recorded payment");
     expect(screen.getByText("Manually recorded funds are not a verified payment-provider transaction.")).toBeTruthy();
-    expect(screen.getByText(/Manual record.*EXT-1042/)).toBeTruthy();
+    expect(screen.getByText("Reason: Verified manual payment")).toBeTruthy();
+    expect(screen.getByText("EXT-1042")).toBeTruthy();
     expect(screen.queryByText("Payment Secured")).toBeNull();
   });
   it("preserves earlier staff receipt semantics and the existing manual update endpoint", async () => {
@@ -102,8 +104,10 @@ describe("dedicated order and delivery details", () => {
     const form = openForm("Update earlier shipment");
     expect(within(form).getByRole("option", { name: "Delivered" }).getAttribute("value")).toBe("DELIVERED");
     enter(form, "evidence", "Verified arrival with the buyer");
+    enter(form, "reason", "Checked the signed manual delivery record");
     await submit(form);
-    expect(h.request).toHaveBeenCalledWith(`logistics/${parcelId}/status`, { status: "DELIVERED", evidence: "Verified arrival with the buyer" });
+    expect(posts()).toEqual([]); await submit(form);
+    expect(h.request).toHaveBeenCalledWith(`logistics/${parcelId}/status`, { status: "DELIVERED", evidence: "Verified arrival with the buyer", reason: "Checked the signed manual delivery record", expectedRevision: "a".repeat(64), mutationKey: expect.any(String) });
     expect(posts().some(([path]) => path.includes("/confirm"))).toBe(false);
   });
   it("shows collection fulfillment in Orders without sending staff to courier tracking", async () => {
@@ -130,7 +134,8 @@ describe("authorized record actions", () => {
     const form = openForm("Cancel unpaid order");
     enter(form, "reason", "Buyer requested cancellation");
     await submit(form);
-    expect(h.request).toHaveBeenCalledWith(`orders/${orderId}/cancel`, { reason: "Buyer requested cancellation" });
+    expect(posts()).toEqual([]); await submit(form);
+    expect(h.request).toHaveBeenCalledWith(`orders/${orderId}/cancel`, { reason: "Buyer requested cancellation", expectedRevision: "a".repeat(64), mutationKey: expect.any(String) });
     await screen.findByText("Cancelled");
     expect(screen.queryByText("Cancel unpaid order", { selector: "summary" })).toBeNull();
     expect(reads()).toHaveLength(2);
@@ -147,7 +152,8 @@ describe("authorized record actions", () => {
     render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
     const form = openForm("Manage manually recorded funds");
-    enter(form, "reason", "Verified payment received externally"); enter(form, "externalRef", "EXT-1042"); enter(form, "code", "123456");
+    enter(form, "reason", "Verified payment received externally"); enter(form, "externalRef", "EXT-1042");
+    await submit(form); expect(posts()).toEqual([]); enter(form, "code", "123456");
     await submit(form);
     const first = h.request.mock.calls.find(([path]) => path.endsWith("/escrow"))![1];
     expect(first).toMatchObject({ kind: "FUND", amountMinor: "100000", externalRef: "EXT-1042", mutationKey: expect.any(String) });
@@ -171,7 +177,7 @@ describe("authorized record actions", () => {
     render(<OrderReview id={orderId} area="logistics" permissions={["orders.read"]} />);
     await screen.findByText("LL-1042");
     expect(screen.queryByRole("heading", { name: "Dispatch actions" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Refresh courier tracking" })).toBeNull();
+    expect(screen.queryByText("Refresh courier tracking", { selector: "summary" })).toBeNull();
     expect(posts()).toEqual([]);
     cleanup();
     render(<OrderReview id={orderId} area="orders" permissions={["orders.read"]} />);
@@ -187,9 +193,10 @@ describe("authorized record actions", () => {
     expect(screen.queryByText("Link package 2 booking", { selector: "summary" })).toBeNull();
     expect(screen.queryByText("Arrange courier pickup", { selector: "summary" })).toBeNull();
     const form = openForm("Link package 1 booking");
-    enter(form, "providerShipmentId", "SB-found"); enter(form, "reason", "Matched the courier route and price"); enter(form, "code", "123456");
+    enter(form, "providerShipmentId", "SB-found"); enter(form, "reason", "Matched the courier route and price");
+    await submit(form); expect(posts()).toEqual([]); enter(form, "code", "123456");
     await submit(form);
-    expect(posts()).toEqual([["auth/totp/step-up", { code: "123456" }], [`delivery-orders/${orderId}/delivery/parcels/${parcelId}/link`, { providerShipmentId: "SB-found", reason: "Matched the courier route and price" }]]);
+    expect(posts()).toEqual([["auth/totp/step-up", { code: "123456" }], [`delivery-orders/${orderId}/delivery/parcels/${parcelId}/link`, { providerShipmentId: "SB-found", reason: "Matched the courier route and price", expectedRevision: "a".repeat(64), mutationKey: expect.any(String) }]]);
   });
   it("shows only server-projected valid manual status changes", async () => {
     h.record.delivery.providerShipmentId = null; h.record.delivery.status = "MANUAL_ASSIGNED";
@@ -198,8 +205,8 @@ describe("authorized record actions", () => {
     await screen.findByText("LL-1042");
     const form = openForm("Update manual delivery");
     expect(within(form).queryByRole("option", { name: "Delivered" })).toBeNull();
-    enter(form, "status", "IN_TRANSIT"); enter(form, "evidence", "Courier confirmed the goods are in transit"); await submit(form);
-    expect(h.request).toHaveBeenCalledWith(`delivery-orders/${orderId}/delivery/manual-status`, { status: "IN_TRANSIT", evidence: "Courier confirmed the goods are in transit" });
+    enter(form, "status", "IN_TRANSIT"); enter(form, "evidence", "Courier confirmed the goods are in transit"); enter(form, "reason", "Verified courier update by telephone"); await submit(form); await submit(form);
+    expect(h.request).toHaveBeenCalledWith(`delivery-orders/${orderId}/delivery/manual-status`, { status: "IN_TRANSIT", evidence: "Courier confirmed the goods are in transit", reason: "Verified courier update by telephone", expectedRevision: "a".repeat(64), mutationKey: expect.any(String) });
   });
   it("blocks repeat cancellation while the courier request is pending", async () => {
     h.record.delivery.cancelRequestedAt = h.record.observedAt;
@@ -217,20 +224,50 @@ describe("authorized record actions", () => {
 });
 
 describe("freshness and action safety", () => {
+  it("reviews order corrections and retains the draft for comparison after a concurrent edit", async () => {
+    h.record.staffContext.fulfillmentNotes = "Original instructions";
+    render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
+    await screen.findByText("LL-1042");
+    const form = openForm("Edit order information");
+    enter(form, "fulfillmentNotes", "Keep produce shaded");
+    enter(form, "reason", "Buyer confirmed the handling instructions");
+    await submit(form);
+    expect(posts()).toEqual([]);
+    expect(within(form).getByRole("table", { name: "Proposed changes" }).textContent).toContain("Original instructions");
+    expect(within(form).getByRole("table", { name: "Proposed changes" }).textContent).toContain("Keep produce shaded");
+    h.record.staffContext.revision = "b".repeat(64);
+    h.record.staffContext.fulfillmentNotes = "Another administrator’s correction";
+    fireEvent.click(screen.getByRole("button", { name: "Refresh details" }));
+    const rereview = await within(form).findByRole("button", { name: "Re-review latest record" });
+    await submit(form);
+    expect(posts()).toEqual([]);
+    fireEvent.click(rereview);
+    expect(within(form).getByRole("table", { name: "Proposed changes" }).textContent).toContain("Another administrator’s correction");
+    expect(within(form).getByRole("table", { name: "Proposed changes" }).textContent).toContain("Keep produce shaded");
+    await submit(form);
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0]).toEqual([`orders/${orderId}/corrections`, {
+      changes: { fulfillmentNotes: "Keep produce shaded" }, reason: "Buyer confirmed the handling instructions",
+      expectedRevision: "b".repeat(64), mutationKey: expect.any(String),
+    }]);
+  });
+
   it("preserves a clearly marked record after a failed refresh and disables writes until retry succeeds", async () => {
     render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
+    const form = openForm("Refresh courier tracking"); enter(form, "reason", "Courier requested a current tracking check");
     h.request.mockRejectedValue(new Error("Connection failed. Please retry."));
     fireEvent.click(screen.getByRole("button", { name: "Refresh details" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Actions are paused");
-    const tracking = screen.getByRole("button", { name: "Refresh courier tracking" }) as HTMLButtonElement;
+    const tracking = within(form).getByRole("button", { name: "Review changes" }) as HTMLButtonElement;
     expect(tracking.disabled).toBe(true); fireEvent.click(tracking); expect(posts()).toEqual([]);
     h.request.mockImplementation(async (_path: string, body?: unknown) => body === undefined ? structuredClone(h.record) : { message: "Tracking refresh queued." });
     fireEvent.click(screen.getByRole("button", { name: "Refresh details" }));
     await waitFor(() => expect(tracking.disabled).toBe(false));
     fireEvent.click(tracking);
+    await submit(form);
     await screen.findByText("Tracking refresh queued.");
-    expect(h.request).toHaveBeenCalledWith(`delivery-orders/${orderId}/delivery/reconcile`, {});
+    expect(h.request).toHaveBeenCalledWith(`delivery-orders/${orderId}/delivery/reconcile`, { reason: "Courier requested a current tracking check", expectedRevision: "a".repeat(64), mutationKey: expect.any(String) });
   });
   it("ignores an older detail response after navigating to another order", async () => {
     const first = deferred<any>(); const old = structuredClone(h.record);
@@ -247,7 +284,7 @@ describe("freshness and action safety", () => {
     h.request.mockImplementation(async (path: string, body?: unknown) => path === "auth/totp/step-up" ? authorization.promise : body === undefined ? structuredClone(h.record) : {});
     const view = render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    const form = openForm("Link existing courier booking"); enter(form, "providerShipmentId", "SB-found"); enter(form, "reason", "Matched the existing booking details"); enter(form, "code", "123456");
+    const form = openForm("Link existing courier booking"); enter(form, "providerShipmentId", "SB-found"); enter(form, "reason", "Matched the existing booking details"); await submit(form); enter(form, "code", "123456");
     fireEvent.submit(form);
     await waitFor(() => expect(h.request).toHaveBeenCalledWith("auth/totp/step-up", { code: "123456" }));
     h.record.order.id = otherOrderId; h.record.order.reference = "LL-OTHER";
@@ -260,7 +297,8 @@ describe("freshness and action safety", () => {
     h.request.mockImplementation(async (_path: string, body?: unknown) => body === undefined ? structuredClone(h.record) : mutation.promise);
     render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    const button = screen.getByRole("button", { name: "Refresh courier tracking" });
+    const form = openForm("Refresh courier tracking"); enter(form, "reason", "Courier requested a current tracking check"); await submit(form);
+    const button = within(form).getByRole("button", { name: "Confirm and save" });
     fireEvent.click(button); fireEvent.click(button);
     expect(posts()).toHaveLength(1);
     await act(async () => mutation.resolve({}));
@@ -273,11 +311,12 @@ describe("freshness and action safety", () => {
     const form = screen.getByRole("form", { name: "Get delivery quotes" });
     enter(form, "destination.address", "Updated buyer address");
     await screen.findByText(/You have unsaved delivery details/);
-    expect((screen.getByRole("button", { name: "Select courier" }) as HTMLButtonElement).disabled).toBe(true);
+    const selection = openForm("Select Test Courier");
+    expect((within(selection).getByRole("button", { name: "Review changes" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Refresh details" }));
     await waitFor(() => expect(reads()).toHaveLength(2));
     expect((form.querySelector('[name="destination.address"]') as HTMLInputElement).value).toBe("Updated buyer address");
-    await submit(form);
+    enter(form, "reason", "Buyer verified a corrected delivery address"); await submit(form); expect(posts()).toEqual([]); await submit(form);
     const call = posts().find(([path]) => path.endsWith("/quotes"));
     expect(call![1].destination.address).toBe("Updated buyer address");
     expect(call![1].parcel).toEqual({ pickupDate: expect.any(String) });

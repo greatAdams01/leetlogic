@@ -5,6 +5,7 @@ import { assertFulfillmentOpen, refundDeadline } from "../services/fulfillment-d
 import { AppError } from "../lib/errors.js";
 import * as mediaStorage from "../services/storage/private-media.js";
 import { randomUUID, createHmac } from "node:crypto";
+import { adminMutation } from "../test/admin-mutation.js";
 import { beforeAll, beforeEach, afterAll, afterEach, describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { prisma, type Prisma } from "@leetlogic/database";
@@ -1421,7 +1422,7 @@ suite("provider-backed payment safeguards", () => {
       id: providerShipmentId, status: "pending", courier: fixture.q.courier, shippingMinor: 1000n,
       pickupAddress: (fixture.d.pickup as any).address, destinationAddress: (fixture.d.destination as any).address,
     });
-    const link = (orderId: string, parcelId: string) => request(app).post(`/v1/admin/delivery-orders/${orderId}/delivery/parcels/${parcelId}/link`).set(staffAuth()).send({ providerShipmentId, reason: "Verified original provider label and parcel route" });
+    const link = async (orderId: string, parcelId: string) => request(app).post(`/v1/admin/delivery-orders/${orderId}/delivery/parcels/${parcelId}/link`).set(staffAuth()).send({ ...await adminMutation(orderId), providerShipmentId, reason: "Verified original provider label and parcel route" });
     expect((await link(fixture.o.id, parcels[1]!.id)).status).toBe(200);
     expect((await link(fixture.o.id, parcels[1]!.id)).status).toBe(200);
     expect(shippingProvider.track).toHaveBeenCalledTimes(1);
@@ -1442,7 +1443,7 @@ suite("provider-backed payment safeguards", () => {
       id: providerShipmentId, status: "pending", courier: fixture.q.courier, shippingMinor: 1000n,
       pickupAddress: (fixture.d.pickup as any).address, destinationAddress: (fixture.d.destination as any).address,
     });
-    const link = () => request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/link`).set(staffAuth()).send({ providerShipmentId, reason: "Verified original booking rather than repeating purchase" });
+    const link = async () => request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/link`).set(staffAuth()).send({ ...await adminMutation(fixture.o.id), providerShipmentId, reason: "Verified original booking rather than repeating purchase" });
     expect((await link()).status).toBe(200);
     expect((await link()).status).toBe(200);
     expect(shippingProvider.track).toHaveBeenCalledTimes(1);
@@ -1476,7 +1477,7 @@ suite("provider-backed payment safeguards", () => {
   it("cancels known labels of an uncertain split once without pretending every parcel was cancelled", async () => {
     const fixture = await funded(2), parcels = await recordParcels(fixture, 1);
     vi.mocked(shippingProvider.track).mockImplementation(async (id) => ({ id, status: "cancelled", courier: fixture.q.courier }));
-    expect((await request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/cancel`).set(staffAuth()).send({ reason: "Cancel known labels while locating the uncertain parcel" })).status).toBe(202);
+    expect((await request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/cancel`).set(staffAuth()).send(await adminMutation(fixture.o.id, "Cancel known labels while locating the uncertain parcel"))).status).toBe(202);
     await runDeliveryJobs();
     await prisma.delivery.update({ where: { id: fixture.d.id }, data: { nextSyncAt: new Date() } });
     await runDeliveryJobs();
@@ -1493,7 +1494,7 @@ suite("provider-backed payment safeguards", () => {
       if (id === parcels[0]!.providerShipmentId) throw new Error("Tracking response lost");
       return { id, status: "cancelled", courier: fixture.q.courier };
     });
-    expect((await request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/cancel`).set(staffAuth()).send({ reason: "Cancel every recorded label despite a delayed tracking response" })).status).toBe(202);
+    expect((await request(app).post(`/v1/admin/delivery-orders/${fixture.o.id}/delivery/cancel`).set(staffAuth()).send(await adminMutation(fixture.o.id, "Cancel every recorded label despite a delayed tracking response"))).status).toBe(202);
     await runDeliveryJobs();
     expect(vi.mocked(shippingProvider.cancel).mock.calls.map(([id]) => id)).toEqual(parcels.map((parcel) => parcel.providerShipmentId));
     expect((await prisma.deliveryParcel.findUniqueOrThrow({ where: { id: parcels[1]!.id } })).status).toBe("CANCELLED");
@@ -2247,7 +2248,7 @@ suite("provider-backed payment safeguards", () => {
   it("lets the farmer prepare and report handoff for an existing staff-verified manual assignment",async()=>{
     const f=await order(),a=await checkout(f.o.id);mockReceipt(a);await reconcilePayment(a.id);
     await prisma.delivery.update({where:{id:f.d.id},data:{status:"MANUAL_REVIEW",providerShipmentId:null}});
-    const assigned=await request(app).post(`/v1/admin/delivery-orders/${f.o.id}/delivery/manual-dispatch`).set(staffAuth()).send({carrier:"Verified local carrier",trackingRef:randomUUID(),reason:"Verified courier assignment and pickup agreement"});
+    const assigned=await request(app).post(`/v1/admin/delivery-orders/${f.o.id}/delivery/manual-dispatch`).set(staffAuth()).send({...await adminMutation(f.o.id),carrier:"Verified local carrier",trackingRef:randomUUID(),reason:"Verified courier assignment and pickup agreement"});
     expect(assigned.status).toBe(200);
     const farmerToken=(await createSession({subject:"CUSTOMER",principalId:seller,deviceId:randomUUID()})).accessToken,auth={Authorization:`Bearer ${farmerToken}`};
     expect((await request(app).post(`/v1/orders/${f.o.id}/delivery/ready`).set(auth).send({})).status).toBe(200);

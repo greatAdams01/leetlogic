@@ -8,7 +8,7 @@ import type { OrderRecordWorkflow } from "./use-order-record";
 export function OrderPaymentActions({ data, workflow }: { data: AdminOrderRecord; workflow: OrderRecordWorkflow }) {
   return <div className="finance-action-panel">
     {workflow.available("escrow") && <ManualEscrow data={data} workflow={workflow} />}
-    {workflow.available("delivery-payment") && <OrderActionForm label="Record delivery payment" description="Use only a verified payment received outside the payment provider. The amount must match the selected delivery quote." command="delivery-payment" workflow={workflow} sensitive payload={form => ({ amountMinor: data.delivery!.shippingMinor, reference: String(form.get("reference") || "").trim() })}>
+    {workflow.available("delivery-payment") && <OrderActionForm label="Record delivery payment" description="Use only a verified payment received outside the payment provider. The amount must match the selected delivery quote." command="delivery-payment" workflow={workflow} sensitive payload={(form, baseline) => ({ amountMinor: baseline.delivery!.shippingMinor, reference: String(form.get("reference") || "").trim() })}>
       <p>Delivery amount: <strong>{formatMoney(data.delivery!.shippingMinor)}</strong></p>
       <label>Verified payment reference<input name="reference" minLength={3} maxLength={160} required /></label>
     </OrderActionForm>}
@@ -20,8 +20,8 @@ function ManualEscrow({ data, workflow }: { data: AdminOrderRecord; workflow: Or
   const [selection, setSelection] = useState(choices[0]);
   const kind = choices.includes(selection) ? selection : choices[0];
   const amount = kind === "FUND" ? data.order.totalMinor : data.money.heldMinor;
-  return <OrderActionForm label="Manage manually recorded funds" description="These controls record funds held or settled outside the payment provider. The full order amount is required for funding; settlement uses the full held balance. Every action is checked and audited." command="escrow" workflow={workflow} sensitive reason payload={form => ({
-    kind, amountMinor: amount,
+  return <OrderActionForm label="Manage manually recorded funds" description="These controls record funds held or settled outside the payment provider. The full order amount is required for funding; settlement uses the full held balance. Every action is checked and audited." command="escrow" workflow={workflow} sensitive reason payload={(form, baseline) => ({
+    kind: String(form.get("kind")), amountMinor: form.get("kind") === "FUND" ? baseline.order.totalMinor : baseline.money.heldMinor,
     ...(String(form.get("externalRef") || "").trim() ? { externalRef: String(form.get("externalRef")).trim() } : {}),
   })}>
     <label>Payment action<select name="kind" value={kind} onChange={event => setSelection(event.target.value)}>

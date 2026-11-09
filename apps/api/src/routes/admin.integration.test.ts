@@ -8,6 +8,7 @@ import { createApp } from "../app.js";
 import { hashPassword } from "../services/admin-password.js";
 import { encryptSecret, hashToken } from "../lib/crypto.js";
 import { redis } from "../lib/redis.js";
+import { adminMutation } from "../test/admin-mutation.js";
 const integration = process.env.ADMIN_INTEGRATION === "1" ? describe : describe.skip;
 integration("admin PostgreSQL and Redis workflows", () => {
   const app = createApp();
@@ -25,6 +26,10 @@ integration("admin PostgreSQL and Redis workflows", () => {
   let roleId: string;
   const auth = () => ({ Authorization: `Bearer ${access}` });
   beforeAll(async () => {
+    const schema = new URL(process.env.DATABASE_URL!).searchParams.get("schema") || "";
+    if (!schema.startsWith("leetlogic_admin_integration_") || new URL(process.env.REDIS_URL!).pathname !== "/15")
+      throw new Error("Use the isolated admin integration runner.");
+    redis().options.keyPrefix = `${schema}:`;
     const grants = [
       "orders.read",
       "orders.manage",
@@ -598,7 +603,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
     const shipment = await request(app)
       .post("/v1/admin/logistics")
       .set(auth())
-      .send({ orderId, carrier: "Test carrier", trackingRef: "TEST-123" });
+      .send({ ...await adminMutation(orderId), orderId, carrier: "Test carrier", trackingRef: "TEST-123" });
     expect(shipment.status).toBe(201);
     for (const status of ["IN_TRANSIT", "DELIVERED"])
       expect(
@@ -606,7 +611,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
           await request(app)
             .post(`/v1/admin/logistics/${shipment.body.id}/status`)
             .set(auth())
-            .send({ status, evidence: "Buyer signed delivery receipt" })
+            .send({ ...await adminMutation(orderId), status, evidence: "Buyer signed delivery receipt" })
         ).status,
       ).toBe(200);
     expect(
@@ -773,6 +778,82 @@ integration("admin PostgreSQL and Redis workflows", () => {
         .status,
     ).toBe(403);
     await prisma.rolePermission.create({ data: { roleId, permissionId: grant.id } });
+  });
+  it("preserves corrections, rejects stale or unauthorized writes, and protects immutable history", async () => {
+    const created = await request(app).post("/v1/admin/orders").set(auth()).send({ buyerId, listingId, quantity: "1" });
+    expect(created.status).toBe(201);
+    const key = created.body.id;
+    const endpoint = `/v1/admin/orders/${key}/corrections`;
+    const detail = await request(app).get(`/v1/admin/delivery-orders/${key}/delivery`).set(auth());
+    expect(detail.status).toBe(200);
+    const first = { ...await adminMutation(key), changes: { fulfillmentNotes: "Keep produce shaded" } };
+    expect(detail.body.staffContext.revision).toBe(first.expectedRevision);
+    expect((await request(app).post(endpoint).set(auth()).send(first)).status).toBe(200);
+    const count = await prisma.orderRecordHistory.count({ where: { orderId: key } });
+    expect((await request(app).post(endpoint).set(auth()).send(first)).status).toBe(200);
+    expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(count);
+    expect((await request(app).post(endpoint).set(auth()).send({ ...first, changes: { fulfillmentNotes: "Different request" } })).status).toBe(409);
+    expect((await request(app).post(endpoint).set(auth()).send({ ...first, mutationKey: randomUUID() })).status).toBe(409);
+    const current = await adminMutation(key);
+    const competing = await Promise.all(["Use covered loading bay", "Telephone before arrival"].map(fulfillmentNotes =>
+      request(app).post(endpoint).set(auth()).send({ ...current, mutationKey: randomUUID(), changes: { fulfillmentNotes } })));
+    expect(competing.map(r => r.status).sort()).toEqual([200, 409]);
+    const before = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } });
+    const historyCount = await prisma.orderRecordHistory.count({ where: { orderId: key } });
+    for (const body of [
+      { ...await adminMutation(key), reason: "", changes: { fulfillmentNotes: "Invalid" } },
+      { ...await adminMutation(key), changes: { heldMinor: "999" } },
+    ]) expect((await request(app).post(endpoint).set(auth()).send(body)).status).toBe(422);
+    const grant = await prisma.permission.findUniqueOrThrow({ where: { code: "orders.manage" } });
+    await prisma.rolePermission.delete({ where: { roleId_permissionId: { roleId, permissionId: grant.id } } });
+    try {
+      expect((await request(app).post(endpoint).set(auth()).send({ ...await adminMutation(key), changes: { fulfillmentNotes: "Forbidden correction" } })).status).toBe(403);
+    } finally { await prisma.rolePermission.create({ data: { roleId, permissionId: grant.id } }); }
+    expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toEqual(before);
+    expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(historyCount);
+    const history = await request(app).get(`/v1/admin/orders/${key}/history?limit=1`).set(auth());
+    expect(history.status).toBe(200);
+    expect(history.body.hasMore).toBe(true);
+    expect(history.body.items[0]).toMatchObject({ actorType: "admin", actorId: adminId, reason: current.reason,
+      before: { fulfillment_notes: "Keep produce shaded" }, after: { fulfillment_notes: before.fulfillmentNotes } });
+    const earlier = await request(app).get(`/v1/admin/orders/${key}/history?limit=1&cursor=${history.body.nextCursor}&through=${history.body.through}`).set(auth());
+    expect(earlier.status).toBe(200);
+    expect(earlier.body.items[0].id).not.toBe(history.body.items[0].id);
+    const destination = { name: "Buyer Contact", phone: "+2348012345678", email: "", address: "15 Example Street Lagos", state: "Lagos", country: "NG" };
+    const delivery = await prisma.delivery.create({ data: { orderId: key, destination } });
+    const deliveryEndpoint = `/v1/admin/delivery-orders/${key}/delivery/corrections`;
+    const correction = { ...await adminMutation(key), changes: { destination: { ...destination, address: "25 Corrected Street Lagos" }, operationsNotes: "Call before arrival" } };
+    expect((await request(app).post(deliveryEndpoint).set(auth()).send(correction)).status).toBe(200);
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({ destination: correction.changes.destination, operationsNotes: "Call before arrival", status: "QUOTE_REQUIRED" });
+    await prisma.$transaction(async tx => {
+      await tx.tradeOrder.update({ where: { id: key }, data: { status: "FUNDED", heldMinor: 10000n } });
+      await tx.delivery.update({ where: { id: delivery.id }, data: { status: "MANUAL_ASSIGNED" } });
+      await tx.shipment.create({ data: { orderId: key, carrier: "Manual courier", trackingRef: "MANUAL-TEST" } });
+    });
+    const riderAssignment = { name: "Verified Rider", phone: "+2348012345678", reference: "ASSIGN-123" };
+    expect((await request(app).post(deliveryEndpoint).set(auth()).send({ ...await adminMutation(key), changes: { riderAssignment }, arrangementConfirmed: true })).status).toBe(200);
+    expect((await prisma.shipment.findUniqueOrThrow({ where: { orderId: key } })).riderAssignment).toEqual(riderAssignment);
+    const statusHistoryCount = await prisma.orderRecordHistory.count({ where: { orderId: key } });
+    expect((await request(app).post(`/v1/admin/delivery-orders/${key}/delivery/manual-status`).set(auth()).send({ ...await adminMutation(key), status: "DELIVERED", evidence: "Cannot skip pickup and transit" })).status).toBe(409);
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("MANUAL_ASSIGNED");
+    expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(statusHistoryCount);
+    await expect(prisma.$transaction(async tx => {
+      await tx.delivery.update({ where: { id: delivery.id }, data: { operationsNotes: "Uncommitted change" } });
+      throw new Error("Simulated failure after writing");
+    })).rejects.toThrow("Simulated failure");
+    expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).operationsNotes).toBe("Call before arrival");
+    expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(statusHistoryCount);
+    await prisma.delivery.update({ where: { id: delivery.id }, data: { providerShipmentId: `provider-${randomUUID()}` } });
+    const protectedState = await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    const protectedHistory = await prisma.orderRecordHistory.count({ where: { orderId: key } });
+    // Notes and address are one transaction: the forbidden route correction must also roll back notes.
+    expect((await request(app).post(deliveryEndpoint).set(auth()).send({ ...await adminMutation(key), changes: { operationsNotes: "Must roll back", destination } })).status).toBe(409);
+    expect((await request(app).post(deliveryEndpoint).set(auth()).send({ ...await adminMutation(key), changes: { riderAssignment: { ...riderAssignment, name: "Unsupported Rider" } }, arrangementConfirmed: true })).status).toBe(409);
+    expect(await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).toEqual(protectedState);
+    expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(protectedHistory);
+    await expect(prisma.$executeRaw`UPDATE order_record_history SET reason = 'tampered' WHERE order_id = ${key}::uuid`).rejects.toThrow(/append-only/);
+    await expect(prisma.$executeRaw`DELETE FROM order_record_history WHERE order_id = ${key}::uuid`).rejects.toThrow(/append-only/);
+    await expect(prisma.$executeRaw`TRUNCATE order_record_history`).rejects.toThrow(/append-only/);
   });
   it("enforces changed grants and revokes access on logout", async () => {
     const grant = await prisma.permission.findUniqueOrThrow({ where: { code: "content.manage" } });

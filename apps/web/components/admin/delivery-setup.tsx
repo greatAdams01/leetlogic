@@ -5,6 +5,7 @@ import { formatMoney } from "../../../../packages/contracts/src/money";
 import type { Contact } from "../../../mobile/src/lib/domain";
 import { financeDate } from "./finance-ui";
 import { OrderFacts } from "./order-ui";
+import { OrderActionForm } from "./order-action-form";
 import type { AdminOrderRecord } from "./order-types";
 import type { OrderRecordWorkflow } from "./use-order-record";
 
@@ -31,11 +32,7 @@ export function DeliverySetup({ data, workflow }: { data: AdminOrderRecord; work
     <h2>Delivery details & quotes</h2>
     <p className="finance-muted">Confirm the contacts and pickup date before the buyer pays. Packing comes from the farmer’s saved produce details.</p>
     {workflow.dirty && <p className="finance-callout" role="status">You have unsaved delivery details. Get new quotes before selecting a courier.</p>}
-    {workflow.available("quotes") && packing && <form className="operations-setup" aria-label="Get delivery quotes" onChange={workflow.markDirty} onSubmit={event => {
-      event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      void workflow.execute("quotes", { pickup: { ...data.order.suggestedPickup, email: form.get("pickup.email") }, destination, parcel: { pickupDate: form.get("pickupDate") } });
-    }}>
+    {workflow.available("quotes") && packing && <OrderActionForm inline label="Get delivery quotes" description="Review the route and pickup date before requesting new quotes. A quote request retires the old payable quote, even if the courier cannot return a new rate." command="quotes" workflow={workflow} onDraftChange={workflow.markDirty} payload={(form, baseline) => ({ pickup: { ...baseline.order.suggestedPickup, email: String(form.get("pickup.email") || "").trim() }, destination, parcel: { pickupDate: form.get("pickupDate") } })}>
       <div className="operations-grid">
         <fieldset className="operations-form-fields" disabled={workflow.disabled}><legend>Pickup contact</legend>
           {contactFields.map(([name, label]) => <label key={name}>{label}<input name={`pickup.${name}`} required type={name === "email" ? "email" : name === "phone" ? "tel" : "text"} readOnly={name !== "email" || !!data.order.suggestedPickup.email} defaultValue={data.order.suggestedPickup[name] || ""} /></label>)}
@@ -48,8 +45,7 @@ export function DeliverySetup({ data, workflow }: { data: AdminOrderRecord; work
       </div>
       <OrderFacts items={[["Packages", packing.packageCount], ["Weight per package", `${packing.weightKg} kg`], ["Size per package", `${packing.length} × ${packing.width} × ${packing.height} cm`]]} />
       <label>Pickup date<input name="pickupDate" type="date" required disabled={workflow.disabled} min={deliveryCalendarDate(new Date(now))} max={deliveryCalendarDate(new Date(now + 7 * 86400000))} defaultValue={d?.package?.pickupDate || deliveryCalendarDate(new Date(now + 86400000))} /></label>
-      <button disabled={workflow.disabled}>Get delivery quotes</button>
-    </form>}
+    </OrderActionForm>}
     {!!d?.quotes.length && <div className="operations-quotes" aria-label="Courier quotes">
       {d.quotes.map(quote => {
         const expired = new Date(quote.expiresAt).getTime() <= now, selected = quote.id === d.selectedQuoteId;
@@ -59,7 +55,8 @@ export function DeliverySetup({ data, workflow }: { data: AdminOrderRecord; work
           {quote.recommended && <p>Recommended{quote.recommendationReason ? ` · ${quote.recommendationReason}` : ""}</p>}
           {quote.quality?.rating != null && !!quote.quality.votes && <p>Courier rating: {quote.quality.rating}/5 ({quote.quality.votes} ratings)</p>}
           <small>Valid until {financeDate(quote.expiresAt)} (WAT)</small>
-          <button className="secondary" aria-pressed={selected} disabled={workflow.disabled || workflow.dirty || expired || !quote.available || selected || !workflow.available("select")} onClick={() => void workflow.execute("select", { quoteId: quote.id })}>{expired ? "Quote expired" : !quote.available ? "Not available" : selected ? "Selected" : "Select courier"}</button>
+          {expired || !quote.available || selected ? <button className="secondary" aria-pressed={selected} disabled>{expired ? "Quote expired" : !quote.available ? "Not available" : "Selected"}</button> :
+            <OrderActionForm label={`Select ${quote.courier}`} description="Review this courier and delivery fee. This selects a quote only; no booking or payment is made." command="select" workflow={workflow} blocked={workflow.dirty || !workflow.available("select")} payload={() => ({ quoteId: quote.id })} />}
         </article>;
       })}
     </div>}

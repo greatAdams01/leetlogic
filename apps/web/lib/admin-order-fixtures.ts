@@ -14,7 +14,7 @@ export function adminOrderFixture(): AdminOrderRecord {
   const destination: AdminOrderRecord["order"]["suggestedPickup"] = { name: "Bola Buyer", email: "buyer@example.test", phone: "+2348022222222", address: "24 Market Road", state: "Lagos", country: "NG", instructions: "Call at the market gate" };
   const delivery: NonNullable<AdminOrderRecord["delivery"]> = {
     id: "44444444-4444-4444-8444-444444444444", status: "BOOKED", courier: "Test Courier", providerShipmentId: "SB-BOOKING-1", selectedQuoteId: "quote-1",
-    bookingStartedAt: at(-600000), cancelRequestedAt: null, shippingMinor: "20000", paidMinor: "20000", failureCode: null,
+    bookingStartedAt: at(-600000), cancelRequestedAt: null, shippingMinor: "20000", paidMinor: "20000", failureCode: null, operationsNotes: null,
     pickup, destination, package: { packageCount: 1, weightKg: 5, length: 25, width: 20, height: 15, handling: "PERISHABLE", pickupDate: at(0).slice(0, 10) },
     parcels: [], events: [
       { id: "ready", status: "READY_FOR_PICKUP", source: "farmer", createdAt: at(-700000) },
@@ -23,7 +23,10 @@ export function adminOrderFixture(): AdminOrderRecord {
     ], quotes: [{ id: "quote-1", courier: "Test Courier", amountMinor: "20000", available: true, expiresAt: at(600000), eta: "1–2 days" }],
   };
   return {
-    observedAt: at(0), staffContext: { buyer: { name: "Bola Buyer", phone: destination.phone }, farmer: { name: "Ada Farmer", farmName: "Ada’s farm", phone: pickup.phone },
+    observedAt: at(0), staffContext: { revision: "a".repeat(64), buyerContact: { name: destination.name, phone: destination.phone, email: destination.email }, fulfillmentNotes: null,
+      corrections: { orderInformation: true, deliveryNotes: true, destination: false, riderAssignment: false, destinationRequiresNewQuote: false, providerControlled: true },
+      activity: { through: "1", nextCursor: null, hasMore: false, completeFrom: null, items: [{ id: "1", orderId, entityType: "order", entityId: orderId, kind: "INSERT", action: "order.created", actorType: "buyer", actorId: otherOrderId, actorName: "Bola Buyer", reason: null, before: null, after: { status: "AWAITING_PAYMENT", quantity: "10", totalMinor: "100000" }, occurredAt: at(-3600000), requestId: null }] },
+      buyer: { name: "Bola Buyer", phone: destination.phone }, farmer: { name: "Ada Farmer", farmName: "Ada’s farm", phone: pickup.phone },
       createdAt: at(-3600000), farmerDecidedAt: at(-1800000), fundsProvider: "bachs", manualFundingRecorded: false, financialHold: false,
       disputes: [], ledger: [], manualEscrowKinds: [], manualDeliveryStatuses: [] },
     order: { id: orderId, reference: "LL-1042", status: "FUNDED", title: "Fresh tomatoes", description: "Fresh farm produce.", journeyVersion: 2,
@@ -32,7 +35,7 @@ export function adminOrderFixture(): AdminOrderRecord {
       suggestedPickup: pickup, packageSuggestion: { packageCount: 1, weightKg: 5, length: 25, width: 20, height: 15, handling: "PERISHABLE" } },
     money: { heldMinor: "100000", releasedMinor: "0", refundedMinor: "0", release: null, progress: orderPaymentProgress({ verified: true, heldMinor: "100000", releaseEnabled: true }) },
     progress: orderFulfillment({ farmerDecision: "ACCEPTED", paid: true, confirmed: false, blocked: false, buyer: false, farmer: false, status: "BOOKED", ready: true, dispatched: false, booked: true, receiptReady: false, collection: false }),
-    fulfillment: null, legacyShipment: null, delivery,
+    fulfillment: null, legacyShipment: null, manualShipment: null, delivery,
     tracking: deliveryVisibility({ ...delivery, createdAt: at(-800000), lastSyncedAt: at(-500000), orderStatus: "FUNDED" }, new Date(now)),
   };
 }

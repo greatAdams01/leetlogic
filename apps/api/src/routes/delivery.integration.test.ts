@@ -12,6 +12,7 @@ import { redis } from "../lib/redis.js";
 import { signAccessToken, verifyAccessToken } from "../lib/tokens.js";
 import { applyTracking, runDeliveryJobs, shippingProvider } from "../services/delivery.js";
 import { translateResource } from "../services/translation.js";
+import { adminMutation } from "../test/admin-mutation.js";
 const suite = process.env.DELIVERY_INTEGRATION === "1" ? describe : describe.skip;
 suite("delivery and language database workflows", () => {
   const app = createApp();
@@ -513,7 +514,7 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .post(`/v1/admin/delivery-orders/${orderId}/delivery/payment`)
           .set(admin())
-          .send({ amountMinor: "900", reference: randomUUID() })
+          .send({ ...await adminMutation(orderId), amountMinor: "900", reference: randomUUID() })
       ).status,
     ).toBe(409);
     expect(
@@ -521,7 +522,7 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .post(`/v1/admin/delivery-orders/${orderId}/delivery/payment`)
           .set(admin())
-          .send({ amountMinor: "1000", reference: randomUUID() })
+          .send({ ...await adminMutation(orderId), amountMinor: "1000", reference: randomUUID() })
       ).status,
     ).toBe(200);
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } })).heldMinor).toBe(
@@ -612,6 +613,7 @@ suite("delivery and language database workflows", () => {
           .post(`/v1/admin/delivery-orders/${orderId}/delivery/link`)
           .set(admin())
           .send({
+            ...await adminMutation(orderId),
             providerShipmentId: providerId,
             reason: "Addresses and amount match the provider booking",
           })
@@ -758,6 +760,7 @@ suite("delivery and language database workflows", () => {
     expect(
       (
         await request(app).post(`${base}/manual-dispatch`).set(admin()).send({
+          ...await adminMutation(order.id),
           carrier: "Local carrier",
           trackingRef,
           reason: "Confirmed manual produce transport arrangement",
@@ -772,7 +775,7 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .post(`${base}/manual-status`)
           .set(admin())
-          .send({ status: "DELIVERED", evidence: "Recipient confirmed arrival" })
+          .send({ ...await adminMutation(order.id), status: "DELIVERED", evidence: "Recipient confirmed arrival" })
       ).status,
     ).toBe(409);
     expect(
@@ -780,7 +783,7 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .post(`${base}/manual-status`)
           .set(admin())
-          .send({ status: "IN_TRANSIT", evidence: "Carrier confirmed pickup and departure" })
+          .send({ ...await adminMutation(order.id), status: "IN_TRANSIT", evidence: "Carrier confirmed pickup and departure" })
       ).status,
     ).toBe(200);
     expect((await readTracking()).tracking.status).toBe("IN_TRANSIT");
@@ -789,7 +792,7 @@ suite("delivery and language database workflows", () => {
         await request(app)
           .post(`${base}/manual-status`)
           .set(admin())
-          .send({ status: "DELIVERED", evidence: "Carrier reported package arrived" })
+          .send({ ...await adminMutation(order.id), status: "DELIVERED", evidence: "Carrier reported package arrived" })
       ).status,
     ).toBe(200);
     const delivered = await readTracking();
@@ -838,9 +841,9 @@ suite("delivery and language database workflows", () => {
     const result = await request(app)
       .post(`/v1/admin/delivery-orders/${order.id}/delivery/cancel`)
       .set(admin())
-      .send({ reason: "Buyer asked to cancel before pickup" });
+      .send(await adminMutation(order.id, "Buyer asked to cancel before pickup"));
     expect(result.status).toBe(202);
-    expect(result.body.message).toContain("no external refund");
+    expect(result.body.message).toContain("No external refund");
     await runDeliveryJobs();
     await runDeliveryJobs();
     expect(cancel).toHaveBeenCalledTimes(1);
@@ -2228,7 +2231,7 @@ suite("delivery and language database workflows", () => {
         checkoutId: `CHECKOUT-${randomUUID()}`, checkErrorCode: "PROVIDER_UNAVAILABLE", expiresAt: new Date(Date.now() - 60000),
       } });
       expect((await detail(order.id)).body).toMatchObject({ order: { checkoutActive: true }, staffContext: { manualEscrowKinds: [] } });
-      const cancel = await request(app).post(`/v1/admin/orders/${order.id}/cancel`).set(admin()).send({ reason: "Buyer requested cancellation" });
+      const cancel = await request(app).post(`/v1/admin/orders/${order.id}/cancel`).set(admin()).send(await adminMutation(order.id, "Buyer requested cancellation"));
       expect(cancel.status).toBe(409);
       expect(cancel.body.error.code).toBe("CHECKOUT_ACTIVE");
       const fund = await request(app).post(`/v1/admin/orders/${order.id}/escrow`).set(admin()).send({

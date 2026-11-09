@@ -67,12 +67,16 @@ export async function hasDeliverySettlement(orderId: string, tx: Prisma.Transact
   } }));
 }
 
-export async function queueBooking(orderId: string) {
+export async function queueBooking(orderId: string, intervention?: {
+  guard: (tx: Prisma.TransactionClient) => Promise<void>;
+  recorded: (tx: Prisma.TransactionClient) => Promise<void>;
+}) {
   const c = getConfig();
   if (!c.DELIVERY_ENABLED || (c.SHIPBUBBLE_MODE === "live" && !c.DELIVERY_LIVE_BOOKINGS))
     throw new AppError(503, "BOOKING_DISABLED", "Delivery booking is disabled");
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+    await intervention?.guard(tx);
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: orderId }, include: { ...shippingOrderInclude, delivery: true },
     });
@@ -96,6 +100,7 @@ export async function queueBooking(orderId: string) {
     await assertNoActiveCheckout(tx, orderId);
     await tx.delivery.update({ where: { id: d.id }, data: { status: "BOOKING_QUEUED", failureCode: null } });
     await deliveryEvent(tx, d.id, "BOOKING_QUEUED", "system", `${d.id}:queued:${quote.id}`);
+    await intervention?.recorded(tx);
   });
 }
 

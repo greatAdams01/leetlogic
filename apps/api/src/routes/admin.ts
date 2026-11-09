@@ -221,7 +221,7 @@ adminRouter.get("/audit-logs", requirePermission("audit.read"), async (req, res)
     }),
     prisma.auditLog.count({ where }),
   ]);
-  res.json({ logs: logs.map((x) => ({ ...x, id: x.id.toString() })), total, page, pageSize: 25 });
+  res.json({ logs: logs.map((x) => ({ ...x, id: x.id.toString(), transactionId: x.transactionId?.toString() || null })), total, page, pageSize: 25 });
 });
 adminRouter.post(
   "/invitations/:id/resend",

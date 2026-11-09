@@ -34,6 +34,18 @@ export function canAdvanceDelivery(current: string, next: string) {
   return (rank[next] ?? -1) >= (rank[current] ?? -1);
 }
 
+/** Manual evidence must follow a real dispatch path; provider normalization is separate. */
+export function canAdvanceManualDelivery(current: string, next: string) {
+  const transitions: Record<string, string[]> = {
+    MANUAL_ASSIGNED: ["PICKED_UP", "IN_TRANSIT", "CANCELLED"],
+    PICKED_UP: ["IN_TRANSIT", "FAILED_ATTEMPT", "RETURNING", "CANCELLED"],
+    IN_TRANSIT: ["DELIVERED", "FAILED_ATTEMPT", "RETURNING", "CANCELLED"],
+    FAILED_ATTEMPT: ["IN_TRANSIT", "RETURNING", "CANCELLED"],
+    DELIVERED: ["RETURNING"], RETURNING: ["RETURNED"],
+  };
+  return transitions[current]?.includes(next) || false;
+}
+
 type ParcelDelivery = {
   status: string;
   providerShipmentId: string | null;
