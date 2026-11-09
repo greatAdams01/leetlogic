@@ -639,6 +639,7 @@ model IdempotencyRecord {
 }
 
 model TradeOrder {
+  adminResolution Json? @map("admin_resolution")
   buyerContactSnapshot Json? @map("buyer_contact_snapshot")
   fulfillmentNotes String? @map("fulfillment_notes") @db.VarChar(700)
   // Existing orders retain their original fulfillment rules; new orders opt in at creation.

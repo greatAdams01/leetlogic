@@ -22,6 +22,8 @@ export async function trackVerifiedPayment(tx: Prisma.TransactionClient, p: Paym
 }
 /** Call under the order row lock before checkout creation and every irreversible label purchase. */
 export async function assertFulfillmentOpen(tx: Prisma.TransactionClient, orderId: string) {
+  const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId }, select: { adminResolution: true } });
+  if (order.adminResolution) throw new AppError(409, "ORDER_RESOLVED", "This order was closed by an administrator. Fulfillment cannot restart.");
   if (!deadlinesEnabled()) return;
   const d = await tx.fulfillmentDeadline.findUnique({ where: { orderId } });
   if (d && (d.state !== "ACTIVE" && d.state !== "SECURED" || d.state === "ACTIVE" && overdue(d.refundDueAt)))

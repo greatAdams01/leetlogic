@@ -411,7 +411,7 @@ export function FinanceOperations({
             marketplace recovery period. Staff acknowledgement does not pause it. Provider credit
             may take longer.
           </p>
-          {data.deadlines.filter((d: Row) => !["SECURED", "REFUNDED"].includes(d.state)).length ? (
+          {data.deadlines.filter((d: Row) => !["SECURED", "REFUNDED", "ADMIN_RESOLVED"].includes(d.state)).length ? (
             <div className="finance-table-scroll">
               <table className="finance-table">
                 <thead>
@@ -424,7 +424,7 @@ export function FinanceOperations({
                 </thead>
                 <tbody>
                   {data.deadlines
-                    .filter((d: Row) => !["SECURED", "REFUNDED"].includes(d.state))
+                    .filter((d: Row) => !["SECURED", "REFUNDED", "ADMIN_RESOLVED"].includes(d.state))
                     .map((d: Row) => (
                       <tr key={d.orderId}>
                         <td>

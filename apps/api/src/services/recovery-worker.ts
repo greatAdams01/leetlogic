@@ -10,7 +10,7 @@ import { deliveryRefundReady } from "./delivery-policy.js";
 import { deadlinesEnabled, financeEnabled, financeAlert, overdue, trackVerifiedPayment } from "./fulfillment-deadline.js";
 import { ensureRecovery, releaseRecoveryStock } from "./payment-recovery.js";
 const elapsedBlocked = (at: Date) => Date.now() - at.getTime() > 60000;
-const terminal = ["REFUNDED", "SECURED"];
+const terminal = ["REFUNDED", "SECURED", "ADMIN_RESOLVED"];
 async function notify(tx: Prisma.TransactionClient, orderId: string, state: string) {
   const d = await tx.delivery.findUnique({ where: { orderId } });
   if (d) await deliveryEvent(tx, d.id, state, "system", `${orderId}:deadline:${state}`);
@@ -58,6 +58,10 @@ export async function processDeadline(orderId: string) {
     const deadline = await tx.fulfillmentDeadline.findUniqueOrThrow({ where: { orderId } });
     if (terminal.includes(deadline.state)) return;
     const order = await tx.tradeOrder.findUniqueOrThrow({ where: { id: orderId }, include: { delivery: { include: { parcels: true } } } });
+    if (order.adminResolution) {
+      await tx.fulfillmentDeadline.update({ where: { orderId }, data: { state: "ADMIN_RESOLVED", failureCode: null } });
+      return;
+    }
     const d = order.delivery;
     await tx.fulfillmentDeadline.update({ where: { orderId }, data: { nextRunAt: new Date(Date.now() + 15000) } });
     const payments = await tx.paymentAttempt.findMany({ where: { orderId, mode: mode(), confirmedAt: { not: null }, paidMinor: { gt: 0n } } });

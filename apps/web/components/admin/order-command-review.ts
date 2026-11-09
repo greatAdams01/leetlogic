@@ -1,3 +1,6 @@
+import { orderStatusLabel } from "./order-ui";
+import { deliveryStatusCopy } from "../../../../packages/contracts/src/delivery-visibility";
+import { resolutionFinancialLabels } from "../../../../packages/contracts/src/order-resolution";
 import { historyChanges, type HistoryChange } from "../../../../packages/contracts/src/admin-order-history";
 import type { AdminOrderCommand, AdminOrderRecord } from "./order-types";
 
@@ -5,6 +8,10 @@ import type { AdminOrderCommand, AdminOrderRecord } from "./order-types";
 export function orderCommandChanges(command: AdminOrderCommand, body: Record<string, any>, data: AdminOrderRecord): HistoryChange[] {
   const d = data.delivery, s = data.manualShipment || data.legacyShipment;
   switch (command) {
+    case "resolve": return historyChanges({ orderStatus: orderStatusLabel(data.order.status), deliveryStatus: d?.status || s?.status ? deliveryStatusCopy(d?.status || s!.status).label : "Not arranged", financialOutcome: "Current payment records retained" },
+      { orderStatus: orderStatusLabel(body.outcome), deliveryStatus: body.outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator",
+        financialOutcome: resolutionFinancialLabels[body.financialAction as keyof typeof resolutionFinancialLabels],
+        shippingRefundMinor: body.shippingRefundMinor || "0", evidence: body.evidence });
     case "correct-order": return historyChanges(Object.fromEntries(Object.keys(body.changes).map(key => [key,
       key === "buyerContact" ? data.staffContext.buyerContact : data.staffContext.fulfillmentNotes])), body.changes);
     case "correct-delivery": return historyChanges(Object.fromEntries(Object.keys(body.changes).map(key => [key,

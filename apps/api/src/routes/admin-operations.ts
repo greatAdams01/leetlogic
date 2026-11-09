@@ -1,3 +1,5 @@
+import { settleManualBalance } from "../services/manual-escrow.js";
+import { resolveAdminOrder } from "../services/admin-order-resolution.js";
 import { packagingSchema, salePackagingSchema, minimumPackedWeight } from "@leetlogic/contracts";
 import { assertNoDeliverySettlement, queueBooking } from "../services/delivery.js";
 import { Router } from "express";
@@ -30,6 +32,9 @@ operationsRouter.get("/orders/:id/history", requirePermission("orders.read"), as
 });
 operationsRouter.post("/orders/:id/corrections", requirePermission("orders.read"), requirePermission("orders.manage"), async (req, res) => {
   res.json(await correctAdminOrder(req, id.parse(req.params.id)));
+});
+operationsRouter.post("/orders/:id/resolve", requirePermission("orders.read"), requirePermission("orders.manage"), requirePermission("payments.manage"), requireRecentStepUp, async (req, res) => {
+  res.json(await resolveAdminOrder(req, id.parse(req.params.id)));
 });
 const reasonSchema = z.object({ reason: z.string().trim().min(5).max(500) });
 const json = (value: unknown) =>
@@ -849,43 +854,7 @@ operationsRouter.post(
           throw new AppError(409, "DISPUTE_OPEN", "Resolve the dispute before settling escrow");
         if (body.kind === "RELEASE" && (!order.deliveryConfirmedAt || (delivery && !deliveryReceiptReady(delivery))))
           throw new AppError(409, "DELIVERY_REQUIRED", "Confirm delivery before releasing escrow");
-        await tx.tradeOrder.update({
-          where: { id: orderId },
-          data: {
-            heldMinor: { decrement: amount },
-            ...(body.kind === "RELEASE"
-              ? { releasedMinor: { increment: amount } }
-              : { refundedMinor: { increment: amount } }),
-            ...(order.heldMinor === amount
-              ? { status: body.kind === "RELEASE" ? "COMPLETED" : "REFUNDED" }
-              : {}),
-          },
-        });
-        if (body.kind === "RELEASE")
-          await tx.farmerWallet.upsert({
-            where: { farmerProfileId: order.farmerProfileId },
-            create: { farmerProfileId: order.farmerProfileId, balanceMinor: amount - feeMinor },
-            update: { balanceMinor: { increment: amount - feeMinor } },
-          });
-        await tx.inventoryMovement.create({
-          data: {
-            listingId: order.listingId,
-            type: body.kind === "RELEASE" ? "SALE" : "RELEASE",
-            quantity: order.quantity,
-            referenceType: "order",
-            referenceId: orderId,
-          },
-        });
-        if (order.heldMinor === amount)
-          await tx.listing.update({
-            where: { id: order.listingId },
-            data: {
-              reservedQuantity: { decrement: order.quantity },
-              ...(body.kind === "RELEASE"
-                ? { availableQuantity: { decrement: order.quantity } }
-                : {}),
-            },
-          });
+        await settleManualBalance(tx, order, body.kind);
       }
       const entry = await tx.escrowEntry.create({
         data: { orderId, ...body, amountMinor: amount, feeMinor, actorId: req.auth!.sub },

@@ -2428,3 +2428,9 @@
 .operations-action-editor .operations-form-fields > label:has(textarea),.operations-action-editor .operations-form-fields > .operations-grid,.operations-action-editor .operations-form-fields > p { grid-column:1 / -1; }
 @media(max-width:600px) { .operations-action-editor .operations-form-fields { grid-template-columns:minmax(0,1fr); } }
 .operations-section-tabs { position:sticky; top:0; z-index:3; background:#faf7f0; padding-top:8px; }
+.operations-resolution .finance-facts { border-block:1px solid #e1e9e3; padding-block:16px; margin-bottom:20px; }
+.operations-resolution .operations-form-fields { max-width:none; }
+.operations-resolution .operations-form-fields > label:has(textarea) { max-width:760px; }
+.operations-resolution .operations-check { max-width:760px; line-height:1.6; }
+.operations-record-page [hidden] { display:none !important; }
+@media(max-width:600px) { .operations-record-page .operations-resolution .finance-facts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; } }

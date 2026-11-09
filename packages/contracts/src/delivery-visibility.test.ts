@@ -104,3 +104,11 @@ describe("shared delivery visibility", () => {
     expect(view.warnings.map(w => w.code)).toContain("POSSIBLE_DELAY");
   });
 });
+
+it("identifies administrative closure without treating it as provider or buyer confirmation", () => {
+  const view = deliveryVisibility({ ...base, status: "DELIVERED", failureCode: "TRACKING_UNAVAILABLE", events: [{ ...event("ADMIN_RESOLVED", now.toISOString(), { outcome: "COMPLETED" }), source: "admin" }] }, now);
+  expect(view.label).toBe("Completed by administrator");
+  expect(view.receiptConfirmedAt).toBeNull();
+  expect(view.milestones.find(step => step.status === "DELIVERED")?.reported).toBe(false);
+  expect(view.warnings).toEqual([]);
+});

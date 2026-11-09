@@ -3070,4 +3070,95 @@ suite("provider-backed payment safeguards", () => {
       await expectPaymentPreserved(ready);
     });
   });
+  describe("administrator resolution of provider-backed orders", () => {
+    const close = async (key: string, outcome: string, financialAction: string, extra: Record<string, unknown> = {}) => request(app).post(`/v1/admin/orders/${key}/resolve`).set(staffAuth()).send({
+      ...await adminMutation(key, "Verified exceptional delivery outcome with both parties"), outcome, financialAction, evidence: "Buyer and courier correspondence independently reviewed", confirmed: true, ...extra,
+    });
+    it("releases only the explicitly authorized balance without fabricating normal receipt", async () => {
+      const f = await funded();
+      await expect(requestRelease(f.o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
+      const result = await close(f.o.id, "COMPLETED", "RELEASE");
+      expect(result.status).toBe(200);
+      expect(result.body.message).toContain("pending until the provider confirms");
+      const op = await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "RELEASE" } });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "COMPLETED", heldMinor: 10000n, releasedMinor: 0n, deliveryConfirmedAt: null, receiptPhotoKey: null });
+      await expect(requestRelease(f.o.id, req())).resolves.toMatchObject({ id: op.id });
+      const buyerView = await request(app).get(`/v1/orders/${f.o.id}/delivery`).set("Authorization", `Bearer ${token}`);
+      expect(buyerView.status).toBe(200);
+      expect(buyerView.body.progress).toMatchObject({ canConfirm: false, canAccept: false, canReady: false, canDispatch: false });
+      const closure = buyerView.body.delivery.events.find((event: any) => event.status === "ADMIN_RESOLVED");
+      expect(closure.details).toEqual({ outcome: "COMPLETED", financialAction: "RELEASE" });
+      expect(buyerView.body.staffContext).toBeUndefined();
+      expect(buyerView.body.tracking.label).toBe("Completed by administrator");
+      vi.spyOn(bachs, "account").mockResolvedValue({ id: `acct_${seller}`, parent_organization_id: "org_fixture", enabled_capabilities: ["transfers", "payouts"] });
+      vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "10000.00" }]);
+      const write = vi.spyOn(bachs, "call").mockImplementation(async (path, body: any) => {
+        if (path === "/transfers") return { id: `tr_${op.id}`, status: "paid", currency: "NGN", amount: body.amount, destination: `acct_${seller}` };
+        throw new Error("Unexpected provider write");
+      });
+      await runMoneyOperation(op.id); await runMoneyOperation(op.id);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "COMPLETED", heldMinor: 0n, releasedMinor: 10000n, deliveryConfirmedAt: null });
+      expect((await close(f.o.id, "CANCELLED", "REFUND")).status).toBe(409);
+    });
+    it("refunds a cancelled exception once and retains operational cancellation after provider confirmation", async () => {
+      const f = await funded();
+      await prisma.delivery.update({ where: { id: f.d.id }, data: { status: "IN_TRANSIT", providerShipmentId: `resolved-${f.d.id}`, bookingStartedAt: new Date() } });
+      expect((await close(f.o.id, "CANCELLED", "REFUND")).status).toBe(200);
+      const op = await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "REFUND" } });
+      vi.spyOn(bachs, "payment").mockResolvedValue({ payment_id: `ch_${f.a.id}`, checkout_id: f.a.checkoutId, currency: "NGN", is_refundable: true });
+      vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "10000.00" }]);
+      const write = vi.spyOn(bachs, "call").mockResolvedValue({ id: `rf_${op.id}`, status: "success", currency: "NGN", requested_amount: "100.00", charge_id: `ch_${f.a.id}`, reference: op.id });
+      await runMoneyOperation(op.id); await runMoneyOperation(op.id);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "CANCELLED", heldMinor: 0n, refundedMinor: 10000n });
+      expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } })).status).toBe("REFUNDED");
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).status).toBe("CANCELLED");
+      await applyTracking(f.d.id, { id: `resolved-${f.d.id}`, status: "delivered", courier: "Late courier" });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "CANCELLED", financialHold: false });
+      expect((await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).status).toBe("CANCELLED");
+    });
+    it("holds and resumes an unsubmitted release using the same operation identity", async () => {
+      const f = await funded();
+      vi.spyOn(bachs, "account").mockResolvedValue({ id: `acct_${seller}`, parent_organization_id: "org_fixture", enabled_capabilities: ["transfers", "payouts"] });
+      vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "10000.00" }]);
+      expect((await close(f.o.id, "COMPLETED", "RELEASE")).status).toBe(200);
+      const op = await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "RELEASE" } });
+      expect((await close(f.o.id, "COMPLETED", "HOLD")).status).toBe(200);
+      await runMoneyOperation(op.id);
+      expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: op.id } })).toMatchObject({ status: "BLOCKED", providerRef: null, leaseUntil: null });
+      expect(bachs.call).not.toHaveBeenCalled();
+      expect((await close(f.o.id, "COMPLETED", "RELEASE")).status).toBe(200);
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: "RELEASE" } })).toBe(1);
+      const decision = (await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).adminResolution as { id: string };
+      expect((await prisma.moneyOperation.findUniqueOrThrow({ where: { id: op.id } })).payload).toMatchObject({ adminResolutionId: decision.id });
+      const write = vi.spyOn(bachs, "call").mockImplementation(async (path, body: any) => {
+        if (path === "/transfers") return { id: `tr_${op.id}`, status: "paid", currency: "NGN", amount: body.amount, destination: `acct_${seller}` };
+        throw new Error("Unexpected provider write");
+      });
+      await runMoneyOperation(op.id); await runMoneyOperation(op.id);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).releasedMinor).toBe(10000n);
+    });
+    it("rolls back closure when payment is disabled or delivery refunds exceed unspent funds", async () => {
+      const f = await funded();
+      const before = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } });
+      const historyCount = await prisma.orderRecordHistory.count({ where: { orderId: f.o.id } });
+      getConfig().PAYMENTS_TRANSFERS_ENABLED = false;
+      expect((await close(f.o.id, "COMPLETED", "RELEASE")).status).toBe(503);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toEqual(before);
+      expect(await prisma.orderRecordHistory.count({ where: { orderId: f.o.id } })).toBe(historyCount);
+      expect((await close(f.o.id, "CANCELLED", "REFUND", { shippingRefundMinor: "1001" })).status).toBe(409);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toEqual(before);
+      const verifiedPayment = await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } });
+      await prisma.paymentAttempt.update({ where: { id: f.a.id }, data: { confirmedAt: null } });
+      expect((await close(f.o.id, "CANCELLED", "REFUND")).status).toBe(409);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toEqual(before);
+      await prisma.paymentAttempt.update({ where: { id: f.a.id }, data: { confirmedAt: verifiedPayment.confirmedAt } });
+      expect((await close(f.o.id, "CANCELLED", "HOLD")).status).toBe(200);
+      expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: { in: ["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] } } })).toBe(0);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "CANCELLED", financialHold: true, heldMinor: 10000n });
+    });
+  });
+
 });

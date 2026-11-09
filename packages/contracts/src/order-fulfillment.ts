@@ -12,6 +12,7 @@ export function orderFulfillment(input: {
   handedOver?: boolean;
   review?: boolean;
   orderStatus?: string;
+  adminResolved?: boolean;
   paid: boolean;
   confirmed: boolean;
   blocked: boolean;
@@ -40,7 +41,7 @@ export function orderFulfillment(input: {
     collection,
   } = input;
   const awaitingAcceptance = input.farmerDecision === "PENDING";
-  const participantActions = !input.legacyShipment;
+  const participantActions = !input.legacyShipment && !input.adminResolved;
   const rejected = input.farmerDecision === "REJECTED";
   const accepted = !awaitingAcceptance && !rejected && !input.review;
   const bookingBlocked = status === "BOOKING_BLOCKED";
@@ -162,7 +163,7 @@ export function orderFulfillment(input: {
     rejected,
     handedOver: !!input.handedOver,
     method: collection ? "Pickup" : "Delivery",
-    status: terminal
+    status: input.adminResolved ? "Closed by administrator" : terminal
       ? input.orderStatus === "REFUNDED"
         ? "Refunded"
         : "Cancelled"
@@ -212,7 +213,7 @@ export function orderFulfillment(input: {
     steps: collection
       ? ["Payment confirmed", "Preparing", "Ready for Pickup", "Collected", "Completed"]
       : ["Payment confirmed", "Preparing", "Dispatched", "In Transit", "Completed"],
-    next,
+    next: input.adminResolved ? "An administrator closed this order. Follow the payment updates for the financial outcome." : next,
     canReady,
     canDispatch,
     canConfirm,

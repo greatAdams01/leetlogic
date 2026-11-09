@@ -294,6 +294,12 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
     await tx.$queryRaw`SELECT id FROM deliveries WHERE id = ${deliveryId}::uuid FOR UPDATE`;
     const d = await tx.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
     if (d.providerShipmentId !== tracked.id) throw new Error("SHIPMENT_MISMATCH");
+    const resolvedOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: d.orderId }, select: { adminResolution: true } });
+    if (resolvedOrder.adminResolution) {
+      if (!tracked.id.startsWith("split:")) await recordProviderTracking(tx, d.id, tracked);
+      await tx.delivery.update({ where: { id: d.id }, data: { lastSyncedAt: new Date(), leaseUntil: null } });
+      return;
+    }
     const next = normalizeDeliveryStatus(tracked.status);
     const observedAt = next ? trackedStatusTime(tracked, next) : undefined;
     const advance = next && (canAdvanceDelivery(d.status, next) ||

@@ -32,6 +32,12 @@ export function adminFulfillmentLabel(data: AdminOrderRecord) {
 }
 
 export function adminNextStep(data: AdminOrderRecord) {
+  if (data.staffContext.adminResolution) {
+    const decision = data.staffContext.adminResolution;
+    if (decision.financialAction === "HOLD") return "Closed by administrator. Review the remaining funds, then return to Resolve Order to decide the payment outcome.";
+    if (decision.financialAction === "NONE") return "Closed by administrator. No funds were moved.";
+    return "Closed by administrator. Check the payment status for the release or refund result; closure alone does not confirm a transfer.";
+  }
   if (["CANCELLED", "REFUNDED"].includes(data.order.status)) return "This order is closed. Check the payment summary for any refund details.";
   if (data.staffContext.financialHold || data.staffContext.disputes.length) return "Resolve the order review before dispatch or payment release can continue.";
   if (data.order.status === "AWAITING_PAYMENT") return "Waiting for the buyer’s payment. Preparation and dispatch cannot start yet.";

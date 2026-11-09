@@ -233,6 +233,61 @@ describe("authorized record actions", () => {
   });
 });
 
+describe("exceptional resolution interface", () => {
+  it("opens directly from either detail view without leaving the record", async () => {
+    for (const area of ["orders", "logistics"] as const) {
+      const view = render(<OrderReview id={orderId} area={area} permissions={staffPermissions} />);
+      await screen.findByText("LL-1042");
+      fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
+      expect(screen.getByRole("form", { name: "Confirm order resolution" })).toBeTruthy();
+      expect(screen.queryByRole("tabpanel")).toBeNull();
+      expect(screen.getByRole("button", { name: "Back to details" })).toBeTruthy();
+      expect(posts()).toEqual([]);
+      view.unmount();
+    }
+  });
+  it("reviews cancellation and refund with evidence before authenticator confirmation", async () => {
+    render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
+    await screen.findByText("LL-1042");
+    fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
+    const form = screen.getByRole("form", { name: "Confirm order resolution" });
+    enter(form, "outcome", "CANCELLED"); enter(form, "financialAction", "REFUND");
+    enter(form, "evidence", "Buyer and courier confirmed the goods were lost");
+    enter(form, "reason", "Investigation confirms the buyer did not receive the order");
+    fireEvent.click(form.querySelector('[name="confirmed"]')!);
+    await submit(form);
+    expect(posts()).toEqual([]);
+    expect(within(form).getByRole("table", { name: "Proposed changes" }).textContent).toContain("Refund buyer");
+    expect(within(form).queryByRole("combobox", { name: "Close order as" })).toBeNull();
+    enter(form, "code", "123456"); await submit(form);
+    expect(posts()).toEqual([["auth/totp/step-up", { code: "123456" }], [`orders/${orderId}/resolve`, {
+      outcome: "CANCELLED", financialAction: "REFUND", evidence: "Buyer and courier confirmed the goods were lost", reason: "Investigation confirms the buyer did not receive the order",
+      confirmed: true, shippingRefundMinor: "0", expectedRevision: "a".repeat(64), mutationKey: expect.any(String),
+    }]]);
+  });
+  it("keeps a justified hold available when financial movement is blocked and retains its draft", async () => {
+    Object.assign(h.record.staffContext.resolutionOptions, { release: false, refund: false, blockedReason: "An unresolved dispute requires payment to remain on hold." });
+    render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
+    await screen.findByText("LL-1042");
+    fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
+    const form = screen.getByRole("form", { name: "Confirm order resolution" });
+    expect((within(form).getByRole("option", { name: "Release payment to farmer" }) as HTMLOptionElement).disabled).toBe(true);
+    expect((form.querySelector('[name="financialAction"]') as HTMLSelectElement).value).toBe("HOLD");
+    enter(form, "reason", "Hold funds while the courier and buyer evidence is reviewed");
+    fireEvent.click(screen.getByRole("button", { name: "Back to details" }));
+    expect(screen.queryByRole("form")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
+    expect((form.querySelector('[name="reason"]') as HTMLTextAreaElement).value).toContain("Hold funds while");
+    expect(posts()).toEqual([]);
+  });
+  it("requires both operational and financial permissions", async () => {
+    render(<OrderReview id={orderId} area="orders" permissions={["orders.read", "orders.manage"]} />);
+    await screen.findByText("LL-1042");
+    expect(screen.queryByRole("button", { name: "Resolve Order" })).toBeNull();
+    expect(orderCommandAvailable("resolve", h.record, ["orders.read", "payments.manage"])).toBe(false);
+  });
+});
+
 describe("freshness and action safety", () => {
   it("uses keyboard-accessible tabs and keeps only the selected section visible", async () => {
     render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);

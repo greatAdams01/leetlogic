@@ -108,6 +108,7 @@ export const deliveryCalendarDate = (now: Date) => new Intl.DateTimeFormat("en-C
   timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(now);
 export const deliveryEventLabel = (status: string) => ({
+  ADMIN_RESOLVED: "Order and delivery closed by administrator",
   READY_FOR_PICKUP: "Produce ready for pickup",
   FARMER_DISPATCHED: "Farmer confirmed dispatch",
   FARMER_ACCEPTED: "Farmer accepted the order",
@@ -140,7 +141,10 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
     parcels.every(p => !!p.providerShipmentId && p.parcelIndex >= 0 && p.parcelIndex < packageCount && p.quoteId === input.selectedQuoteId);
   const incomplete = split && (!matchingPlan || parcels.some(p => p.status !== "DELIVERED"));
   const receiptConfirmedAt = stamp(input.receiptConfirmedAt);
-  const copy = input.status === "DELIVERED" && incomplete
+  const administrative = events.filter(event => event.status === "ADMIN_RESOLVED" && event.source === "admin").at(-1);
+  const copy = administrative ? { label: object(administrative.details).outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator",
+    title: "Administrative resolution", body: "An administrator closed this order after review. This is not a courier delivery report or a new buyer receipt confirmation. Follow the payment updates for the financial outcome." }
+    : input.status === "DELIVERED" && incomplete
     ? { label: "Delivery completion needs review", title: "Delivery completion needs review", body: "Not every planned package has a matching delivery confirmation. Contact support before confirming receipt." }
     : input.status === "DELIVERED" && receiptConfirmedAt
       ? { ...deliveryStatusCopy(input.status, dispatched), body: "Receipt confirmation is recorded. Follow the payment updates for settlement." }
@@ -198,7 +202,7 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
   const milestones = ["BOOKED", "PICKED_UP", "IN_TRANSIT", "DELIVERED"].map(status => {
     const event = timeline.find(e => (e.status === status || (status === "BOOKED" && e.status === "MANUAL_ASSIGNED")) && e.parcelIndex === null && (!e.providerShipmentId || e.providerShipmentId === input.providerShipmentId));
     return { status, label: status === "BOOKED" ? manual ? "Courier assigned" : "Booking confirmed" : deliveryStatusCopy(status).label,
-      reported: !(status === "DELIVERED" && incomplete) && (!!event || input.status === status || (status === "BOOKED" && input.status === "MANUAL_ASSIGNED")),
+      reported: !(status === "DELIVERED" && incomplete) && (!!event || !administrative && (input.status === status || (status === "BOOKED" && input.status === "MANUAL_ASSIGNED"))),
       recordedAt: event?.recordedAt || null, occurredAt: event?.occurredAt || null, providerTime: event?.providerTime || null };
   });
   return {
@@ -208,8 +212,8 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
     trackingRef,
     lastSyncedAt, lastProgressAt, pickupDate,
     receiptConfirmedAt, receiptSource: input.receiptSource || "buyer",
-    packageCount, deliveredPackages: split ? new Set(parcels.filter(p => p.status === "DELIVERED" && !!p.providerShipmentId && !!input.selectedQuoteId && p.quoteId === input.selectedQuoteId && p.parcelIndex >= 0 && p.parcelIndex < packageCount).map(p => p.parcelIndex)).size : input.status === "DELIVERED" ? packageCount : 0,
-    warnings, assignments, milestones, timeline,
+    packageCount, deliveredPackages: administrative ? (split ? new Set(timeline.filter(event => event.status === "DELIVERED" && event.parcelIndex !== null && event.parcelIndex >= 0 && event.parcelIndex < packageCount).map(event => event.parcelIndex)).size : timeline.some(event => event.status === "DELIVERED") ? packageCount : 0) : split ? new Set(parcels.filter(p => p.status === "DELIVERED" && !!p.providerShipmentId && !!input.selectedQuoteId && p.quoteId === input.selectedQuoteId && p.parcelIndex >= 0 && p.parcelIndex < packageCount).map(p => p.parcelIndex)).size : input.status === "DELIVERED" ? packageCount : 0,
+    warnings: administrative ? [] : warnings, assignments, milestones, timeline,
   };
 }
 export type DeliveryVisibility = ReturnType<typeof deliveryVisibility>;

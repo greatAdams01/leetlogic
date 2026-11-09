@@ -1,3 +1,4 @@
+import { resolutionAuthorizes } from "./order-resolution-policy.js";
 import { startRecoveryWorker } from "./recovery-worker.js";
 import { assertFulfillmentOpen, financeEnabled } from "./fulfillment-deadline.js";
 import { bankName } from "./bank-names.js";
@@ -66,6 +67,7 @@ async function checkRefundOrder(op: MoneyOperation) {
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: op.orderId! }, include: { delivery: { include: { parcels: true } } },
     });
+    const resolved = resolutionAuthorizes(order, "REFUND", (op.payload as any).adminResolutionId);
     const automatic = (op.payload as any).automaticDeadline;
     if (automatic) {
       const deadline = await tx.fulfillmentDeadline.findUnique({ where: { orderId: order.id } });
@@ -79,10 +81,10 @@ async function checkRefundOrder(op: MoneyOperation) {
     if (order.financialHold || order.releasedMinor > 0n ||
       order.heldMinor < BigInt((op.payload as any).produceMinor || "0") ||
       await tx.moneyOperation.count({ where: { orderId: order.id, mode: mode(), kind: "RELEASE", status: { not: "FAILED" } } }) ||
-      !["FUNDED", "DELIVERED"].includes(order.status) ||
+      (!resolved && !["FUNDED", "DELIVERED"].includes(order.status)) ||
       (await tx.supportTicket.count({ where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } } })))
       throw new AppError(409, "REFUND_BLOCKED", "Resolve the order review before requesting a refund.");
-    if (!deliveryRefundReady(order.delivery))
+    if (!resolved && !deliveryRefundReady(order.delivery))
       throw new AppError(409, "DELIVERY_ACTIVE", "Cancel or reconcile delivery before refunding this order.");
   });
 }
@@ -668,13 +670,13 @@ export async function runMoneyOperation(id: string) {
       return;
     }
     if (op.kind === "RELEASE") {
-      await prisma.$transaction((tx) => assertRelease(tx, op.orderId!));
+      await prisma.$transaction((tx) => assertRelease(tx, op.orderId!, (op.payload as any).adminResolutionId));
       await checkFunds(op.amountMinor);
       // Provider reads can outlive eligibility or our claim. Recheck both at
       // the transfer boundary; an interrupted worker must not submit a write.
       await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${op.orderId!}::uuid FOR UPDATE`;
-        await assertRelease(tx, op.orderId!);
+        await assertRelease(tx, op.orderId!, (op.payload as any).adminResolutionId);
         const current = await tx.moneyOperation.findUniqueOrThrow({ where: { id } });
         if (current.status !== "PROCESSING" || current.providerRef || current.mode !== op.mode ||
           current.attempts !== op.attempts || !current.leaseUntil ||

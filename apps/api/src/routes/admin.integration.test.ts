@@ -855,6 +855,85 @@ integration("admin PostgreSQL and Redis workflows", () => {
     await expect(prisma.$executeRaw`DELETE FROM order_record_history WHERE order_id = ${key}::uuid`).rejects.toThrow(/append-only/);
     await expect(prisma.$executeRaw`TRUNCATE order_record_history`).rejects.toThrow(/append-only/);
   });
+  describe("exceptional order resolution", () => {
+    beforeAll(async () => { await prisma.listing.update({ where: { id: listingId }, data: { availableQuantity: "1000" } }); });
+    const decision = async (key: string, outcome = "CANCELLED", financialAction = "HOLD") => ({ ...await adminMutation(key), outcome, financialAction,
+      evidence: "Verified operator investigation and courier correspondence", confirmed: true });
+    const newCase = async (fund = false) => {
+      const result = await request(app).post("/v1/admin/orders").set(auth()).send({ buyerId, listingId, quantity: "1" });
+      expect(result.status).toBe(201);
+      const key = result.body.id;
+      if (fund) expect((await request(app).post(`/v1/admin/orders/${key}/escrow`).set(auth()).send({ kind: "FUND", amountMinor: result.body.totalMinor, externalRef: `RES-${randomUUID()}`, mutationKey: randomUUID(), reason: "Verified manual funds for resolution test" })).status).toBe(200);
+      return key as string;
+    };
+    it("closes any operational status with an audited hold and resists late status writes", async () => {
+      for (const status of ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED"]) {
+        const key = await newCase();
+        await prisma.tradeOrder.update({ where: { id: key }, data: { status } });
+        const delivery = await prisma.delivery.create({ data: { orderId: key, status: "IN_TRANSIT", providerShipmentId: `EX-${randomUUID()}` } });
+        const body = await decision(key);
+        const close = () => request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(body);
+        expect((await close()).status).toBe(200);
+        const historyCount = await prisma.orderRecordHistory.count({ where: { orderId: key } });
+        expect((await close()).status).toBe(200);
+        expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(historyCount);
+        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "CANCELLED", financialHold: true, adminResolution: { previousOrderStatus: status, financialAction: "HOLD", adminId } });
+        expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("CANCELLED");
+        await prisma.$transaction(async tx => {
+          await tx.tradeOrder.update({ where: { id: key }, data: { status: "FUNDED", financialHold: false } });
+          await tx.delivery.update({ where: { id: delivery.id }, data: { status: "IN_TRANSIT" } });
+        });
+        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "CANCELLED", financialHold: true });
+        expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("CANCELLED");
+        const history = await prisma.orderRecordHistory.findFirstOrThrow({ where: { orderId: key, entityType: "order", action: "order.admin.resolved", kind: "UPDATE" } });
+        expect(history).toMatchObject({ actorId: adminId, actorType: "admin", reason: body.reason, before: { status }, after: { status: "CANCELLED" } });
+      }
+    });
+    it("settles manual funds once without manufacturing buyer receipt evidence", async () => {
+      for (const [outcome, financialAction] of [["COMPLETED", "RELEASE"], ["CANCELLED", "REFUND"]]) {
+        const key = await newCase(true);
+        const body = await decision(key, outcome, financialAction);
+        const send = () => request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(body);
+        const responses = await Promise.all([send(), send()]);
+        expect(responses.map(r => r.status)).toEqual([200, 200]);
+        const order = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } });
+        expect(order).toMatchObject({ status: outcome, heldMinor: 0n, deliveryConfirmedAt: null, receiptPhotoKey: null });
+        expect(financialAction === "RELEASE" ? order.releasedMinor : order.refundedMinor).toBe(order.totalMinor);
+        expect(await prisma.escrowEntry.count({ where: { orderId: key, kind: financialAction } })).toBe(1);
+        expect((await request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(await decision(key, outcome, financialAction))).status).toBe(409);
+      }
+    });
+    it("keeps funds held for a dispute, then supports a justified decision after investigation", async () => {
+      const key = await newCase(true);
+      const ticket = await prisma.supportTicket.create({ data: { orderId: key, userId: buyerId, kind: "DISPUTE", subject: "Exceptional delivery investigation" } });
+      const before = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } });
+      expect((await request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(await decision(key, "COMPLETED", "RELEASE"))).status).toBe(409);
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toEqual(before);
+      expect((await request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(await decision(key))).status).toBe(200);
+      await prisma.supportTicket.update({ where: { id: ticket.id }, data: { status: "RESOLVED" } });
+      expect((await request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(await decision(key, "COMPLETED", "RELEASE"))).status).toBe(200);
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).status).toBe("COMPLETED");
+    });
+    it("requires payment authority, fresh verification, evidence and confirmation", async () => {
+      const key = await newCase();
+      const path = `/v1/admin/orders/${key}/resolve`, body = await decision(key);
+      const fresh = await createSession({ subject: "ADMIN", principalId: adminId, deviceId: randomUUID() });
+      expect((await request(app).post(path).set("Authorization", `Bearer ${fresh.accessToken}`).send(body)).status).toBe(403);
+      const grant = await prisma.permission.findUniqueOrThrow({ where: { code: "payments.manage" } });
+      await prisma.rolePermission.delete({ where: { roleId_permissionId: { roleId, permissionId: grant.id } } });
+      try { expect((await request(app).post(path).set(auth()).send(body)).status).toBe(403); }
+      finally { await prisma.rolePermission.create({ data: { roleId, permissionId: grant.id } }); }
+      for (const invalid of [{ ...body, confirmed: false }, { ...body, evidence: "" }, { ...body, reason: "" }, { ...body, outcome: "CANCELLED", financialAction: "RELEASE" }])
+        expect((await request(app).post(path).set(auth()).send(invalid)).status).toBe(422);
+      expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).adminResolution).toBeNull();
+    });
+    it("rejects competing resolutions and releases unpaid stock only once", async () => {
+      const key = await newCase(), base = await decision(key, "CANCELLED", "NONE");
+      const responses = await Promise.all([base, { ...base, mutationKey: randomUUID(), outcome: "COMPLETED" }].map(body => request(app).post(`/v1/admin/orders/${key}/resolve`).set(auth()).send(body)));
+      expect(responses.map(r => r.status).sort()).toEqual([200, 409]);
+      expect(await prisma.inventoryMovement.count({ where: { referenceId: key, type: { in: ["SALE", "RELEASE"] } } })).toBe(1);
+    });
+  });
   it("enforces changed grants and revokes access on logout", async () => {
     const grant = await prisma.permission.findUniqueOrThrow({ where: { code: "content.manage" } });
     await prisma.rolePermission.delete({

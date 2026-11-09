@@ -5,7 +5,7 @@ import { financeRequest } from "./finance-ui";
 import type { AdminOrderCommand, AdminOrderRecord } from "./order-types";
 
 const financialCommands = ["escrow", "delivery-payment"];
-const sensitiveCommands = ["escrow", "delivery-payment", "link", "link-parcel", "cancel-delivery"];
+const sensitiveCommands = ["resolve", "escrow", "delivery-payment", "link", "link-parcel", "cancel-delivery"];
 
 /** Visibility only; the existing API remains authoritative for every write. */
 export function orderCommandAvailable(command: AdminOrderCommand, data: AdminOrderRecord, permissions: readonly string[]) {
@@ -14,6 +14,7 @@ export function orderCommandAvailable(command: AdminOrderCommand, data: AdminOrd
   const editable = order.status === "AWAITING_PAYMENT" && !order.checkoutActive && !context.financialHold &&
     !data.legacyShipment && !BigInt(d?.paidMinor || "0") && !d?.bookingStartedAt && !d?.providerShipmentId;
   switch (command) {
+    case "resolve": return permissions.includes("payments.manage");
     case "correct-order": return context.corrections.orderInformation;
     case "correct-delivery": return context.corrections.deliveryNotes || context.corrections.destination || context.corrections.riderAssignment;
     case "cancel-order": return order.status === "AWAITING_PAYMENT" && !order.checkoutActive && !context.financialHold;
@@ -119,7 +120,7 @@ export function useOrderRecord(id: string, permissions: readonly string[], onCha
     const sensitive = sensitiveCommands.includes(command) || command === "manual-status" && body.status === "CANCELLED";
     if (sensitive && !/^\d{6}$/.test(code)) { setActionError("Enter the six-digit code from your authenticator."); return false; }
     const paths: Partial<Record<AdminOrderCommand, string>> = {
-      "cancel-order": `orders/${id}/cancel`, escrow: `orders/${id}/escrow`,
+      resolve: `orders/${id}/resolve`, "cancel-order": `orders/${id}/cancel`, escrow: `orders/${id}/escrow`,
       "assign-shipment": "logistics", "legacy-status": `logistics/${data.legacyShipment?.id}/status`,
       "delivery-payment": `delivery-orders/${id}/delivery/payment`,
       "cancel-delivery": `delivery-orders/${id}/delivery/cancel`,

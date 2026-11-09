@@ -8,6 +8,7 @@ type FulfillmentOrder = {
   status: string;
   farmerDecision: string;
   financialHold: boolean;
+  adminResolution?: unknown;
   handedOverAt: Date | null;
   deliveryConfirmedAt: Date | null;
   delivery: Delivery | null;
@@ -35,6 +36,7 @@ export function fulfillmentProjection(order: FulfillmentOrder, buyer: boolean, f
     handedOver: !!order.handedOverAt,
     review: disputed,
     orderStatus: order.status,
+    adminResolved: !!order.adminResolution,
     paid: ["FUNDED", "DELIVERED", "COMPLETED"].includes(order.status),
     confirmed: !!order.deliveryConfirmedAt,
     blocked,

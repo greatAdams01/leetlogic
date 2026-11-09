@@ -23,10 +23,10 @@ export function OrderActionWorkspace({ children, enabled = true }: { children: R
 }
 
 /** Confirm actions in the record, using the portal's existing form and security styles. */
-export function OrderActionForm({ label, description, command, workflow, children, payload, sensitive = false, reason = true, danger = false, inline = false, blocked = false, onDraftChange }: {
+export function OrderActionForm({ label, description, command, workflow, children, payload, sensitive = false, reason = true, danger = false, inline = false, blocked = false, onDraftChange, onSaved }: {
   label: string; description: string; command: AdminOrderCommand; workflow: OrderRecordWorkflow; children?: ReactNode;
   payload: (form: FormData, baseline: AdminOrderRecord) => Record<string, unknown>; sensitive?: boolean; reason?: boolean; danger?: boolean;
-  inline?: boolean; blocked?: boolean; onDraftChange?: () => void;
+  inline?: boolean; blocked?: boolean; onDraftChange?: () => void; onSaved?: () => void;
 }) {
   const [code, setCode] = useState("");
   const [baseline, setBaseline] = useState(workflow.record!);
@@ -74,13 +74,13 @@ export function OrderActionForm({ label, description, command, workflow, childre
       setCode("");
       if (saved) {
         workspace?.choose(null); setOpened(false);
-        formRef.current?.reset(); mutation.current = null; drafted.current = false; setReview(null); setError("");
+        formRef.current?.reset(); mutation.current = null; drafted.current = false; setReview(null); setError(""); onSaved?.();
       }
     }}>
       <p className="finance-muted">{description}</p>
       {stale && <p className="finance-callout danger" role="status">This record changed while you were editing. Your draft is retained. Compare it with the latest values and review again; nothing has been overwritten.</p>}
       {error && <p className="live-error" role="alert">{error}</p>}
-      <fieldset className="operations-form-fields" disabled={workflow.disabled || blocked || !!review}>
+      <fieldset className="operations-form-fields" hidden={command === "resolve" && !!review} disabled={workflow.disabled || blocked || !!review}>
         {children}
         {reason && <label>Reason for action<textarea name="reason" minLength={10} maxLength={500} required /></label>}
       </fieldset>

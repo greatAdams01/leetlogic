@@ -1,3 +1,4 @@
+import { readResolutionOptions } from "../services/admin-order-resolution.js";
 import { logger } from "../lib/logger.js";
 import { ownedOrderWhere } from "../services/order-search.js";
 import { orderPaymentView } from "../services/order-payment-view.js";
@@ -475,6 +476,8 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
       }
     }
     const staffContext = isStaff ? {
+      adminResolution: order.adminResolution,
+      resolutionOptions: await readResolutionOptions(order, !!req.auth!.permissions?.includes("payments.manage")),
       revision: adminRecordRevision(order, await lastOrderHistoryId(order.id)),
       buyerContact: order.buyerContactSnapshot,
       fulfillmentNotes: order.fulfillmentNotes,

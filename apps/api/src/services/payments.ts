@@ -1,3 +1,4 @@
+import { resolutionAuthorizes } from "./order-resolution-policy.js";
 import { assertFulfillmentOpen, trackVerifiedPayment } from "./fulfillment-deadline.js";
 import { createHash, randomUUID } from "node:crypto";
 import { prisma, type Prisma, type MoneyOperation, type PaymentAttempt } from "@leetlogic/database";
@@ -595,24 +596,26 @@ export async function allocateVerifiedReceipt(tx: Prisma.TransactionClient, curr
       tx,
     );
 }
-export async function assertRelease(tx: Prisma.TransactionClient, orderId: string) {
+export async function assertRelease(tx: Prisma.TransactionClient, orderId: string, resolutionId?: string) {
   const order = await tx.tradeOrder.findUniqueOrThrow({
     where: { id: orderId },
     include: { farmerProfile: true, delivery: { include: { parcels: true } } },
   });
+  const resolved = resolutionAuthorizes(order, "RELEASE", resolutionId);
   if (
     order.fundsProvider !== "bachs" ||
-    !["FUNDED", "DELIVERED"].includes(order.status) ||
+    (!resolved && !["FUNDED", "DELIVERED"].includes(order.status)) ||
     order.heldMinor !== order.totalMinor ||
-    !order.deliveryConfirmedAt ||
-    (order.journeyVersion >= 2 && (
+    (!resolved && !order.deliveryConfirmedAt) ||
+    (!resolved && order.journeyVersion >= 2 && (
       !order.receiptPhotoKey || order.farmerDecision !== "ACCEPTED" ||
       !(await tx.paymentAttempt.count({ where: {
         orderId, mode: mode(), kind: "ORDER", status: "SUCCEEDED",
         confirmedAt: { not: null }, produceMinor: order.totalMinor,
       } }))
     )) ||
-    (order.delivery && !deliveryReceiptReady(order.delivery)) ||
+    (!resolved && order.delivery && !deliveryReceiptReady(order.delivery)) ||
+    (resolved && (!(await tx.paymentAttempt.count({ where: { orderId, mode: mode(), kind: "ORDER", status: "SUCCEEDED", confirmedAt: { not: null }, produceMinor: order.totalMinor } })) || order.releasedMinor > 0n || order.refundedMinor > 0n)) ||
     order.financialHold ||
     (await tx.supportTicket.count({
       where: { orderId, kind: "DISPUTE", status: { not: "RESOLVED" } },
@@ -625,9 +628,9 @@ export async function assertRelease(tx: Prisma.TransactionClient, orderId: strin
     );
   return order;
 }
-export async function requestRelease(orderId: string, req: Request) {
+export async function requestRelease(orderId: string, req: Request, client?: Prisma.TransactionClient, resolutionId?: string) {
   paymentReady("RELEASE");
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${orderId}::uuid FOR UPDATE`;
     const prior = await tx.moneyOperation.findFirst({
       where: { mode: mode(), orderId, kind: "RELEASE", status: { not: "FAILED" } },
@@ -636,10 +639,10 @@ export async function requestRelease(orderId: string, req: Request) {
       // A blocked attempt has not submitted a write. Reuse its identity after
       // rechecking eligibility; unknown outcomes must only be reconciled.
       if (prior.status === "BLOCKED" && !prior.providerRef) {
-        await assertRelease(tx, orderId);
+        await assertRelease(tx, orderId, resolutionId);
         const resumed = await tx.moneyOperation.updateMany({
           where: { id: prior.id, status: "BLOCKED", providerRef: null, leaseUntil: null },
-          data: { status: "QUEUED", nextRunAt: new Date(), failureCode: null },
+          data: { status: "QUEUED", nextRunAt: new Date(), failureCode: null, ...(resolutionId ? { payload: { ...(prior.payload as Prisma.JsonObject), adminResolutionId: resolutionId, reason: req.body.reason } } : {}) },
         });
         if (resumed.count) await audit(req, {
           action: "payment.release.resumed", entityType: "money_operation", entityId: prior.id,
@@ -648,7 +651,7 @@ export async function requestRelease(orderId: string, req: Request) {
       }
       return prior;
     }
-    const order = await assertRelease(tx, orderId);
+    const order = await assertRelease(tx, orderId, resolutionId);
     if (
       await tx.moneyOperation.count({
         where: {
@@ -668,7 +671,7 @@ export async function requestRelease(orderId: string, req: Request) {
       key: `${orderId}:${await tx.moneyOperation.count({ where: { orderId, mode: mode(), kind: "RELEASE", status: "FAILED" } })}`,
       amountMinor: order.heldMinor - fee,
       feeMinor: fee,
-      payload: { reason: req.body.reason },
+      payload: { reason: req.body.reason, ...(resolutionId ? { adminResolutionId: resolutionId } : {}) },
     });
     const delivery = await tx.delivery.findUnique({ where: { orderId } });
     if (delivery) await deliveryEvent(tx, delivery.id, "PAYMENT_RELEASE_PROCESSING", "system", `${operation.id}:release-processing`);
@@ -678,7 +681,8 @@ export async function requestRelease(orderId: string, req: Request) {
       tx,
     );
     return operation;
-  });
+  };
+  return client ? run(client) : prisma.$transaction(run);
 }
 export async function startAccount(
   userId: string,
@@ -806,14 +810,15 @@ export async function requestWithdrawal(
     });
   });
 }
-export async function requestRefund(orderId: string, req: Request) {
+export async function requestRefund(orderId: string, req: Request, client?: Prisma.TransactionClient, resolutionId?: string) {
   paymentReady("REFUND");
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM trade_orders WHERE id=${orderId}::uuid FOR UPDATE`;
     const order = await tx.tradeOrder.findUniqueOrThrow({
       where: { id: orderId },
       include: { delivery: { include: { parcels: true } } },
     });
+    const resolved = resolutionAuthorizes(order, "REFUND", resolutionId);
     const shippingRefundMinor = req.body.shippingRefundMinor === undefined ? (order.delivery?.paidMinor || 0n) : BigInt(req.body.shippingRefundMinor);
     const previous = await tx.moneyOperation.findFirst({
       where: {
@@ -833,7 +838,7 @@ export async function requestRefund(orderId: string, req: Request) {
       for (const op of resumable) {
         const changed = await tx.moneyOperation.updateMany({
           where: { id: op.id, status: "BLOCKED", providerRef: null, leaseUntil: null },
-          data: { status: "QUEUED", nextRunAt: new Date(), failureCode: null },
+          data: { status: "QUEUED", nextRunAt: new Date(), failureCode: null, ...(resolutionId ? { payload: { ...(op.payload as Prisma.JsonObject), adminResolutionId: resolutionId, reason: req.body.reason } } : {}) },
         });
         if (changed.count) await audit(req, {
           action: "payment.refund.resumed", entityType: "money_operation", entityId: op.id,
@@ -845,7 +850,7 @@ export async function requestRefund(orderId: string, req: Request) {
     }
     if (
       order.fundsProvider !== "bachs" ||
-      !["FUNDED", "DELIVERED"].includes(order.status) ||
+      (!resolved && !["FUNDED", "DELIVERED"].includes(order.status)) ||
       order.heldMinor !== order.totalMinor ||
       order.financialHold ||
       (await tx.supportTicket.count({
@@ -863,7 +868,7 @@ export async function requestRefund(orderId: string, req: Request) {
       })
     )
       throw new AppError(409, "RELEASE_PENDING", "A release is already in progress.");
-    if (!deliveryRefundReady(order.delivery))
+    if (!resolved && !deliveryRefundReady(order.delivery))
       throw new AppError(
         409,
         "DELIVERY_ACTIVE",
@@ -876,6 +881,8 @@ export async function requestRefund(orderId: string, req: Request) {
       where: { orderId, mode: mode(), status: "SUCCEEDED" },
       orderBy: { createdAt: "asc" },
     });
+    if (resolved && (payments.filter(p => p.confirmedAt).reduce((sum, p) => sum + p.produceMinor, 0n) !== order.heldMinor || payments.some(p => !p.confirmedAt)))
+      throw new AppError(409, "REFUND_RECONCILIATION_REQUIRED", "Verify the original payments before resolving this order.");
     let shippingRemaining = shippingRefundMinor;
     const operations: MoneyOperation[] = [];
     for (const payment of payments) {
@@ -905,6 +912,7 @@ export async function requestRefund(orderId: string, req: Request) {
           shippingMinor: shipping.toString(),
           produceMinor: payment.produceMinor.toString(),
           reason: req.body.reason,
+          ...(resolutionId ? { adminResolutionId: resolutionId } : {}),
           destinationId: req.body.destinationId || null,
         },
       });
@@ -927,7 +935,8 @@ export async function requestRefund(orderId: string, req: Request) {
       tx,
     );
     return operations;
-  });
+  };
+  return client ? run(client) : prisma.$transaction(run);
 }
 
 /** Automatic receipt release uses the same authorization and idempotency checks as staff release. */

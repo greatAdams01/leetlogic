@@ -23,7 +23,7 @@ export function adminOrderFixture(): AdminOrderRecord {
     ], quotes: [{ id: "quote-1", courier: "Test Courier", amountMinor: "20000", available: true, expiresAt: at(600000), eta: "1–2 days" }],
   };
   return {
-    observedAt: at(0), staffContext: { revision: "a".repeat(64), buyerContact: { name: destination.name, phone: destination.phone, email: destination.email }, fulfillmentNotes: null,
+    observedAt: at(0), staffContext: { adminResolution: null, resolutionOptions: { bankRefundRequired: false, refundDestinations: [], release: true, refund: true, hold: true, none: false, refundableShippingMinor: "0", blockedReason: null }, revision: "a".repeat(64), buyerContact: { name: destination.name, phone: destination.phone, email: destination.email }, fulfillmentNotes: null,
       corrections: { orderInformation: true, deliveryNotes: true, destination: false, riderAssignment: false, destinationRequiresNewQuote: false, providerControlled: true },
       activity: { through: "1", nextCursor: null, hasMore: false, completeFrom: null, items: [{ id: "1", orderId, entityType: "order", entityId: orderId, kind: "INSERT", action: "order.created", actorType: "buyer", actorId: otherOrderId, actorName: "Bola Buyer", reason: null, before: null, after: { status: "AWAITING_PAYMENT", quantity: "10", totalMinor: "100000" }, occurredAt: at(-3600000), requestId: null }] },
       buyer: { name: "Bola Buyer", phone: destination.phone }, farmer: { name: "Ada Farmer", farmName: "Ada’s farm", phone: pickup.phone },

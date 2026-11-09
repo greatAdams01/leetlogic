@@ -49,23 +49,23 @@ function queueViews(now: Date, currentMode: string): Record<View, Prisma.Sql> {
   const incomplete = Prisma.sql`(d.status = 'DELIVERED' AND (d."providerShipmentId" LIKE 'split:%' OR (d."providerShipmentId" IS NOT NULL AND ${packageCount} > 1) OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id)) AND (
     d."selectedQuoteId" IS NULL OR ${packageCount} <= 1 OR (SELECT COUNT(*) FROM delivery_parcels p WHERE p."deliveryId" = d.id) <> ${packageCount}
     OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id AND (p.status <> 'DELIVERED' OR p."providerShipmentId" IS NULL OR p."quoteId" IS DISTINCT FROM d."selectedQuoteId" OR p."parcelIndex" < 0 OR p."parcelIndex" >= ${packageCount}))))`;
-  const attention = Prisma.sql`(o.financial_hold OR ${deliveryState} IN (${Prisma.join(deliveryProblemStates)})
+  const attention = Prisma.sql`(o.financial_hold OR (o.admin_resolution IS NULL AND (${deliveryState} IN (${Prisma.join(deliveryProblemStates)})
     OR d."failureCode" IS NOT NULL OR ${stale} OR ${delayed}
     OR (o.farmer_decision = 'REJECTED' AND o.status IN ('FUNDED', 'DELIVERED'))
     OR (d.status = 'BOOKING' AND d."leaseUntil" <= ${now})
-    OR EXISTS (SELECT 1 FROM support_tickets t WHERE t."orderId" = o.id AND t.kind = 'DISPUTE' AND t.status <> 'RESOLVED')
     OR EXISTS (SELECT 1 FROM delivery_parcels p WHERE p."deliveryId" = d.id AND (p."failureCode" IS NOT NULL OR p.status IN ('FAILED_ATTEMPT', 'RETURNING', 'RETURNED', 'CANCELLED', 'BOOKING_UNCERTAIN')))
-    OR ${incomplete}
+    OR ${incomplete}))
+    OR EXISTS (SELECT 1 FROM support_tickets t WHERE t."orderId" = o.id AND t.kind = 'DISPUTE' AND t.status <> 'RESOLVED')
     OR EXISTS (SELECT 1 FROM money_operations m WHERE m."orderId" = o.id AND m.mode = ${currentMode}
       AND m.kind IN ('RELEASE', 'REFUND', 'REFUND_TRANSFER', 'REFUND_PAYOUT') AND m.status IN ('FAILED', 'BLOCKED', 'UNKNOWN'))
     OR EXISTS (SELECT 1 FROM payment_attempts p WHERE p."orderId" = o.id AND p.mode = ${currentMode} AND p.status IN ('EXCEPTION', 'BLOCKED'))
-    OR EXISTS (SELECT 1 FROM fulfillment_deadlines fd WHERE fd."orderId" = o.id AND fd.mode = ${currentMode} AND fd.state <> 'SECURED' AND fd.state <> 'REFUNDED'
+    OR EXISTS (SELECT 1 FROM fulfillment_deadlines fd WHERE fd."orderId" = o.id AND fd.mode = ${currentMode} AND fd.state <> 'SECURED' AND fd.state <> 'REFUNDED' AND fd.state <> 'ADMIN_RESOLVED'
       AND (fd.state <> 'ACTIVE' OR fd."refundDueAt" <= ${now})))`;
   return {
     ALL: Prisma.sql`TRUE`, ATTENTION: attention, STALE: stale, DELAYED: delayed, FAILED: failed,
     PENDING: Prisma.sql`(${ongoing} AND ${deliveryState} IN (${Prisma.join(deliveryPendingStates)}))`,
     ACTIVE: Prisma.sql`(${ongoing} AND ${deliveryState} IN (${Prisma.join(deliveryActiveStates)}))`,
-    DELIVERED: Prisma.sql`(${deliveryState} = 'DELIVERED' AND NOT COALESCE(${incomplete}, FALSE))`,
+    DELIVERED: Prisma.sql`(${deliveryState} = 'DELIVERED' AND (o.admin_resolution IS NOT NULL OR NOT COALESCE(${incomplete}, FALSE)))`,
   };
 }
 
@@ -141,7 +141,7 @@ export async function readAdminOrderQueue(query: unknown, dispatch = false, now 
     if (order.farmerDecision === "REJECTED" && ["FUNDED", "DELIVERED"].includes(order.status)) issues.push({ code: "FARMER_REJECTED", title: "Farmer declined — refund review", body: "Follow the existing refund workflow before dispatch or settlement." });
     if (ops.some(o => o.mode === currentMode && ["FAILED", "BLOCKED", "UNKNOWN"].includes(o.status))) issues.push({ code: "SETTLEMENT_REVIEW", title: "Settlement needs attention", body: "Use payment reconciliation. Do not create a replacement transfer or refund." });
     if (paymentRows.some(p => ["EXCEPTION", "BLOCKED"].includes(p.status))) issues.push({ code: "PAYMENT_REVIEW", title: "Payment needs reconciliation", body: "Check the recorded payment before requesting another charge." });
-    if (deadline && !["SECURED", "REFUNDED"].includes(deadline.state) && (deadline.state !== "ACTIVE" || deadline.refundDueAt <= now)) issues.push({ code: "FULFILLMENT_DEADLINE", title: "Fulfillment deadline needs attention", body: "Follow the existing recovery or refund workflow; the deadline has not been extended." });
+    if (deadline && !["SECURED", "REFUNDED", "ADMIN_RESOLVED"].includes(deadline.state) && (deadline.state !== "ACTIVE" || deadline.refundDueAt <= now)) issues.push({ code: "FULFILLMENT_DEADLINE", title: "Fulfillment deadline needs attention", body: "Follow the existing recovery or refund workflow; the deadline has not been extended." });
     if (d?.status === "BOOKING" && d.leaseUntil && d.leaseUntil <= now) issues.push({ code: "BOOKING_CLAIM_EXPIRED", title: "Booking worker claim expired", body: "Check whether a label purchase was attempted before considering any retry." });
     const manualPayment = order.fundsProvider !== "bachs" && !!order.ledger.length;
     return [{

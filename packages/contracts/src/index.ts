@@ -105,3 +105,4 @@ export * from "./order-journey.js";
 
 export * from "./order-payment-progress.js";
 export * from "./admin-order-history.js";
+export * from "./order-resolution.js";

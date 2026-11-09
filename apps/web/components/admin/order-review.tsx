@@ -1,4 +1,5 @@
 "use client";
+import { OrderResolution, ResolutionSummary } from "./order-resolution";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { OrderActionWorkspace } from "./order-action-form";
@@ -20,6 +21,8 @@ import type { Contact } from "../../../mobile/src/lib/domain";
 
 export function OrderReview({ id, area, permissions, onChanged }: { id: string; area: OperationsArea; permissions: readonly string[]; onChanged?: () => void }) {
   const params = useSearchParams();
+  const [resolutionView, setResolutionView] = useState<string | null>(null);
+  const [resolutionLoaded, setResolutionLoaded] = useState<string | null>(null);
   const workflow = useOrderRecord(id, permissions, onChanged), data = workflow.record;
   const back = adminRecordReturnPath(params.get("returnTo"), `/admin/${area}`);
   // Keep cross-links one level deep instead of nesting return links on every visit.
@@ -36,13 +39,17 @@ export function OrderReview({ id, area, permissions, onChanged }: { id: string; 
     {data && <>
       <section className="live-card operations-record-summary">
         <div className="finance-section-heading"><div><h2>{data.order.reference}</h2><p>{data.order.title} · {data.order.quantity} {data.order.unitCode}</p></div>
-          <div className="operations-summary-actions"><OperationsBadge value={dispatch ? data.tracking?.status || data.order.status : data.order.status} label={dispatch ? data.tracking?.label || (data.progress.method === "Pickup" ? "Buyer collection" : "Not arranged") : orderStatusLabel(data.order.status)} />
+          <div className="operations-summary-actions">{workflow.available("resolve") && <button disabled={workflow.disabled} onClick={() => { setResolutionLoaded(id); setResolutionView(id); }}>Resolve Order</button>}<OperationsBadge value={dispatch ? data.tracking?.status || data.order.status : data.order.status} label={dispatch ? data.tracking?.label || (data.progress.method === "Pickup" ? "Buyer collection" : "Not arranged") : orderStatusLabel(data.order.status)} />
           {(dispatch || data.progress.method !== "Pickup") && <Link className="finance-review-link" href={operationsDetailLink(dispatch ? "orders" : "logistics", id, current)}>{dispatch ? "View related order" : "View delivery details"} →</Link>}</div>
         </div>
         <p className="finance-muted">{adminNextStep(data)}</p>
       </section>
+      <ResolutionSummary data={data} />
       <OrderReviewIssues data={data} permissions={permissions} />
+      {workflow.available("resolve") && resolutionLoaded === id && <div hidden={resolutionView !== id}><OrderResolution key={id} data={data} workflow={workflow} onClose={() => setResolutionView(null)} /></div>}
+      <div hidden={resolutionView === id && workflow.available("resolve")}>
       {dispatch ? <DeliveryRecord data={data} current={current} workflow={workflow} /> : <OrderRecord data={data} current={current} permissions={permissions} workflow={workflow} />}
+      </div>
       <p className="dispatch-observed">Updated {financeDate(data.observedAt)} (WAT). Details refresh every 30 seconds while this page is visible.</p>
     </>}
   </div>;
@@ -122,7 +129,7 @@ function OrderReviewIssues({ data, permissions }: { data: AdminOrderRecord; perm
   return <>
     {data.staffContext.financialHold && <aside className="finance-callout danger" role="status"><strong>Order under financial review</strong><p>Fulfillment and payment settlement are paused until the review is resolved.</p></aside>}
     {data.staffContext.disputes.map(dispute => <aside key={dispute.id} className="finance-callout danger"><strong>Open dispute: {dispute.subject}</strong><p>{financeLabel(dispute.status)}{permissions.includes("disputes.manage") && <> · <Link href={`/admin/disputes?id=${dispute.id}`}>Review dispute →</Link></>}</p></aside>)}
-    {data.fulfillment && !["SECURED", "REFUNDED"].includes(data.fulfillment.state) && <aside className={`finance-callout ${data.fulfillment.state !== "ACTIVE" || new Date(data.fulfillment.refundDueAt).getTime() <= Date.now() ? "danger" : ""}`}><strong>Fulfillment deadline</strong><p>{financeLabel(data.fulfillment.state)} · {financeDate(data.fulfillment.refundDueAt)} (WAT). The existing refund deadline has not changed.</p></aside>}
+    {data.fulfillment && !["SECURED", "REFUNDED", "ADMIN_RESOLVED"].includes(data.fulfillment.state) && <aside className={`finance-callout ${data.fulfillment.state !== "ACTIVE" || new Date(data.fulfillment.refundDueAt).getTime() <= Date.now() ? "danger" : ""}`}><strong>Fulfillment deadline</strong><p>{financeLabel(data.fulfillment.state)} · {financeDate(data.fulfillment.refundDueAt)} (WAT). The existing refund deadline has not changed.</p></aside>}
   </>;
 }
 

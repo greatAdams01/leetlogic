@@ -1,3 +1,4 @@
+import type { AdminOrderResolution, OrderResolutionOptions } from "../../../../packages/contracts/src/order-resolution";
 import type { DeliveryVisibility, DeliveryVisibilityEvent, DeliveryVisibilityParcel } from "../../../../packages/contracts/src/delivery-visibility";
 import type { OrderFulfillment } from "../../../../packages/contracts/src/order-fulfillment";
 import type { OrderPaymentProgress } from "../../../../packages/contracts/src/order-payment-progress";
@@ -32,6 +33,8 @@ export type QueueData = {
 export type AdminOrderRecord = {
   observedAt: string;
   staffContext: {
+    adminResolution: AdminOrderResolution | null;
+    resolutionOptions: OrderResolutionOptions;
     revision: string;
     buyerContact: { name: string; phone: string; email: string } | null;
     fulfillmentNotes: string | null;
@@ -79,6 +82,6 @@ export type AdminOrderRecord = {
   } | null;
 };
 
-export type AdminOrderCommand = "cancel-order" | "escrow" | "legacy-status" | "assign-shipment" |
+export type AdminOrderCommand = "resolve" | "cancel-order" | "escrow" | "legacy-status" | "assign-shipment" |
   "quotes" | "select" | "refresh-quote" | "book" | "manual-dispatch" | "manual-status" |
   "reconcile" | "link" | "link-parcel" | "delivery-payment" | "cancel-delivery" | "correct-order" | "correct-delivery";

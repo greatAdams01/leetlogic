@@ -10,6 +10,7 @@ export type OrderHistoryPage = {
 export type HistoryChange = { field: string; label: string; before: unknown; after: unknown };
 
 const labels: Record<string, string> = {
+  admin_resolution: "Administrative resolution", outcome: "Closure status", financialAction: "Payment instruction", resolvedAt: "Resolution date", adminId: "Administrator", previousOrderStatus: "Previous order status", previousDeliveryStatus: "Previous delivery status", previousFinancialHold: "Previous payment hold", previousHeldMinor: "Previously held funds", shippingRefundMinor: "Delivery fee refund",
   buyer_contact_snapshot: "Buyer contact", buyerContact: "Buyer contact", fulfillment_notes: "Fulfillment notes", fulfillmentNotes: "Fulfillment notes",
   operations_notes: "Delivery notes", operationsNotes: "Delivery notes", rider_assignment: "Manual rider", riderAssignment: "Manual rider",
   pickup: "Pickup", destination: "Drop-off", package: "Packing", courier: "Courier", rider: "Rider",
@@ -31,7 +32,7 @@ const labels: Record<string, string> = {
   providerId: "Provider operation reference", attemptedAt: "Request sent", completedAt: "Completed", quality: "Courier service quality", rating: "Rating", votes: "Ratings received", trackingLevel: "Tracking support",
 };
 const bookkeeping = new Set(["id", "orderId", "deliveryId", "buyerId", "farmerProfileId", "listingId", "actorId", "ownerId", "paymentId", "requestId", "transaction_id",
-  "transactionId", "updatedAt", "createdAt", "lastSyncedAt", "nextSyncAt", "leaseUntil", "lastCheckedAt", "nextCheckAt", "checkFailures", "quoteRequestId", "inputHash", "requestHash", "mutationKey", "dedupeKey"]);
+  "transactionId", "adminId", "updatedAt", "createdAt", "lastSyncedAt", "nextSyncAt", "leaseUntil", "lastCheckedAt", "nextCheckAt", "checkFailures", "quoteRequestId", "inputHash", "requestHash", "mutationKey", "dedupeKey"]);
 const label = (key: string) => labels[key] || key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").replace(/^./, letter => letter.toUpperCase());
 const canonical = (value: unknown): string => JSON.stringify(value ?? null, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);

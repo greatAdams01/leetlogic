@@ -1,4 +1,6 @@
 "use client";
+import { resolutionFinancialLabels } from "../../../../packages/contracts/src/order-resolution";
+import { deliveryStatusCopy } from "../../../../packages/contracts/src/delivery-visibility";
 import type { HistoryChange } from "../../../../packages/contracts/src/admin-order-history";
 import { formatMoney } from "../../../../packages/contracts/src/money";
 import { financeLabel } from "./finance-ui";
@@ -7,6 +9,9 @@ import { orderStatusLabel } from "./order-ui";
 export function historyValue(value: unknown, field = ""): string {
   if (value == null) return "Not recorded";
   if (value === "") return "None";
+  if (typeof value === "string" && /(^|\.)financialAction$/.test(field)) return resolutionFinancialLabels[value as keyof typeof resolutionFinancialLabels] || value;
+  if (typeof value === "string" && /(^|\.)(outcome|previousOrderStatus)$/.test(field)) return orderStatusLabel(value);
+  if (typeof value === "string" && /(^|\.)previousDeliveryStatus$/.test(field)) return deliveryStatusCopy(value).label;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (/Minor$/.test(field) && /^-?\d+$/.test(String(value))) return formatMoney(String(value));
   if (/parcelIndex$/.test(field) && typeof value === "number") return String(value + 1);
