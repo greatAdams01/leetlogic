@@ -115,9 +115,9 @@ export function OrderOperations({ dispatch = false, permissions }: { dispatch?: 
         <button className="secondary">Search</button>
         {hasFilters && <button type="button" className="secondary" onClick={() => filters({ search: null, status: null, farmer: null, view: null, page: null })}>Clear filters</button>}
       </form>
-      {dispatch && <details className="operations-more-filters"><summary>Filter by delivery status</summary><label>Delivery status<select value={status} onChange={event => filters({ status: event.target.value, page: "1" })}>
+      {dispatch && <div className="operations-more-filters"><label>Delivery status<select value={status} onChange={event => filters({ status: event.target.value, page: "1" })}>
         <option value="ALL">All statuses</option>{statuses.map(value => <option key={value} value={value}>{deliveryStatusCopy(value).label}</option>)}
-      </select></label></details>}
+      </select></label></div>}
       {error && <p className="live-error" role="alert">{error}{data ? ` Showing the last update from ${financeDate(data.observedAt)}.` : ""}</p>}
       {!data && busy && <p role="status">Loading {dispatch ? "deliveries" : "orders"}…</p>}
       {data && <>
@@ -155,7 +155,7 @@ export function OrderOperations({ dispatch = false, permissions }: { dispatch?: 
         </div>
       </>}
     </section>
-    <details className="operations-other-tools"><summary>Other tools</summary><Link href={`/admin/${base}?legacy=1`}>Older {dispatch ? "shipment" : "order"} records and exports</Link></details>
+    <div className="operations-other-tools"><Link href={`/admin/${base}?legacy=1`}>Older {dispatch ? "shipment" : "order"} records and exports</Link></div>
   </div>;
 }
 

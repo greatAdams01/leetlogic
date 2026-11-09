@@ -1,9 +1,26 @@
 "use client";
-import { useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode, type Dispatch, type SetStateAction } from "react";
+import { createPortal } from "react-dom";
 import { ChangeComparison } from "./order-history-ui";
 import { orderCommandChanges } from "./order-command-review";
 import type { AdminOrderCommand, AdminOrderRecord } from "./order-types";
 import type { OrderRecordWorkflow } from "./use-order-record";
+
+const ActionContext = createContext<{ active: string | null; choose: Dispatch<SetStateAction<string | null>>; target: HTMLDivElement | null } | null>(null);
+
+export function OrderActionWorkspace({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
+  const [active, choose] = useState<string | null>(null);
+  const [target, setTarget] = useState<HTMLDivElement | null>(null);
+  if (!enabled) return <section className="live-card"><h2>No actions available</h2><p className="finance-muted">You can review the record and Activity History. Changes require management permission and an eligible order or delivery.</p></section>;
+  return <ActionContext.Provider value={{ active, choose, target }}>
+    <div className="operations-action-workspace">
+      <div className="operations-action-menu" aria-label="Available actions">{children}</div>
+      <div className="live-card operations-action-editor" ref={setTarget}>
+        {!active && <div className="operations-action-empty"><h2>What needs to happen?</h2><p>Choose an action to work here. You’ll review the changes before saving.</p></div>}
+      </div>
+    </div>
+  </ActionContext.Provider>;
+}
 
 /** Confirm actions in the record, using the portal's existing form and security styles. */
 export function OrderActionForm({ label, description, command, workflow, children, payload, sensitive = false, reason = true, danger = false, inline = false, blocked = false, onDraftChange }: {
@@ -14,7 +31,19 @@ export function OrderActionForm({ label, description, command, workflow, childre
   const [code, setCode] = useState("");
   const [baseline, setBaseline] = useState(workflow.record!);
   const [review, setReview] = useState<Record<string, unknown> | null>(null), [error, setError] = useState("");
-  const details = useRef<HTMLDetailsElement>(null);
+  const actionId = useId();
+  const workspace = useContext(ActionContext);
+  const [opened, setOpened] = useState(false);
+  const selected = workspace ? workspace.active === actionId : opened;
+  const choose = workspace?.choose;
+  useEffect(() => () => { choose?.(previous => previous === actionId ? null : previous); }, [choose, actionId]);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (selected) {
+      heading.current?.focus({ preventScroll: true });
+      if (window.innerWidth < 800) heading.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selected]);
   const formRef = useRef<HTMLFormElement>(null), drafted = useRef(false);
   const draftData = useRef<FormData | null>(null);
   const mutation = useRef<{ fingerprint: string; key: string }>(null);
@@ -44,7 +73,7 @@ export function OrderActionForm({ label, description, command, workflow, childre
       const saved = await workflow.execute(command, review, code);
       setCode("");
       if (saved) {
-        if (details.current) details.current.open = false;
+        workspace?.choose(null); setOpened(false);
         formRef.current?.reset(); mutation.current = null; drafted.current = false; setReview(null); setError("");
       }
     }}>
@@ -70,11 +99,20 @@ export function OrderActionForm({ label, description, command, workflow, childre
         {review && <button type="button" className="secondary" disabled={workflow.disabled} onClick={() => { setReview(null); setCode(""); }}>Edit draft</button>}
       </div>
     </form>;
-  return inline ? <div className="operations-action-form">{form}</div> : <details className="operations-action-form" ref={details}>
-    <summary onClick={() => {
-      if (!details.current?.open && !drafted.current && workflow.record) {
-        setBaseline(workflow.record); formRef.current?.reset(); setReview(null); setError("");
-      }
-    }}>{label}</summary>{form}
-  </details>;
+  function open() {
+    if (!drafted.current && workflow.record) {
+      setBaseline(workflow.record); formRef.current?.reset(); setReview(null); setError("");
+    }
+    if (workspace) workspace.choose(actionId); else setOpened(!opened);
+  }
+  const editor = <div id={`${actionId}-editor`} hidden={!selected} className="operations-selected-action">
+    <h2 ref={heading} tabIndex={-1}>{label}</h2>{form}
+  </div>;
+  if (workspace) return <>
+    <button type="button" className={`operations-action-choice ${selected ? "selected" : ""}`} disabled={workflow.pending || blocked} aria-pressed={selected} aria-controls={`${actionId}-editor`} onClick={open}>{label}<span aria-hidden="true">→</span></button>
+    {workspace.target && createPortal(editor, workspace.target)}
+  </>;
+  return inline ? <div className="operations-action-form">{form}</div> : <div className="operations-action-form">
+    <button type="button" className="secondary" aria-expanded={opened} aria-controls={`${actionId}-editor`} onClick={open}>{label}</button>{editor}
+  </div>;
 }

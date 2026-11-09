@@ -12,8 +12,8 @@ export function OrderCorrections({ data, workflow }: { data: AdminOrderRecord; w
   if (!workflow.available("correct-order")) return null;
   const contact = data.staffContext.buyerContact || { ...data.staffContext.buyer, email: "" };
   return <section className="live-card" aria-label="Order corrections">
-    <h2>Correct order information</h2>
-    <p className="finance-muted">Correct this order’s contact snapshot or fulfillment notes, not the buyer’s account. Produce, quantities, prices, payment and receipt confirmation remain in their existing workflows.</p>
+    <h2>Order information</h2>
+
     <OrderActionForm label="Edit order information" description="Enter verified corrections, explain why, then compare the original and proposed values before saving." command="correct-order" workflow={workflow} payload={(form, baseline) => {
       const buyerContact = { name: text(form, "buyer.name"), phone: text(form, "buyer.phone"), email: text(form, "buyer.email") };
       const fulfillmentNotes = text(form, "fulfillmentNotes") || null;
@@ -34,9 +34,9 @@ export function DeliveryCorrections({ data, workflow }: { data: AdminOrderRecord
   const d = data.delivery, s = data.manualShipment, allowed = data.staffContext.corrections;
   if (!workflow.available("correct-delivery")) return null;
   return <section className="live-card" aria-label="Delivery corrections">
-    <h2>Correct delivery information</h2>
-    <p className="finance-muted">Every correction needs a reason and a before/after review. Local edits do not update the logistics provider.</p>
-    {allowed.providerControlled && <p className="finance-callout">The courier controls this booked route and rider. Confirm address or rider changes with the provider; use verified tracking, reconciliation or cancellation here. A local override is not supported.</p>}
+    <h2>Delivery information</h2>
+
+    {allowed.providerControlled && <p className="finance-callout">The courier manages this route and rider. Confirm changes with them; use tracking or cancellation here.</p>}
     {d && <OrderActionForm label="Edit delivery notes" description="Save internal operational notes. These do not change the booked route, dispatch status or any payment." command="correct-delivery" workflow={workflow} payload={form => ({ changes: { operationsNotes: text(form, "operationsNotes") || null } })}>
       <label>Delivery notes<textarea name="operationsNotes" defaultValue={d.operationsNotes || ""} maxLength={700} /></label>
     </OrderActionForm>}

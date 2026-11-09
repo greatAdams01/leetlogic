@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState, type ReactNode } from "react";
+import { OrderActionWorkspace } from "./order-action-form";
 import { useSearchParams } from "next/navigation";
 import { type DeliveryVisibilityEvent } from "../../../../packages/contracts/src/delivery-visibility";
 import { formatMoney } from "../../../../packages/contracts/src/money";
@@ -34,10 +36,10 @@ export function OrderReview({ id, area, permissions, onChanged }: { id: string; 
     {data && <>
       <section className="live-card operations-record-summary">
         <div className="finance-section-heading"><div><h2>{data.order.reference}</h2><p>{data.order.title} · {data.order.quantity} {data.order.unitCode}</p></div>
-          <OperationsBadge value={dispatch ? data.tracking?.status || data.order.status : data.order.status} label={dispatch ? data.tracking?.label || (data.progress.method === "Pickup" ? "Buyer collection" : "Not arranged") : orderStatusLabel(data.order.status)} />
+          <div className="operations-summary-actions"><OperationsBadge value={dispatch ? data.tracking?.status || data.order.status : data.order.status} label={dispatch ? data.tracking?.label || (data.progress.method === "Pickup" ? "Buyer collection" : "Not arranged") : orderStatusLabel(data.order.status)} />
+          {(dispatch || data.progress.method !== "Pickup") && <Link className="finance-review-link" href={operationsDetailLink(dispatch ? "orders" : "logistics", id, current)}>{dispatch ? "View related order" : "View delivery details"} →</Link>}</div>
         </div>
         <p className="finance-muted">{adminNextStep(data)}</p>
-        {(dispatch || data.progress.method !== "Pickup") && <div className="live-actions"><Link className="finance-review-link" href={operationsDetailLink(dispatch ? "orders" : "logistics", id, current)}>{dispatch ? "View related order" : "View delivery details"} →</Link></div>}
       </section>
       <OrderReviewIssues data={data} permissions={permissions} />
       {dispatch ? <DeliveryRecord data={data} current={current} workflow={workflow} /> : <OrderRecord data={data} current={current} permissions={permissions} workflow={workflow} />}
@@ -50,26 +52,17 @@ function OrderRecord({ data, current, permissions, workflow }: { data: AdminOrde
   const receiptSource = data.tracking?.receiptSource === "legacy-staff";
   const events = data.delivery?.events || [];
   return <>
-    <nav className="finance-tabs" aria-label="Order sections"><a href="#order-overview">Overview</a><a href="#order-payment">Payment</a><a href="#order-fulfillment">Fulfillment</a><a href="#order-activity">Activity</a></nav>
+    <RecordSections recordKey={data.order.id} area="order" sections={["Overview", "Manage order", "Payment", "Activity"]}>
+    <div className="operations-section-stack">
     <div className="operations-grid" id="order-overview">
       <section className="live-card"><h2>Order & produce</h2><OrderFacts items={[["Produce", data.order.title], ["Quantity", `${data.order.quantity} ${data.order.unitCode}`], ["Produce total", formatMoney(data.order.totalMinor)], ["Order placed", financeDate(data.staffContext.createdAt)]]} />
-        {data.order.description && <details><summary>Produce description</summary><p className="verification-prose">{data.order.description}</p></details>}
-        <CancelOrderAction workflow={workflow} />
+        {data.order.description && <p className="verification-prose">{data.order.description}</p>}
+
       </section>
-      <section className="live-card"><h2>Buyer & farmer</h2><OrderFacts items={[["Buyer account", data.staffContext.buyer.name], ["Buyer account phone", <Phone key="buyer" value={data.staffContext.buyer.phone} />], ["Farmer", data.staffContext.farmer.name], ["Farm", data.staffContext.farmer.farmName], ["Farmer phone", <Phone key="farmer" value={data.staffContext.farmer.phone} />]]} />
-        <h3>Order contact snapshot</h3><OrderFacts items={[["Order contact", data.staffContext.buyerContact?.name || "Not recorded"], ["Order contact phone", data.staffContext.buyerContact?.phone ? <Phone value={data.staffContext.buyerContact.phone} /> : "Not recorded"], ["Order contact email", data.staffContext.buyerContact?.email || "Not recorded"]]} />
+      <section className="live-card"><h2>Buyer & farmer</h2><OrderFacts items={[["Buyer", data.staffContext.buyer.name], ["Buyer phone", <Phone key="buyer" value={data.staffContext.buyer.phone} />], ["Farmer", data.staffContext.farmer.name], ["Farm", data.staffContext.farmer.farmName], ["Farmer phone", <Phone key="farmer" value={data.staffContext.farmer.phone} />]]} />
+        <h3>Order contact</h3><OrderFacts items={[["Order contact", data.staffContext.buyerContact?.name || "Not recorded"], ["Order contact phone", data.staffContext.buyerContact?.phone ? <Phone value={data.staffContext.buyerContact.phone} /> : "Not recorded"], ["Order contact email", data.staffContext.buyerContact?.email || "Not recorded"]]} />
       </section>
     </div>
-    <OrderCorrections data={data} workflow={workflow} />
-    <section className="live-card" id="order-payment" aria-label="Order payment">
-      <div className="finance-section-heading"><h2>Payment summary</h2>{permissions.includes("payments.read") && <Link className="finance-review-link" href={`/admin/reconciliation/orders/${data.order.id}?returnTo=${encodeURIComponent(current)}`}>Review payments →</Link>}</div>
-      <div className="operations-grid"><div><OrderFacts items={[["Produce", formatMoney(data.order.totalMinor)], ["Delivery fee", data.delivery?.selectedQuoteId || data.progress.method === "Pickup" ? formatMoney(data.delivery?.shippingMinor || "0") : "Not quoted"], ["Recorded order total", data.order.totalWithDeliveryMinor ? formatMoney(data.order.totalWithDeliveryMinor) : "Not available yet"]]} /></div>
-        <div><h3>{manualPaymentTitle(data)}</h3><p className="finance-muted">{data.staffContext.manualFundingRecorded ? "Manually recorded funds are not a verified payment-provider transaction." : data.money.progress.body}</p>
-          <OrderFacts items={[["Produce funds held", formatMoney(data.money.heldMinor)], ["Produce funds released", formatMoney(data.money.releasedMinor)], ["Refund recorded", formatMoney(data.money.refundedMinor)], ["Farmer payout", data.staffContext.manualFundingRecorded ? BigInt(data.money.releasedMinor) > 0n ? "Manual settlement recorded" : "Not recorded" : data.money.progress.transfer]]} />
-        </div>
-      </div>
-      <OrderPaymentActions data={data} workflow={workflow} />
-    </section>
     <section className="live-card" id="order-fulfillment"><div className="finance-section-heading"><h2>Fulfillment</h2><OperationsBadge value={data.order.farmerDecision} label={farmerDecisionLabel(data.order.farmerDecision)} /></div>
       <p className="finance-muted">{adminFulfillmentLabel(data)}</p>
       <h3>Fulfillment notes</h3><p className="verification-prose">{data.staffContext.fulfillmentNotes || "No fulfillment notes recorded."}</p>
@@ -80,35 +73,49 @@ function OrderRecord({ data, current, permissions, workflow }: { data: AdminOrde
       {data.progress.method === "Pickup" && <ContactRecord label="Collection location" contact={data.order.suggestedPickup} />}
       {data.tracking && <Link className="finance-review-link" href={operationsDetailLink("logistics", data.order.id, current)}>Open dispatch & tracking →</Link>}
     </section>
+    </div>
+    <OrderActionWorkspace enabled={workflow.available("correct-order")}><OrderCorrections data={data} workflow={workflow} /><CancelOrderAction workflow={workflow} /></OrderActionWorkspace>
+    <section className="live-card" id="order-payment" aria-label="Order payment">
+      <div className="finance-section-heading"><h2>Payment summary</h2>{permissions.includes("payments.read") && <Link className="finance-review-link" href={`/admin/reconciliation/orders/${data.order.id}?returnTo=${encodeURIComponent(current)}`}>Review payments →</Link>}</div>
+      <div className="operations-grid"><div><OrderFacts items={[["Produce", formatMoney(data.order.totalMinor)], ["Delivery fee", data.delivery?.selectedQuoteId || data.progress.method === "Pickup" ? formatMoney(data.delivery?.shippingMinor || "0") : "Not quoted"], ["Recorded order total", data.order.totalWithDeliveryMinor ? formatMoney(data.order.totalWithDeliveryMinor) : "Not available yet"]]} /></div>
+        <div><h3>{manualPaymentTitle(data)}</h3><p className="finance-muted">{data.staffContext.manualFundingRecorded ? "Manually recorded funds are not a verified payment-provider transaction." : data.money.progress.body}</p>
+          <OrderFacts items={[["Produce funds held", formatMoney(data.money.heldMinor)], ["Produce funds released", formatMoney(data.money.releasedMinor)], ["Refund recorded", formatMoney(data.money.refundedMinor)], ["Farmer payout", data.staffContext.manualFundingRecorded ? BigInt(data.money.releasedMinor) > 0n ? "Manual settlement recorded" : "Not recorded" : data.money.progress.transfer]]} />
+        </div>
+      </div>
+      {(workflow.available("escrow") || workflow.available("delivery-payment")) && <OrderActionWorkspace><OrderPaymentActions data={data} workflow={workflow} /></OrderActionWorkspace>}
+    </section>
     <OrderRecordHistory orderId={data.order.id} initial={data.staffContext.activity} sectionId="order-activity" />
+    </RecordSections>
   </>;
 }
 
 function DeliveryRecord({ data, current, workflow }: { data: AdminOrderRecord; current: string; workflow: OrderRecordWorkflow }) {
   const d = data.delivery;
-  return <>
+  return <RecordSections recordKey={data.order.id} area="delivery" sections={["Overview", "Manage delivery", "Route & packages", "Activity"]}>
+    <div className="operations-section-stack">
     {!data.tracking && <section className="live-card"><h2>{data.progress.method === "Pickup" ? "Buyer collection, not courier delivery" : "No courier delivery arranged"}</h2><p className="finance-muted">{data.progress.method === "Pickup" ? "Pickup readiness and receipt confirmation are managed in the order." : "Confirm the delivery arrangement before assigning a courier. Existing booking and payment checks still apply."}</p></section>}
-    <div className="operations-grid">
-      <section className="live-card"><h2>Pickup</h2><ContactRecord label="Pickup contact" contact={d?.pickup || data.order.suggestedPickup} /><OrderFacts items={[["Pickup date", d?.package?.pickupDate || "Not scheduled"], ["Farmer handoff", eventDate(d?.events || [], "FARMER_DISPATCHED")]]} /></section>
-      <section className="live-card"><h2>Drop-off</h2><ContactRecord label="Drop-off contact" contact={d?.destination || null} /></section>
-    </div>
-    {d && <section className="live-card"><h2>Delivery notes</h2><p className="verification-prose">{d.operationsNotes || "No delivery notes recorded."}</p></section>}
+    {d?.operationsNotes && <section className="live-card"><h2>Delivery notes</h2><p className="verification-prose">{d.operationsNotes}</p></section>}
     {data.manualShipment && <section className="live-card"><h2>Manual rider assignment</h2>
       {data.manualShipment.riderAssignment ? <OrderFacts items={[["Rider", data.manualShipment.riderAssignment.name], ["Rider phone", <Phone value={data.manualShipment.riderAssignment.phone} />], ["Assignment reference", data.manualShipment.riderAssignment.reference]]} /> : <p className="finance-muted">No confirmed manual rider recorded.</p>}
       <p className="finance-muted">Confirmed with the manual courier; not a provider-side booking update.</p>
     </section>}
-    {data.tracking && <DeliveryTracking tracking={data.tracking} staff showGuidance={false} openTimeline />}
-    <DeliverySetup data={data} workflow={workflow} />
+    {d?.cancelRequestedAt && <p className="finance-callout danger" role="status">Cancellation requested {financeDate(d.cancelRequestedAt)}. Wait for courier confirmation; no refund is implied. Do not repeat the request.</p>}
+    {data.tracking && <DeliveryTracking tracking={data.tracking} staff showGuidance={false} hideTimeline />}
+    {data.legacyShipment && <section className="live-card"><h2>Earlier manual shipment</h2><OrderFacts items={[["Courier", data.legacyShipment.carrier], ["Tracking reference", data.legacyShipment.trackingRef], ["Last updated", financeDate(data.legacyShipment.updatedAt)]]} /><p className="verification-prose">{data.legacyShipment.evidence || "No shipment evidence recorded."}</p><p className="finance-muted">This earlier workflow records staff confirmation, not a new buyer receipt acknowledgment.</p></section>}
+    </div>
+    <OrderActionWorkspace enabled={(["correct-delivery", "book", "refresh-quote", "manual-dispatch", "manual-status", "reconcile", "link", "link-parcel", "cancel-delivery", "assign-shipment", "legacy-status", "quotes", "select"] as const).some(command => workflow.available(command))}><DeliveryActions data={data} workflow={workflow} /><DeliverySetup data={data} workflow={workflow} /><DeliveryCorrections data={data} workflow={workflow} /></OrderActionWorkspace>
+    <div className="operations-section-stack">
+    <div className="operations-grid">
+      <section className="live-card"><h2>Pickup</h2><ContactRecord label="Pickup contact" contact={d?.pickup || data.order.suggestedPickup} /><OrderFacts items={[["Pickup date", d?.package?.pickupDate || "Not scheduled"], ["Farmer handoff", eventDate(d?.events || [], "FARMER_DISPATCHED")]]} /></section>
+      <section className="live-card"><h2>Drop-off</h2><ContactRecord label="Drop-off contact" contact={d?.destination || null} /></section>
+    </div>
     {d && <section className="live-card"><h2>Packages & delivery fee</h2><OrderFacts items={[["Packages", data.tracking?.packageCount || data.order.packageSuggestion?.packageCount || 1], ["Delivery fee", d.selectedQuoteId ? formatMoney(d.shippingMinor) : "Not quoted"], ["Delivery payment recorded", formatMoney(d.paidMinor)]]} />
       <Link className="finance-detail-link" href={`${operationsDetailLink("orders", data.order.id, current)}#order-payment`}>View order payments →</Link>
-      {d.package && <details><summary>Packing & pickup instructions</summary><OrderFacts items={[["Weight per package", d.package.weightKg ? `${d.package.weightKg} kg` : "Not recorded"], ["Dimensions", d.package.length && d.package.width && d.package.height ? `${d.package.length} × ${d.package.width} × ${d.package.height} cm` : "Not recorded"], ["Handling", financeLabel(d.package.handling) || "Not recorded"]]} /><p className="verification-prose">{[d.package.notes, d.package.pickupInstructions].filter(Boolean).join(" · ") || "No additional packing instructions."}</p></details>}
-      {d.cancelRequestedAt && <p className="finance-callout danger" role="status">Cancellation requested {financeDate(d.cancelRequestedAt)}. Wait for courier confirmation; no refund is implied. Do not repeat the request.</p>}
+      {d.package && <div className="operations-packing"><h3>Packing & pickup instructions</h3><OrderFacts items={[["Weight per package", d.package.weightKg ? `${d.package.weightKg} kg` : "Not recorded"], ["Dimensions", d.package.length && d.package.width && d.package.height ? `${d.package.length} × ${d.package.width} × ${d.package.height} cm` : "Not recorded"], ["Handling", financeLabel(d.package.handling) || "Not recorded"]]} /><p className="verification-prose">{[d.package.notes, d.package.pickupInstructions].filter(Boolean).join(" · ") || "No additional packing instructions."}</p></div>}
     </section>}
-    {data.legacyShipment && <section className="live-card"><h2>Earlier manual shipment</h2><OrderFacts items={[["Courier", data.legacyShipment.carrier], ["Tracking reference", data.legacyShipment.trackingRef], ["Last updated", financeDate(data.legacyShipment.updatedAt)]]} /><p className="verification-prose">{data.legacyShipment.evidence || "No shipment evidence recorded."}</p><p className="finance-muted">This earlier workflow records staff confirmation, not a new buyer receipt acknowledgment.</p></section>}
-    <DeliveryCorrections data={data} workflow={workflow} />
-    <DeliveryActions data={data} workflow={workflow} />
+    </div>
     <OrderRecordHistory orderId={data.order.id} initial={data.staffContext.activity} sectionId="delivery-activity" />
-  </>;
+  </RecordSections>;
 }
 
 function OrderReviewIssues({ data, permissions }: { data: AdminOrderRecord; permissions: readonly string[] }) {
@@ -134,4 +141,32 @@ function manualPaymentTitle(data: AdminOrderRecord) {
 function eventDate(events: DeliveryVisibilityEvent[], status: string) {
   const event = events.find(event => event.status === status);
   return event ? financeDate(new Date(event.createdAt).toISOString()) : "Not recorded yet";
+}
+
+function RecordSections({ recordKey, area, sections, children }: { recordKey: string; area: string; sections: string[]; children: ReactNode[] }) {
+  const [selection, setSelection] = useState({ recordKey, index: 0 });
+  const selected = selection.recordKey === recordKey ? selection.index : 0;
+  useEffect(() => {
+    const fromHash = () => {
+      const hash = window.location.hash;
+      const index = hash.includes("payment") ? sections.indexOf("Payment") : hash.includes("activity") ? sections.indexOf("Activity") : hash.includes("manage") ? 1 : hash.includes("route") ? sections.indexOf("Route & packages") : 0;
+      setSelection({ recordKey, index: Math.max(0, index) });
+    };
+    fromHash(); window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, [recordKey, area]);
+  function select(index: number) {
+    setSelection({ recordKey, index });
+    const slug = sections[index] === "Payment" ? "payment" : sections[index] === "Activity" ? "activity" : index === 1 ? "manage" : sections[index] === "Route & packages" ? "route" : "overview";
+    window.history.replaceState(window.history.state, "", `#${area}-${slug}`);
+  }
+  return <div className="operations-sections">
+    <div className="finance-tabs operations-section-tabs" role="tablist" aria-label={`${area === "order" ? "Order" : "Delivery"} sections`}>
+      {sections.map((name, index) => <button key={name} id={`${area}-tab-${index}`} role="tab" aria-selected={selected === index} aria-controls={`${area}-panel-${index}`} tabIndex={selected === index ? 0 : -1} onClick={() => select(index)} onKeyDown={event => {
+        const next = event.key === "ArrowRight" ? (index + 1) % sections.length : event.key === "ArrowLeft" ? (index + sections.length - 1) % sections.length : event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : null;
+        if (next !== null) { event.preventDefault(); select(next); document.getElementById(`${area}-tab-${next}`)?.focus(); }
+      }}>{name}</button>)}
+    </div>
+    {children.map((child, index) => <div key={`${recordKey}:${index}`} id={`${area}-panel-${index}`} role="tabpanel" aria-labelledby={`${area}-tab-${index}`} hidden={selected !== index} tabIndex={0}>{child}</div>)}
+  </div>;
 }

@@ -15,8 +15,10 @@ import { adminOrderFixture, orderId, otherOrderId, parcelId, staffPermissions } 
 const posts = () => h.request.mock.calls.filter(([, body]) => body !== undefined);
 const reads = () => h.request.mock.calls.filter(([, body]) => body === undefined);
 const openForm = (label: string) => {
-  const summary = screen.getByText(label, { selector: "summary" });
-  fireEvent.click(summary);
+  const action = screen.getByRole("button", { name: label, hidden: true });
+  const panel = action.closest('[role="tabpanel"]');
+  if (panel) fireEvent.click(document.getElementById(panel.getAttribute("aria-labelledby")!)!);
+  fireEvent.click(action);
   return screen.getByRole("form", { name: label });
 };
 const enter = (form: HTMLElement, name: string, value: string) => fireEvent.change(form.querySelector(`[name="${name}"]`)!, { target: { value } });
@@ -24,6 +26,7 @@ const submit = async (form: HTMLElement) => { await act(async () => { fireEvent.
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   h.params = new URLSearchParams(); h.record = adminOrderFixture(); h.request.mockReset();
   h.request.mockImplementation(async (_path: string, body?: unknown) => body === undefined ? structuredClone(h.record) : {});
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -35,7 +38,7 @@ describe("dedicated order and delivery details", () => {
     h.params = new URLSearchParams({ returnTo: "/admin/orders?search=tomatoes&page=2" });
     const view = render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    for (const heading of ["Order & produce", "Buyer & farmer", "Payment summary", "Fulfillment", "Activity History"])
+    for (const heading of ["Order & produce", "Buyer & farmer", "Fulfillment"])
       expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
     expect(screen.getByRole("link", { name: "← Back to Orders" }).getAttribute("href")).toBe("/admin/orders?search=tomatoes&page=2");
     expect(screen.getAllByText("Bola Buyer").length).toBeGreaterThan(0);
@@ -48,6 +51,9 @@ describe("dedicated order and delivery details", () => {
     const related = new URL(screen.getByRole("link", { name: "View delivery details →" }).getAttribute("href")!, "https://admin.invalid");
     expect(related.pathname).toBe(`/admin/logistics/${orderId}`);
     expect(related.searchParams.get("returnTo")).toContain(`/admin/orders/${orderId}`);
+    expect(screen.queryByRole("heading", { name: "Payment summary" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Payment" }));
+    expect(screen.getByRole("heading", { name: "Payment summary" })).toBeTruthy();
     const payment = new URL(screen.getByRole("link", { name: "Review payments →" }).getAttribute("href")!, "https://admin.invalid");
     expect(payment.pathname).toBe(`/admin/reconciliation/orders/${orderId}`);
     expect(payment.searchParams.get("returnTo")).toContain(`/admin/orders/${orderId}`);
@@ -55,12 +61,15 @@ describe("dedicated order and delivery details", () => {
   it("focuses delivery details on route contacts, rider, progress and dispatch actions", async () => {
     render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
+    expect(screen.getByText(/Rider Chidi/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Route & packages" }));
     expect(screen.getByRole("heading", { name: "Pickup" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Drop-off" })).toBeTruthy();
     expect(screen.getByText("12 Farm Road, Benue")).toBeTruthy();
     expect(screen.getByText("24 Market Road, Lagos")).toBeTruthy();
     expect(screen.getByText(/Rider Chidi/)).toBeTruthy();
-    expect(screen.getByText("Refresh courier tracking", { selector: "summary" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Refresh courier tracking" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Manage delivery" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View related order →" }).getAttribute("href")).toContain(`/admin/orders/${orderId}`);
     expect(screen.getByRole("link", { name: "View order payments →" }).getAttribute("href")).toContain("#order-payment");
     expect(screen.queryByRole("heading", { name: "Payment summary" })).toBeNull();
@@ -137,7 +146,7 @@ describe("authorized record actions", () => {
     expect(posts()).toEqual([]); await submit(form);
     expect(h.request).toHaveBeenCalledWith(`orders/${orderId}/cancel`, { reason: "Buyer requested cancellation", expectedRevision: "a".repeat(64), mutationKey: expect.any(String) });
     await screen.findByText("Cancelled");
-    expect(screen.queryByText("Cancel unpaid order", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("Cancel unpaid order", { selector: "button" })).toBeNull();
     expect(reads()).toHaveLength(2);
   });
   it("keeps the same escrow request identifier when retrying a failed response", async () => {
@@ -169,15 +178,16 @@ describe("authorized record actions", () => {
     h.record.delivery.status = "PAYMENT_PENDING"; h.record.delivery.paidMinor = "0";
     render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    expect(screen.queryByText("Manage manually recorded funds", { selector: "summary" })).toBeNull();
-    expect(screen.queryByText("Record delivery payment", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("Manage manually recorded funds", { selector: "button" })).toBeNull();
+    expect(screen.queryByText("Record delivery payment", { selector: "button" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Payment" }));
     expect(screen.getByRole("link", { name: "Review payments →" })).toBeTruthy();
   });
   it("keeps read-only staff out of mutation controls and payment workspaces", async () => {
     render(<OrderReview id={orderId} area="logistics" permissions={["orders.read"]} />);
     await screen.findByText("LL-1042");
     expect(screen.queryByRole("heading", { name: "Dispatch actions" })).toBeNull();
-    expect(screen.queryByText("Refresh courier tracking", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("Refresh courier tracking", { selector: "button" })).toBeNull();
     expect(posts()).toEqual([]);
     cleanup();
     render(<OrderReview id={orderId} area="orders" permissions={["orders.read"]} />);
@@ -190,8 +200,8 @@ describe("authorized record actions", () => {
     h.record.tracking = deliveryVisibility(h.record.delivery);
     render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    expect(screen.queryByText("Link package 2 booking", { selector: "summary" })).toBeNull();
-    expect(screen.queryByText("Arrange courier pickup", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("Link package 2 booking", { selector: "button" })).toBeNull();
+    expect(screen.queryByText("Arrange courier pickup", { selector: "button" })).toBeNull();
     const form = openForm("Link package 1 booking");
     enter(form, "providerShipmentId", "SB-found"); enter(form, "reason", "Matched the courier route and price");
     await submit(form); expect(posts()).toEqual([]); enter(form, "code", "123456");
@@ -213,7 +223,7 @@ describe("authorized record actions", () => {
     render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
     expect(screen.getByText(/Wait for courier confirmation; no refund is implied/)).toBeTruthy();
-    expect(screen.queryByText("Request delivery cancellation", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("Request delivery cancellation", { selector: "button" })).toBeNull();
   });
   it("does not request details without order-read permission", async () => {
     render(<OrderReview id={orderId} area="orders" permissions={["payments.manage"]} />);
@@ -224,6 +234,44 @@ describe("authorized record actions", () => {
 });
 
 describe("freshness and action safety", () => {
+  it("uses keyboard-accessible tabs and keeps only the selected section visible", async () => {
+    render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
+    await screen.findByText("LL-1042");
+    const overview = screen.getByRole("tab", { name: "Overview" });
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    fireEvent.keyDown(overview, { key: "End" });
+    expect(screen.getByRole("heading", { name: "Activity History" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Order & produce" })).toBeNull();
+    expect(window.location.hash).toBe("#order-activity");
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Activity" }), { key: "Home" });
+    expect(screen.getByRole("heading", { name: "Order & produce" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Activity History" })).toBeNull();
+  });
+  it("retains an action draft when operators switch tabs or choose another action", async () => {
+    h.record.order.status = "AWAITING_PAYMENT";
+    render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
+    await screen.findByText("LL-1042");
+    const form = openForm("Edit order information");
+    enter(form, "fulfillmentNotes", "Retain this operator draft");
+    enter(form, "reason", "Buyer confirmed these delivery instructions");
+    openForm("Cancel unpaid order");
+    expect(screen.getAllByRole("form")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(screen.queryByRole("form")).toBeNull();
+    openForm("Edit order information");
+    expect((form.querySelector('[name="fulfillmentNotes"]') as HTMLTextAreaElement).value).toBe("Retain this operator draft");
+    expect((form.querySelector('[name="reason"]') as HTMLTextAreaElement).value).toBe("Buyer confirmed these delivery instructions");
+    expect(posts()).toEqual([]);
+  });
+  it("opens existing payment deep links in the Payment tab", async () => {
+    window.history.replaceState(null, "", "#order-payment");
+    render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
+    await screen.findByText("LL-1042");
+    expect(screen.getByRole("tab", { name: "Payment" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("heading", { name: "Payment summary" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Fulfillment" })).toBeNull();
+  });
+
   it("reviews order corrections and retains the draft for comparison after a concurrent edit", async () => {
     h.record.staffContext.fulfillmentNotes = "Original instructions";
     render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />);
@@ -308,11 +356,10 @@ describe("freshness and action safety", () => {
     h.record.delivery.bookingStartedAt = null; h.record.delivery.paidMinor = "0"; h.record.delivery.selectedQuoteId = null;
     render(<OrderReview id={orderId} area="logistics" permissions={staffPermissions} />);
     await screen.findByText("LL-1042");
-    const form = screen.getByRole("form", { name: "Get delivery quotes" });
+    const form = openForm("Get delivery quotes");
     enter(form, "destination.address", "Updated buyer address");
     await screen.findByText(/You have unsaved delivery details/);
-    const selection = openForm("Select Test Courier");
-    expect((within(selection).getByRole("button", { name: "Review changes" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Select Test Courier" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Refresh details" }));
     await waitFor(() => expect(reads()).toHaveLength(2));
     expect((form.querySelector('[name="destination.address"]') as HTMLInputElement).value).toBe("Updated buyer address");

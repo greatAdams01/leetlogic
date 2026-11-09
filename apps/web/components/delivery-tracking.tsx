@@ -4,11 +4,12 @@ import { deliveryEventSource, deliveryStatusCopy } from "../../../packages/contr
 import { useLanguage } from "./language-provider";
 import { ui } from "../../mobile/src/lib/localization";
 
-export function DeliveryTracking({ tracking, staff = false, showGuidance = true, openTimeline = false }: {
+export function DeliveryTracking({ tracking, staff = false, showGuidance = true, openTimeline = false, hideTimeline = false }: {
   tracking: DeliveryVisibility | null | undefined;
   staff?: boolean;
   showGuidance?: boolean;
   openTimeline?: boolean;
+  hideTimeline?: boolean;
 }) {
   const language = useLanguage(), locale = staff ? "en" : language.locale;
   const say = (source: string, params: Record<string, string | number> = {}) => ui(locale, source, params);
@@ -50,13 +51,13 @@ export function DeliveryTracking({ tracking, staff = false, showGuidance = true,
               ? [assignment.rider.name, assignment.rider.phone].filter(Boolean).join(" · ")
               : say(tracking.provider === "Shipbubble" ? "Rider details not supplied by the provider." : "Rider details not recorded.")}</p>
             {assignment.reportedAt && <small>{say("Contact details last reported")}: {date(assignment.reportedAt)}</small>}
-            {staff && assignment.providerShipmentId && <p className="delivery-reference">{assignment.providerShipmentId}</p>}
+            {staff && !hideTimeline && assignment.providerShipmentId && <p className="delivery-reference">{assignment.providerShipmentId}</p>}
             {assignment.trackingRef && <p className="delivery-reference">{say("Tracking reference")}: {assignment.trackingRef}</p>}
             {assignment.trackingUrl && <a href={assignment.trackingUrl} target="_blank" rel="noopener noreferrer">{say("Open provider tracking")}</a>}
           </article>
         ))}
       </div>
-      <details open={openTimeline || undefined}>
+      {!hideTimeline && <details open={openTimeline || undefined}>
         <summary>{say("Delivery timeline")}</summary>
         {tracking.timeline.length ? <ol className="delivery-timeline">
           {tracking.timeline.map(event => (
@@ -71,7 +72,7 @@ export function DeliveryTracking({ tracking, staff = false, showGuidance = true,
             </li>
           ))}
         </ol> : <p>{say("No delivery updates yet.")}</p>}
-      </details>
+      </details>}
     </section>
   );
 }
