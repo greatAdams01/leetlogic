@@ -194,7 +194,7 @@ export function SellerHome() {
             </Label>
             <View style={styles.earningsBreakdown}>
               <View style={styles.earningsColumn}>
-                <Label style={styles.caption}>Awaiting release</Label>
+                <Label style={styles.caption}>Produce held before commission</Label>
                 <Label numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryBalance}>
                   {financial.data ? money(financial.data.heldMinor) : "—"}
                 </Label>

@@ -1,8 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "@leetlogic/database";
+import { marketplaceCommission } from "../services/sale-earnings.js";
 export const contentRouter = Router();
 const locale = z.enum(["en", "pcm", "ig", "ha", "yo"]).default("en");
+contentRouter.get("/seller-commission", async (_req, res) => {
+  res.set("Cache-Control", "no-store").json({ basisPoints: await marketplaceCommission() });
+});
 contentRouter.get("/faq", async (req, res) => {
   const query = z
     .object({ locale, audience: z.enum(["BUYERS", "FARMERS", "ALL"]).default("ALL") })

@@ -11,6 +11,7 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AppError } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
 import { serialize } from "../services/delivery.js";
+import { marketplaceCommission } from "../services/sale-earnings.js";
 export const listingDraftRouter = Router();
 listingDraftRouter.use(requireAuth("customer"), requireRole("SELLER"));
 export const draftSchema = z.object({
@@ -49,7 +50,7 @@ listingDraftRouter.get("/capabilities", (_req, res) =>
   }),
 );
 listingDraftRouter.get("/catalogue", async (req, res) => {
-  const [categories, units, addresses, farmer] = await Promise.all([
+  const [categories, units, addresses, farmer, commissionBasisPoints] = await Promise.all([
     prisma.category.findMany({
       include: { translations: true },
       orderBy: [{ sortOrder: "asc" }, { slug: "asc" }],
@@ -57,6 +58,7 @@ listingDraftRouter.get("/catalogue", async (req, res) => {
     prisma.unit.findMany(),
     prisma.address.findMany({ where: { userId: req.auth!.sub, deletedAt: null } }),
     prisma.farmerProfile.findUnique({ where: { userId: req.auth!.sub } }),
+    marketplaceCommission(),
   ]);
   const legacy: Record<string, string> = {
     tomatoes: "vegetables",
@@ -77,6 +79,7 @@ listingDraftRouter.get("/catalogue", async (req, res) => {
       categories: categories.filter((item) => item.isActive),
       categoryAliases,
       units,
+      commissionBasisPoints,
       addresses,
       primaryAddressId: farmer?.primaryAddressId,
       verificationStatus: farmer?.verificationStatus,

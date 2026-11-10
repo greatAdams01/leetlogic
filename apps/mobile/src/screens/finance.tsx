@@ -1,5 +1,6 @@
 import { MoneyField } from "../components/money-field";
 import { AppSheet } from "../components/app-sheet";
+import { SaleHistory } from "../components/sale-earnings";
 import React, { useState, useRef, useEffect } from "react";
 import { Linking, AppState, ScrollView, AccessibilityInfo } from "react-native";
 import * as Crypto from "expo-crypto";
@@ -77,6 +78,10 @@ export function Finance() {
     else setSetupNotice("Your payment setup is being prepared. Check its status shortly.");
   };
   const data = r.data;
+  const paymentActivity = data?.operations.filter((op) =>
+    ["RELEASE", "PAYOUT", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"].includes(op.kind) &&
+    !(op.kind === "RELEASE" && op.status === "SUCCEEDED"),
+  ) ?? [];
   const selectedBank = data?.destinations.find((bank) => bank.id === destination);
   const withdrawal = withdrawalAmounts(
     data?.earnings.availableMinor || "0",
@@ -136,7 +141,7 @@ export function Finance() {
             <Heading>Your earnings</Heading>
             <Label>Available to withdraw</Label>
             <Heading>{money(data.earnings.availableMinor)}</Heading>
-            <Label>{a.ui("Awaiting release: {amount}", { amount: money(data.heldMinor) })}</Label>
+            <Label>{a.ui("Produce held before commission")}: {money(data.heldMinor)}</Label>
             <Label>
               {a.ui("Withdrawals in progress: {amount}", {
                 amount: money(data.earnings.reservedMinor),
@@ -386,32 +391,25 @@ export function Finance() {
               </AppSheet>
             )}
           {setupNotice && data.account?.ready && <Notice text={setupNotice} success />}
-          <Card>
-            <Heading>Payment history</Heading>
-            {data.operations.filter((op) =>
-              ["RELEASE", "PAYOUT", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"].includes(op.kind),
-            ).length === 0 && (
-              <Label>No payments yet. Your sales earnings and withdrawals will appear here.</Label>
-            )}
-            {data.operations
-              .filter((op) =>
-                ["RELEASE", "PAYOUT", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"].includes(
-                  op.kind,
-                ),
-              )
-              .map((op) => (
-                <React.Fragment key={op.id}>
-                  <Label>
-                    {a.status(op.kind)} · {money(op.amountMinor)}
-                  </Label>
-                  <Label muted>
-                    {a.status(op.status)}
-                    {op.createdAt ? ` · ${a.date(op.createdAt)}` : ""}
-                  </Label>
-                </React.Fragment>
-              ))}
-          </Card>
         </>
+      )}
+      {data && <SaleHistory />}
+      {data?.enabled && (
+        <Card>
+          <Heading>Payment history</Heading>
+          {paymentActivity.length === 0 && <Label>No activity yet.</Label>}
+          {paymentActivity.map((op) => (
+            <React.Fragment key={op.id}>
+              <Label>
+                {a.status(op.kind)} · {money(op.amountMinor)}
+              </Label>
+              <Label muted>
+                {a.status(op.status)}
+                {op.createdAt ? ` · ${a.date(op.createdAt)}` : ""}
+              </Label>
+            </React.Fragment>
+          ))}
+        </Card>
       )}
     </Page>
   );

@@ -2,7 +2,7 @@
 export function formatMoney(value: string | number | bigint | null | undefined = "0"): string {
   const amount = BigInt(value ?? "0");
   const absolute = amount < 0n ? -amount : amount;
-  return `${amount < 0n ? "-" : ""}₦${(absolute / 100n).toLocaleString("en-NG")}.${String(absolute % 100n).padStart(2, "0")}`;
+  return `${amount < 0n ? "-" : ""}₦${groupAmount(String(absolute / 100n))}.${String(absolute % 100n).padStart(2, "0")}`;
 }
 
 export function groupAmount(value: string): string {

@@ -1,4 +1,5 @@
 import { orderPaymentView } from "../services/order-payment-view.js";
+import { farmerSaleHistory } from "../services/sale-earnings.js";
 import { installFinanceReadRoutes } from "./finance-read.js";
 import { installRecoveryRoutes } from "./payment-recovery.js";
 import { readFulfillment } from "../services/fulfillment-deadline.js";
@@ -213,6 +214,10 @@ financialRouter.get("/payments/:id", async (req, res) => {
   res.json(
     serialize(await safeOrderPayment(await ownedOrder(payment.orderId, req.auth!.sub), payment, true)),
   );
+});
+financialRouter.get("/sales", async (req, res) => {
+  const { cursor } = z.object({ cursor: uuid.optional() }).parse(req.query);
+  res.set("Cache-Control", "private, no-store").json(await farmerSaleHistory(req.auth!.sub, cursor));
 });
 financialRouter.get("/", async (req, res) => {
   const userId = req.auth!.sub;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ resource: string }> }) {
   const { resource } = await params;
-  if (!["faq", "translations", "status"].includes(resource))
+  if (!["faq", "translations", "status", "seller-commission"].includes(resource))
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   try {
     const response = await fetch(

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 import { SalePackagingFields } from "./sale-packaging-fields";
+import { ListingCommission } from "./sale-earnings";
+import { toMinor } from "../../mobile/src/lib/domain";
 import { formatMoney } from "../../../packages/contracts/src/money";
 import {
   salePackagingSchema,
@@ -37,6 +39,8 @@ export function ProduceListing() {
   const [assistance, setAssistance] = useState(false);
   const [packingRevision, setPackingRevision] = useState(0);
   const category = catalogue?.categories.find((item: any) => item.id === categoryId);
+  const rate = catalogue?.commissionBasisPoints as number | undefined;
+  const priceMinor = /^\d{1,10}(\.\d{1,2})?$/.test(price) && Number(price) > 0 ? toMinor(price) : undefined;
   const resetPackaging = () => {
     setSalePackaging(undefined);
     setUnitCode("");
@@ -174,6 +178,7 @@ export function ProduceListing() {
     return packing;
   }
   async function submit() {
+    if (rate === undefined) return;
     setBusy(true);
     try {
       await customerApi(`listing-drafts/${draft.id}/submit`, { confirmed });
@@ -295,6 +300,7 @@ export function ProduceListing() {
                   setPackingRevision((revision) => revision + 1);
                 }}
               />
+              <ListingCommission basisPoints={rate} unitPriceMinor={priceMinor} />
               <h2>{say("Delivery measurements")}</h2>
               <p>
                 {say(
@@ -410,6 +416,7 @@ export function ProduceListing() {
                   </div>
                 ))}
               </dl>
+              <ListingCommission basisPoints={rate} unitPriceMinor={draft.fields.unitPriceMinor} />
               {draft.fields.packaging && (
                 <p>
                   {draft.fields.packaging.unitsPerPackage} · {draft.fields.packaging.weightKg} kg ·{" "}
@@ -433,7 +440,7 @@ export function ProduceListing() {
                 {t("sell.confirm")}
               </label>
               <button
-                disabled={!confirmed || busy || catalogue.verificationStatus !== "APPROVED"}
+                disabled={!confirmed || busy || catalogue.verificationStatus !== "APPROVED" || rate === undefined}
                 onClick={submit}
               >
                 {t("sell.submit")}

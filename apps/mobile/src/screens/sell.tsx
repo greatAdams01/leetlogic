@@ -1,5 +1,6 @@
 import { ListingShipping } from "../components/listing-shipping";
 import { SalePackagingForm } from "../components/sale-packaging";
+import { ListingCommission } from "../components/sale-earnings";
 import { saleUnitLabel, packagingOptions } from "../../../../packages/contracts/src/sale-packaging";
 import { PackingFieldsForm } from "../components/packing-fields";
 import { emptyPacking } from "../lib/packaging";
@@ -27,7 +28,7 @@ import { View, Pressable, Image, StyleSheet, BackHandler, TextInput } from "reac
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { choosePhoto, photoBody } from "../lib/produce-photo";
 import { useApp, useResource } from "../state";
-import { Page, Label, Field, Button, Card, Icon, Notice, s, colors } from "../components/ui";
+import { Page, Label, Heading, Field, Button, Card, Icon, Notice, s, colors } from "../components/ui";
 import { api, API_URL, authHeaders } from "../lib/api";
 import { money, toMinor, type Listing, type Address } from "../lib/domain";
 import { ListingPhoto } from "./market";
@@ -41,6 +42,7 @@ type Catalogue = {
   addresses: Address[];
   primaryAddressId?: string;
   verificationStatus: string;
+  commissionBasisPoints?: number;
 };
 export function Sell() {
   const a = useApp(),
@@ -590,6 +592,7 @@ export function Sell() {
               units={r.data?.units || []}
               onChange={setForm}
             />
+            <ListingCommission basisPoints={r.data?.commissionBasisPoints} price={form.price} />
           </Card>
           <Text style={listingStyles.section}>Delivery measurements</Text>
           <Label muted>
@@ -777,7 +780,7 @@ export function Review() {
   const address = a.user?.addresses.find((item) => item.id === form?.addressId);
   const reviewError = form && catalogue.data ? listingDetailsError(form, catalogue.data.units) : "";
   const submit = async () => {
-    if (!confirmed || !canSubmit || !form || !catalogue.data || reviewError || running.current)
+    if (!confirmed || !canSubmit || !form || catalogue.data?.commissionBasisPoints === undefined || reviewError || running.current)
       return;
     running.current = true;
     setBusy(true);
@@ -886,7 +889,7 @@ export function Review() {
               !form ||
               !canSubmit ||
               !form.photos.length ||
-              !catalogue.data ||
+              catalogue.data?.commissionBasisPoints === undefined ||
               !!reviewError ||
               !!r.data?.listingId
             }
@@ -908,6 +911,11 @@ export function Review() {
         <Label muted>Review your produce details before submitting.</Label>
       </View>
       {!!reviewError && <Notice text={reviewError} />}
+      {form && <Card>
+        <Heading>What you can earn</Heading>
+        <ListingCommission basisPoints={catalogue.data?.commissionBasisPoints} price={form.price} />
+        {catalogue.data?.commissionBasisPoints === undefined && <Button title="Refresh" secondary onPress={() => void catalogue.reload()} />}
+      </Card>}
       {form && catalogue.data && <ReadListingAloud text={listingReadback(form, catalogue.data)} />}
       {form?.packingAssistanceRequested && (
         <Notice text="Packing assistance requested. Our team must complete package measurements before buyers can purchase." />

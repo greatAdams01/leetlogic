@@ -657,6 +657,15 @@ suite("provider-backed payment safeguards", () => {
     vi.spyOn(bachs, "balances").mockResolvedValue([
       { currency: "NGN", available_balance: "100000.00" },
     ]);
+    const farmerSession = await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() });
+    const farmerHeaders = { Authorization: `Bearer ${farmerSession.accessToken}` };
+    const detailPath = `/v1/orders/${o.id}/delivery`;
+    const breakdown = { basisPoints: 600, grossMinor: "10000", commissionMinor: "600", netMinor: "9400" };
+    const beforeRelease = await request(app).get(detailPath).set(farmerHeaders);
+    expect(beforeRelease.body.money.sellerEarnings).toEqual({ ...breakdown, state: "EXPECTED" });
+    const buyerDetail = await request(app).get(detailPath).set(customerAuth());
+    expect(buyerDetail.status).toBe(200);
+    expect(buyerDetail.body.money.sellerEarnings).toBeUndefined();
     const release = await requestRelease(o.id, req());
     const tooLate = await request(app)
       .post(`/v1/orders/${o.id}/disputes`)
@@ -690,6 +699,15 @@ suite("provider-backed payment safeguards", () => {
       ),
     ).toBe(BigInt(heldBefore) - 10000n);
     expect((await availableEarnings(seller)).balanceMinor).toBe(9400n);
+    const afterRelease = await request(app).get(detailPath).set(farmerHeaders);
+    expect(afterRelease.body.money.sellerEarnings).toEqual({ ...breakdown, state: "CREDITED" });
+    const sales = await request(app).get("/v1/financial/sales").set(farmerHeaders);
+    expect(sales.status).toBe(200);
+    expect(sales.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ orderId: o.id, grossMinor: "10000", commissionMinor: "600", netMinor: "9400" }),
+    ]));
+    const buyerSales = await request(app).get("/v1/financial/sales").set(customerAuth());
+    expect(buyerSales.body).toEqual({ items: [], nextCursor: null });
     const withdrawals = await Promise.all([
       requestWithdrawal(seller, destination, 1000n, randomUUID()),
       requestWithdrawal(seller, destination, 1000n, randomUUID()),

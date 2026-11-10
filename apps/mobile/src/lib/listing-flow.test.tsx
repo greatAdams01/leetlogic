@@ -29,6 +29,7 @@ const h = vi.hoisted(() => ({
       },
     ],
     verificationStatus: "APPROVED",
+    commissionBasisPoints: 600,
   },
 }));
 vi.mock("react-native", () => ({
@@ -427,6 +428,7 @@ describe("seller listing wizard", () => {
     await act(async () => {
       renderer = create(<Review />);
     });
+    expect(JSON.stringify(renderer.toJSON())).toContain("Current Leetlogic commission: 6% of produce sales.");
     expect(button("Submit listing").props.disabled).toBe(true);
     await act(async () => nodes("Confirmation")[0]!.props.onChange());
     expect(button("Submit listing").props.disabled).toBe(false);

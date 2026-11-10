@@ -5,6 +5,8 @@ describe("mobile order and listing inputs", () => {
     expect(toMinor("12.34")).toBe("1234");
     expect(toMinor("9999999999.99")).toBe("999999999999");
     expect(money("123456")).toBe("₦1,234.56");
+    expect(money("150000000")).toBe("₦1,500,000.00");
+    expect(money("-150000001")).toBe("-₦1,500,000.01");
   });
   it("rejects invalid or silently rounded money", () => {
     for (const input of ["0", "-1", "1.001", "1e3", "NaN", ""])

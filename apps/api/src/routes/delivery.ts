@@ -42,6 +42,7 @@ import { recordedSplitBooking, splitPlanMatches } from "../services/split-delive
 import { splitParts, type TrackedShipment } from "../providers/shipping/shipbubble.js";
 import { adminMutationSchema, adminRecordRevision, assertAdminRecordCurrent, correctAdminDelivery, correctionCapabilities, lastOrderHistoryId, mutateAdminOrder } from "../services/admin-order-management.js";
 import { readOrderHistory } from "../services/order-record-history.js";
+import { farmerOrderEarnings } from "../services/sale-earnings.js";
 const uuid = z.string().uuid();
 const quoteBody = z.object({
   pickup: contactSchema,
@@ -516,6 +517,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           ? { id: order.shipment.id, carrier: order.shipment.carrier, trackingRef: order.shipment.trackingRef, status: order.shipment.status, riderAssignment: order.shipment.riderAssignment } : null } : {}),
         money: {
           progress: await orderPaymentView(order),
+          ...(!isStaff && ownOrStaff ? { sellerEarnings: await farmerOrderEarnings(order) } : {}),
           heldMinor: order.heldMinor, releasedMinor: order.releasedMinor, refundedMinor: order.refundedMinor,
           release: await prisma.moneyOperation.findFirst({ where: { orderId: order.id, mode: mode(), kind: "RELEASE" }, orderBy: { createdAt: "desc" }, select: { status: true, failureCode: true, updatedAt: true } }),
         },

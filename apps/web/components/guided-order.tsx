@@ -13,6 +13,7 @@ import { CustomerRecovery } from "./customer-recovery";
 import { CustomerOrderIssues } from "./customer-order-issues";
 import { DeliveryTracking } from "./delivery-tracking";
 import { deliveryVisibility } from "../../../packages/contracts/src/delivery-visibility";
+import { OrderSaleEarnings } from "./sale-earnings";
 export function GuidedOrder({
   data,
   notice,
@@ -210,6 +211,7 @@ export function GuidedOrder({
           </p>
         </div>
       </section>
+      {!buyer && data.money?.sellerEarnings && <OrderSaleEarnings amounts={data.money.sellerEarnings} />}
       {buyer &&
         data.progress?.method === "Pickup" &&
         data.fulfillment?.state === "ACTIVE" &&

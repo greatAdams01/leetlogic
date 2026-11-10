@@ -14,7 +14,7 @@ vi.mock("react-native", () => ({
   BackHandler: { addEventListener: () => ({ remove() {} }) },
 }));
 vi.mock("../localization", () => ({ LocalizedText: "Text" }));
-vi.mock("../state", () => ({ useApp: () => ({
+vi.mock("../state", () => ({ useResource: () => ({ data: { basisPoints: 600 }, error: "" }), useApp: () => ({
   user: { id: "seller", addresses: [] }, loadUser: h.load, ui: (text: string) => text,
   error: (error: { code?: string; message?: string }) => error.code || error.message,
   back: vi.fn(), go: vi.fn(), reset: vi.fn(), notify: vi.fn(), status: (status: string) => status,

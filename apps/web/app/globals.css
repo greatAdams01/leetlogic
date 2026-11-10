@@ -1044,6 +1044,10 @@ main img[src$=".svg"] {
 .journey-card { background:#fff; border:1px solid #e6e3da; border-radius:16px; padding:20px; margin:16px 0; box-shadow:0 1px 2px #0000000d; }
 .order-journey h2 { font-size:18px; line-height:1.4; margin:0 0 12px; }
 .journey-card p { line-height:1.6; margin:8px 0; }
+.sale-breakdown { display:grid; gap:8px; max-width:32rem; }
+.sale-breakdown > div { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 16px; }
+.sale-breakdown dd { margin:0; font-variant-numeric:tabular-nums; }
+.sale-history article { border-bottom:1px solid #e6e3da; padding-block:12px; }
 .journey-price { color:#6b4a2f; font-size:26px; }
 .journey-row { margin:14px 0 0; }
 .journey-row img { flex-shrink:0; }

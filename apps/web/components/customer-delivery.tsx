@@ -4,6 +4,7 @@ import { orderTabs, type OrderTab } from "../../../packages/contracts/src/order-
 import { CustomerOrderIssues } from "./customer-order-issues";
 import { CancelUnpaidOrder } from "./cancel-unpaid-order";
 import { GuidedOrder } from "./guided-order";
+import { OrderSaleEarnings } from "./sale-earnings";
 import { DeliveryTracking } from "./delivery-tracking";
 import { deliveryVisibility } from "../../../packages/contracts/src/delivery-visibility";
 import { financeDate, financeLabel, financeRequest } from "./admin/finance-ui";
@@ -300,6 +301,7 @@ export function CustomerDelivery({
     <section className="customer-panel order-workspace">
       <h1>{data.order.title}</h1>
       <p>{data.order.reference}</p>
+      {!staff && !data.order.isBuyer && data.money?.sellerEarnings && <OrderSaleEarnings amounts={data.money.sellerEarnings} />}
       {staff && data.staffContext && (
         <section className="dispatch-order-context">
           <h2>Order overview</h2>

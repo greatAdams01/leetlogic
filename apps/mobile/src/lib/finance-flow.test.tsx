@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   openURL: vi.fn().mockResolvedValue(undefined),
   announce: vi.fn(),
   scrollTo: vi.fn(),
+  sales: { items: [] as { id: string; orderId: string; title: string; reference: string; createdAt: string; grossMinor: string; commissionMinor: string; netMinor: string }[], nextCursor: null },
   data: {
     enabled: true,
     account: null as null | { ready: boolean; status: string },
@@ -27,6 +28,7 @@ const h = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   Linking: { openURL: h.openURL },
   ScrollView: "ScrollView",
+  View: "View",
   Modal: "Modal",
   AppState: { addEventListener: () => ({ remove() {} }) },
   AccessibilityInfo: { announceForAccessibility: h.announce },
@@ -41,8 +43,9 @@ vi.mock("../state", () => ({
     error: (error: Error) => error.message,
     ui: (text: string) => text,
     status: (text: string) => text,
+    date: (text: string) => text,
   }),
-  useResource: () => ({ data: h.data, loading: false, error: "", reload: h.reload }),
+  useResource: (path: string) => ({ data: path.startsWith("/financial/sales") ? h.sales : h.data, loading: false, error: "", reload: h.reload }),
 }));
 vi.mock("./api", () => ({ api: h.api }));
 vi.mock("../components/Select", () => ({ Select: "Select" }));
@@ -69,12 +72,12 @@ vi.mock("../components/ui", async () => {
       if (name === "Page" && props.scrollRef) props.scrollRef.current = { scrollTo: h.scrollTo };
       return createElement(name, props, children);
     };
-  return Object.fromEntries(
+  return { s: {}, ...Object.fromEntries(
     ["Page", "Card", "Heading", "Label", "Field", "Button", "Notice"].map((name) => [
       name,
       host(name),
     ]),
-  );
+  ) };
 });
 import { Finance } from "../screens/finance";
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -111,6 +114,19 @@ async function fill() {
   });
 }
 describe("payment setup feedback", () => {
+  it("shows the gross sale, commission and actual credit as formatted naira", async () => {
+    h.sales.items = [{
+      id: "release", orderId: "order", title: "Rice", reference: "LL-1042",
+      createdAt: "2026-11-10T10:00:00.000Z", grossMinor: "150000000", commissionMinor: "9000000", netMinor: "141000000",
+    }];
+    try {
+      await mount();
+      const labels = renderer!.root.findAllByType("Label" as never).map(label => label.props.children);
+      expect(labels).toEqual(expect.arrayContaining([
+        "Gross produce amount", "₦1,500,000.00", "Leetlogic commission", "₦90,000.00", "Credited to you", "₦1,410,000.00",
+      ]));
+    } finally { h.sales.items = []; }
+  });
   it("shows a spinner while pending and brings an error into the payment card with an accessibility announcement", async () => {
     let reject!: (error: Error) => void;
     h.api.mockImplementation(

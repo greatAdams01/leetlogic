@@ -2,6 +2,7 @@
 import { fulfillmentLabel } from "../../../packages/contracts/src/fulfillment-status";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { MoneyInput } from "./money-input";
+import { SaleHistory } from "./sale-earnings";
 import Link from "next/link";
 import {
   paymentActions,
@@ -260,7 +261,7 @@ export function CustomerFinance() {
             {say("Available")}: {money(data.earnings.availableMinor)}
           </p>
           <p>
-            {say("Held for delivery")}: {money(data.heldMinor)}
+            {say("Produce held before commission")}: {money(data.heldMinor)}
           </p>
           {!data.account && (
             <form
@@ -440,8 +441,13 @@ export function CustomerFinance() {
               </form>
             </>
           )}
+        </>
+      )}
+      {data && <SaleHistory />}
+      {data?.enabled && (
+        <>
           <h2>{say("Payment activity")}</h2>
-          {data.operations.map((op: any) => (
+          {data.operations.filter((op: any) => !(op.kind === "RELEASE" && op.status === "SUCCEEDED")).map((op: any) => (
             <p key={op.id}>
               {status(op.kind)} · {status(op.status)} · {money(op.amountMinor)}
             </p>

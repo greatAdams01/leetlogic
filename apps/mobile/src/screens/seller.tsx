@@ -10,7 +10,8 @@ import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useRef, useState } from "react";
 import { BackHandler, Image, Pressable, View } from "react-native";
 import { LocalizedText as Text } from "../localization";
-import { useApp } from "../state";
+import { useApp, useResource } from "../state";
+import { commissionRate } from "../../../../packages/contracts/src/sale-earnings";
 import { Page, Heading, Label, Field, Button, Card, Notice, colors, s } from "../components/ui";
 import { Select } from "../components/Select";
 import { api } from "../lib/api";
@@ -50,6 +51,7 @@ const titles: Record<VerificationStep, string> = {
 };
 export function Seller() {
   const a = useApp();
+  const commission = useResource<{ basisPoints: number }>("/content/seller-commission");
   const [identityPassed, setIdentityPassed] = useState(false);
   const [step, setStep] = useState<VerificationStep>("details");
   const [form, setForm] = useState<FarmForm>({
@@ -263,6 +265,13 @@ export function Seller() {
   };
   const blocked = !editableVerification(status);
   const submitted = ["SUBMITTED", "UNDER_REVIEW"].includes(status);
+  const commissionDisclosure = <Card>
+    <Heading>Leetlogic commission</Heading>
+    {commission.data && <Label>{a.ui("Current Leetlogic commission: {rate} of produce sales.", { rate: commissionRate(commission.data.basisPoints) })}</Label>}
+    <Label>Leetlogic deducts commission from produce proceeds when a sale is paid out. You’ll see the commission and what you’ll earn on each order before you accept.</Label>
+    <Label muted>Any bank withdrawal fee is shown separately before you withdraw.</Label>
+    {commission.error && <Button title="Retry" secondary onPress={() => void commission.reload()} />}
+  </Card>;
   let action: React.ReactNode;
   if (ready && submitted) action = <Button title="Go to home" onPress={() => a.reset("home")} />;
   if (ready && !blocked) {
@@ -467,6 +476,7 @@ export function Seller() {
           {step === "details" && (
             <>
               <Heading>Tell us about your farm.</Heading>
+              {commissionDisclosure}
               <View style={{ gap: 24 }}>
                 <Field
                   label="Farm / business name *"
@@ -776,6 +786,7 @@ export function Seller() {
             <>
               <Heading>Check your details.</Heading>
               <Label>You can edit any section before submitting.</Label>
+              {commissionDisclosure}
               <Card>
                 <Text style={s.sectionTitle}>Farm profile</Text>
                 <Label>{form.farmName}</Label>

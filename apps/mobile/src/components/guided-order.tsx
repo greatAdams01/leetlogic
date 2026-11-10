@@ -12,6 +12,7 @@ import { PaymentRecovery } from "./payment-recovery";
 import { OrderDisputes, EvidencePhoto } from "./order-disputes";
 import { ReceiptConfirmation } from "./receipt-confirmation";
 import { DeliveryTracking } from "./delivery-tracking";
+import { OrderSaleEarnings } from "./sale-earnings";
 import { deliveryVisibility } from "../../../../packages/contracts/src/delivery-visibility";
 export function GuidedOrder({
   data,
@@ -247,6 +248,7 @@ export function GuidedOrder({
           </Label>
         </View>
       </Card>
+      {!buyer && data.money?.sellerEarnings && <OrderSaleEarnings amounts={data.money.sellerEarnings} />}
       {buyer &&
         data.progress?.method === "Pickup" &&
         data.fulfillment?.state === "ACTIVE" &&

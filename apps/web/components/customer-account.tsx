@@ -7,6 +7,7 @@ import { customerApi } from "../lib/customer-api";
 import { useLanguage } from "./language-provider";
 import { CustomerOrders } from "./customer-orders";
 import { CustomerAddresses } from "./customer-addresses";
+import { commissionRate } from "../../../packages/contracts/src/sale-earnings";
 export function CustomerAccount() {
   const { t, setLocale, locale } = useLanguage();
   const [user, setUser] = useState<any>(null);
@@ -16,6 +17,16 @@ export function CustomerAccount() {
   const [code, setCode] = useState("");
   const [intent, setIntent] = useState<"LOGIN" | "REGISTER">("LOGIN");
   const [role, setRole] = useState<"BUYER" | "SELLER">("BUYER");
+  const [sellerRate, setSellerRate] = useState<number>();
+  const registeringSeller = !user && intent === "REGISTER" && role === "SELLER";
+  useEffect(() => {
+    if (!registeringSeller) return;
+    const controller = new AbortController();
+    fetch("/api/content/seller-commission", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => { if (response.ok) setSellerRate((await response.json()).basisPoints); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [registeringSeller]);
   const [sent, setSent] = useState(false);
   const [errorCode, setErrorCode] = useState("");
   const [notice, setNotice] = useState("");
@@ -198,6 +209,11 @@ export function CustomerAccount() {
               <option value="BUYER">Buyer</option><option value="SELLER">Seller / Farmer</option>
             </select>
           </label>}
+          {registeringSeller && <section aria-label={ui(locale, "Leetlogic commission")}>
+            {sellerRate !== undefined && <p>{ui(locale, "Current Leetlogic commission: {rate} of produce sales.", { rate: commissionRate(sellerRate) })}</p>}
+            <p>{ui(locale, "Leetlogic deducts commission from produce proceeds when a sale is paid out. You’ll see the commission and what you’ll earn on each order before you accept.")}</p>
+            <p>{ui(locale, "Any bank withdrawal fee is shown separately before you withdraw.")}</p>
+          </section>}
 
           <label>
             {t("auth.phone")}

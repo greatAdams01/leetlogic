@@ -1,5 +1,6 @@
 import { CheckoutDeliveryAddress, type CheckoutAddressDraft } from "../components/checkout-delivery-address";
 import { GuidedOrder } from "../components/guided-order";
+import { OrderSaleEarnings } from "../components/sale-earnings";
 import { orderUpdateCopy } from "../../../../packages/contracts/src/order-updates";
 import { orderTabs, type OrderTab } from "../../../../packages/contracts/src/order-fulfillment";
 import { PaymentRecovery } from "../components/payment-recovery";
@@ -630,6 +631,7 @@ export function Delivery() {
               </>
             )}
           </Card>
+          {!data.order.isBuyer && data.money?.sellerEarnings && <OrderSaleEarnings amounts={data.money.sellerEarnings} />}
           {tab === "details" && (
             <Card>
               <Heading>Order Details</Heading>

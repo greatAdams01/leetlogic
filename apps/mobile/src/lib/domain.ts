@@ -112,7 +112,7 @@ export type Contact = {
 export type DeliveryData = {
   tracking?: import("../../../../packages/contracts/src/delivery-visibility").DeliveryVisibility | null;
   observedAt?: string;
-  money?: { progress?: import("../../../../packages/contracts/src/order-payment-progress").OrderPaymentProgress; heldMinor: string; releasedMinor: string; refundedMinor: string; release?: { status: string; failureCode?: string | null } | null };
+  money?: { progress?: import("../../../../packages/contracts/src/order-payment-progress").OrderPaymentProgress; heldMinor: string; releasedMinor: string; refundedMinor: string; release?: { status: string; failureCode?: string | null } | null; sellerEarnings?: import("../../../../packages/contracts/src/sale-earnings").FarmerOrderEarnings };
   progress?: import("../../../../packages/contracts/src/order-fulfillment").OrderFulfillment;
   fulfillment?: { state: string; collectionBuyerAt: string | null } | null;
   order: {
