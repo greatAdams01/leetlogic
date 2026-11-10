@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { createSession } from "../services/sessions.js";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -857,7 +861,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
   });
   describe("exceptional order resolution", () => {
     beforeAll(async () => { await prisma.listing.update({ where: { id: listingId }, data: { availableQuantity: "1000" } }); });
-    const decision = async (key: string, outcome = "CANCELLED", financialAction = "HOLD") => ({ ...await adminMutation(key), outcome, financialAction,
+    const decision = async (key: string, outcome = "UNDER_INVESTIGATION", financialAction = "HOLD") => ({ ...await adminMutation(key), outcome, financialAction,
       evidence: "Verified operator investigation and courier correspondence", confirmed: true });
     const newCase = async (fund = false) => {
       const result = await request(app).post("/v1/admin/orders").set(auth()).send({ buyerId, listingId, quantity: "1" });
@@ -866,7 +870,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
       if (fund) expect((await request(app).post(`/v1/admin/orders/${key}/escrow`).set(auth()).send({ kind: "FUND", amountMinor: result.body.totalMinor, externalRef: `RES-${randomUUID()}`, mutationKey: randomUUID(), reason: "Verified manual funds for resolution test" })).status).toBe(200);
       return key as string;
     };
-    it("closes any operational status with an audited hold and resists late status writes", async () => {
+    it("keeps investigations open, preserves dispatch evidence and resists unauthorized order closure", async () => {
       for (const status of ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED"]) {
         const key = await newCase();
         await prisma.tradeOrder.update({ where: { id: key }, data: { status } });
@@ -877,17 +881,42 @@ integration("admin PostgreSQL and Redis workflows", () => {
         const historyCount = await prisma.orderRecordHistory.count({ where: { orderId: key } });
         expect((await close()).status).toBe(200);
         expect(await prisma.orderRecordHistory.count({ where: { orderId: key } })).toBe(historyCount);
-        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "CANCELLED", financialHold: true, adminResolution: { previousOrderStatus: status, financialAction: "HOLD", adminId } });
-        expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("CANCELLED");
+        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "UNDER_INVESTIGATION", financialHold: true, adminResolution: { previousOrderStatus: status, financialAction: "HOLD", adminId } });
+        expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("IN_TRANSIT");
         await prisma.$transaction(async tx => {
           await tx.tradeOrder.update({ where: { id: key }, data: { status: "FUNDED", financialHold: false } });
           await tx.delivery.update({ where: { id: delivery.id }, data: { status: "IN_TRANSIT" } });
         });
-        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "CANCELLED", financialHold: true });
-        expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("CANCELLED");
-        const history = await prisma.orderRecordHistory.findFirstOrThrow({ where: { orderId: key, entityType: "order", action: "order.admin.resolved", kind: "UPDATE" } });
-        expect(history).toMatchObject({ actorId: adminId, actorType: "admin", reason: body.reason, before: { status }, after: { status: "CANCELLED" } });
+        expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "UNDER_INVESTIGATION", financialHold: true });
+        expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("IN_TRANSIT");
+        const history = await prisma.orderRecordHistory.findFirstOrThrow({ where: { orderId: key, entityType: "order", action: "order.admin.investigation.opened", kind: "UPDATE" } });
+        expect(history).toMatchObject({ actorId: adminId, actorType: "admin", reason: body.reason, before: { status }, after: { status: "UNDER_INVESTIGATION" } });
       }
+    });
+    it("repairs legacy closed holds from immutable history without rewriting prior evidence", async () => {
+      const key = await newCase(true);
+      const delivery = await prisma.delivery.create({ data: { orderId: key, status: "IN_TRANSIT", failureCode: "TRACKING_UNAVAILABLE" } });
+      const shipment = await prisma.shipment.create({ data: { orderId: key, carrier: "Legacy courier", trackingRef: "LEGACY-HOLD", status: "IN_TRANSIT" } });
+      const previous = readFileSync(new URL("../../../../packages/database/prisma/migrations/20261109140000_admin_order_resolution/migration.sql", import.meta.url), "utf8");
+      for (const name of ["preserve_admin_order_resolution", "preserve_admin_delivery_resolution"]) {
+        const start = previous.indexOf(`CREATE FUNCTION ${name}`), end = previous.indexOf("\nCREATE TRIGGER", start);
+        await prisma.$executeRawUnsafe(previous.slice(start, end).replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"));
+      }
+      const legacyId = randomUUID();
+      await prisma.$transaction(async tx => {
+        await tx.tradeOrder.update({ where: { id: key }, data: { status: "CANCELLED", financialHold: true, adminResolution: { id: legacyId, outcome: "CANCELLED", financialAction: "HOLD", previousDeliveryStatus: "IN_TRANSIT" } } });
+        await tx.delivery.update({ where: { id: delivery.id }, data: { status: "CANCELLED", failureCode: null } });
+        await tx.shipment.update({ where: { id: shipment.id }, data: { status: "CANCELLED" } });
+        await tx.auditLog.create({ data: { actorType: "admin", actorId: adminId, action: "order.admin.resolved", entityType: "order", entityId: key, requestId: randomUUID(), reason: "Original hold decision preserved" } });
+      });
+      const original = await prisma.orderRecordHistory.findFirstOrThrow({ where: { orderId: key, entityType: "order", action: "order.admin.resolved", kind: "UPDATE" } });
+      const databaseRequire = createRequire(new URL("../../../../packages/database/package.json", import.meta.url));
+      execFileSync(process.execPath, [databaseRequire.resolve("prisma/build/index.js"), "db", "execute", "--schema", fileURLToPath(new URL("../../../../packages/database/prisma/schema.prisma", import.meta.url)), "--file", fileURLToPath(new URL("../../../../packages/database/prisma/migrations/20261109190000_open_order_investigations/migration.sql", import.meta.url))], { env: process.env, stdio: "pipe" });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).toMatchObject({ status: "UNDER_INVESTIGATION", financialHold: true, heldMinor: 10000n, adminResolution: { outcome: "UNDER_INVESTIGATION" } });
+      expect(await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({ status: "IN_TRANSIT", failureCode: "TRACKING_UNAVAILABLE" });
+      expect((await prisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).status).toBe("IN_TRANSIT");
+      expect(await prisma.orderRecordHistory.findUniqueOrThrow({ where: { id: original.id } })).toEqual(original);
+      expect(await prisma.orderRecordHistory.count({ where: { orderId: key, action: "order.admin.investigation.migrated", actorType: "system" } })).toBeGreaterThan(0);
     });
     it("settles manual funds once without manufacturing buyer receipt evidence", async () => {
       for (const [outcome, financialAction] of [["COMPLETED", "RELEASE"], ["CANCELLED", "REFUND"]]) {
@@ -923,7 +952,7 @@ integration("admin PostgreSQL and Redis workflows", () => {
       await prisma.rolePermission.delete({ where: { roleId_permissionId: { roleId, permissionId: grant.id } } });
       try { expect((await request(app).post(path).set(auth()).send(body)).status).toBe(403); }
       finally { await prisma.rolePermission.create({ data: { roleId, permissionId: grant.id } }); }
-      for (const invalid of [{ ...body, confirmed: false }, { ...body, evidence: "" }, { ...body, reason: "" }, { ...body, outcome: "CANCELLED", financialAction: "RELEASE" }])
+      for (const invalid of [{ ...body, confirmed: false }, { ...body, evidence: "" }, { ...body, reason: "" }, { ...body, outcome: "CANCELLED", financialAction: "RELEASE" }, { ...body, outcome: "COMPLETED", financialAction: "HOLD" }, { ...body, outcome: "CANCELLED", financialAction: "HOLD" }, { ...body, outcome: "UNDER_INVESTIGATION", financialAction: "REFUND" }])
         expect((await request(app).post(path).set(auth()).send(invalid)).status).toBe(422);
       expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: key } })).adminResolution).toBeNull();
     });

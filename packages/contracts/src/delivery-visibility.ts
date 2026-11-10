@@ -108,6 +108,7 @@ export const deliveryCalendarDate = (now: Date) => new Intl.DateTimeFormat("en-C
   timeZone: "Africa/Lagos", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(now);
 export const deliveryEventLabel = (status: string) => ({
+  ADMIN_INVESTIGATION: "Investigation opened — case remains open",
   ADMIN_RESOLVED: "Order and delivery closed by administrator",
   READY_FOR_PICKUP: "Produce ready for pickup",
   FARMER_DISPATCHED: "Farmer confirmed dispatch",
@@ -141,8 +142,10 @@ export function deliveryVisibility(input: DeliveryVisibilityInput, now = new Dat
     parcels.every(p => !!p.providerShipmentId && p.parcelIndex >= 0 && p.parcelIndex < packageCount && p.quoteId === input.selectedQuoteId);
   const incomplete = split && (!matchingPlan || parcels.some(p => p.status !== "DELIVERED"));
   const receiptConfirmedAt = stamp(input.receiptConfirmedAt);
-  const administrative = events.filter(event => event.status === "ADMIN_RESOLVED" && event.source === "admin").at(-1);
-  const copy = administrative ? { label: object(administrative.details).outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator",
+  const latestDecision = events.filter(event => ["ADMIN_RESOLVED", "ADMIN_INVESTIGATION"].includes(event.status) && ["admin", "system"].includes(event.source)).at(-1);
+  const administrative = latestDecision?.status === "ADMIN_RESOLVED" ? latestDecision : undefined;
+  const investigating = latestDecision?.status === "ADMIN_INVESTIGATION";
+  const copy = investigating ? { label: "Under investigation", title: "Case remains open under investigation", body: "The admin team is investigating. Courier tracking is retained and funds remain held until a final release or refund decision." } : administrative ? { label: object(administrative.details).outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator",
     title: "Administrative resolution", body: "An administrator closed this order after review. This is not a courier delivery report or a new buyer receipt confirmation. Follow the payment updates for the financial outcome." }
     : input.status === "DELIVERED" && incomplete
     ? { label: "Delivery completion needs review", title: "Delivery completion needs review", body: "Not every planned package has a matching delivery confirmation. Contact support before confirming receipt." }

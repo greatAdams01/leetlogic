@@ -13,6 +13,7 @@ export function orderFulfillment(input: {
   review?: boolean;
   orderStatus?: string;
   adminResolved?: boolean;
+  adminUnderInvestigation?: boolean;
   paid: boolean;
   confirmed: boolean;
   blocked: boolean;
@@ -41,7 +42,7 @@ export function orderFulfillment(input: {
     collection,
   } = input;
   const awaitingAcceptance = input.farmerDecision === "PENDING";
-  const participantActions = !input.legacyShipment && !input.adminResolved;
+  const participantActions = !input.legacyShipment && !input.adminResolved && !input.adminUnderInvestigation;
   const rejected = input.farmerDecision === "REJECTED";
   const accepted = !awaitingAcceptance && !rejected && !input.review;
   const bookingBlocked = status === "BOOKING_BLOCKED";
@@ -163,7 +164,7 @@ export function orderFulfillment(input: {
     rejected,
     handedOver: !!input.handedOver,
     method: collection ? "Pickup" : "Delivery",
-    status: input.adminResolved ? "Closed by administrator" : terminal
+    status: input.adminUnderInvestigation ? "Under investigation" : input.adminResolved ? "Closed by administrator" : terminal
       ? input.orderStatus === "REFUNDED"
         ? "Refunded"
         : "Cancelled"
@@ -213,7 +214,7 @@ export function orderFulfillment(input: {
     steps: collection
       ? ["Payment confirmed", "Preparing", "Ready for Pickup", "Collected", "Completed"]
       : ["Payment confirmed", "Preparing", "Dispatched", "In Transit", "Completed"],
-    next: input.adminResolved ? "An administrator closed this order. Follow the payment updates for the financial outcome." : next,
+    next: input.adminUnderInvestigation ? "The case remains open while administrators investigate. Funds stay held until a release or refund is approved." : input.adminResolved ? "An administrator closed this order. Follow the payment updates for the financial outcome." : next,
     canReady,
     canDispatch,
     canConfirm,

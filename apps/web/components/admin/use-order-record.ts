@@ -45,15 +45,15 @@ export function orderCommandAvailable(command: AdminOrderCommand, data: AdminOrd
   }
 }
 
-export function useOrderRecord(id: string, permissions: readonly string[], onChanged?: () => void) {
+export function useOrderRecord(id: string, permissions: readonly string[], onChanged?: () => void, pauseAutoRefresh = false) {
   const [snapshot, setSnapshot] = useState<{ id: string; record: AdminOrderRecord }>();
   const [loading, setLoading] = useState(false), [pending, setPending] = useState(false);
   const [loadError, setLoadError] = useState(""), [actionError, setActionError] = useState(""), [notice, setNotice] = useState("");
   const [dirty, setDirty] = useState(false);
   const mounted = useRef(false), scope = useRef(0), requests = useRef(0), reading = useRef(false), running = useRef(false);
   const record = snapshot?.id === id ? snapshot.record : undefined;
-  const context = useRef({ id, permissions, record, loadError, dirty, onChanged });
-  context.current = { id, permissions, record, loadError, dirty, onChanged };
+  const context = useRef({ id, permissions, record, loadError, dirty, onChanged, pauseAutoRefresh });
+  context.current = { id, permissions, record, loadError, dirty, onChanged, pauseAutoRefresh };
   const canRead = permissions.includes("orders.read");
   const current = () => mounted.current && context.current.id === id;
   const load = useCallback(async () => {
@@ -84,7 +84,7 @@ export function useOrderRecord(id: string, permissions: readonly string[], onCha
     setNotice(""); setLoadError(""); setActionError(""); setDirty(false); setPending(false);
     void load();
     const refresh = () => {
-      if (!reading.current && !running.current && document.visibilityState === "visible") void load();
+      if (!context.current.pauseAutoRefresh && !reading.current && !running.current && document.visibilityState === "visible") void load();
     };
     const timer = setInterval(refresh, 30000);
     window.addEventListener("focus", refresh);

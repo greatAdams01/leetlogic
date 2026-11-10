@@ -3,7 +3,7 @@ import { deliveryStatusCopy } from "../../../../packages/contracts/src/delivery-
 import type { AdminOrderRecord } from "./order-types";
 
 export const orderStatusLabel = (status: string) => ({
-  AWAITING_PAYMENT: "Awaiting payment", FUNDED: "Paid", DELIVERED: "Receipt confirmed",
+  UNDER_INVESTIGATION: "Under investigation", AWAITING_PAYMENT: "Awaiting payment", FUNDED: "Paid", DELIVERED: "Receipt confirmed",
   COMPLETED: "Completed", REFUNDED: "Refunded", CANCELLED: "Cancelled",
 } as Record<string, string>)[status] || "Status not available";
 
@@ -12,7 +12,7 @@ export const farmerDecisionLabel = (decision: string) => ({
 } as Record<string, string>)[decision] || "Not recorded";
 
 export function OperationsBadge({ value, label }: { value: string; label?: string }) {
-  const tone = /review|attention|declined/i.test(label || "") || ["REJECTED", "BOOKING_BLOCKED", "BOOKING_UNCERTAIN", "FAILED_ATTEMPT", "RETURNING", "RETURNED", "MANUAL_REVIEW"].includes(value)
+  const tone = /review|attention|declined|investigation/i.test(label || "") || ["REJECTED", "BOOKING_BLOCKED", "BOOKING_UNCERTAIN", "FAILED_ATTEMPT", "RETURNING", "RETURNED", "MANUAL_REVIEW"].includes(value)
     ? "warning"
     : ["FUNDED", "ACCEPTED", "COMPLETED", "DELIVERED", "REFUNDED", "AVAILABLE", "SECURED"].includes(value)
       ? "success" : "neutral";
@@ -31,10 +31,16 @@ export function adminFulfillmentLabel(data: AdminOrderRecord) {
   return data.progress.status;
 }
 
+export function adminOrderStatusLabel(data: AdminOrderRecord) {
+  if (data.staffContext.adminResolution?.financialAction === "RELEASE" && BigInt(data.money.heldMinor) > 0n)
+    return ["FAILED", "BLOCKED", "UNKNOWN"].includes(data.money.release?.status || "") ? "Fulfilled — payment needs attention" : "Fulfilled — payment pending";
+  return orderStatusLabel(data.order.status);
+}
+
 export function adminNextStep(data: AdminOrderRecord) {
   if (data.staffContext.adminResolution) {
     const decision = data.staffContext.adminResolution;
-    if (decision.financialAction === "HOLD") return "Closed by administrator. Review the remaining funds, then return to Resolve Order to decide the payment outcome.";
+    if (decision.financialAction === "HOLD") return "Case remains open under investigation. Investigate the delivery outcome, then complete with release or cancel with refund.";
     if (decision.financialAction === "NONE") return "Closed by administrator. No funds were moved.";
     return "Closed by administrator. Check the payment status for the release or refund result; closure alone does not confirm a transfer.";
   }

@@ -7,6 +7,7 @@ import { financeRequest } from "./finance-ui";
 import { ChangeComparison, historyDate } from "./order-history-ui";
 
 const actions: Record<string, string> = {
+  "order.admin.investigation.opened": "Investigation opened — funds held", "order.admin.investigation.migrated": "Held case corrected to an open investigation", "ADMIN_INVESTIGATION": "Case under investigation — funds held",
   "order.admin.resolved": "Order resolved by administrator", "ADMIN_RESOLVED": "Order and delivery resolved by administrator",
   "order.information.corrected": "Order information corrected", "delivery.information.corrected": "Delivery information corrected",
   "order.created": "Order placed", "order.insert": "Order placed", "order.cancelled": "Unpaid order cancelled", "order.customer.cancelled": "Buyer cancelled unpaid order",

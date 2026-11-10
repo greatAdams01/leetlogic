@@ -234,6 +234,40 @@ describe("authorized record actions", () => {
 });
 
 describe("exceptional resolution interface", () => {
+  it("keeps draft and confirmation controls focused and enabled during automatic refresh triggers", async () => {
+    vi.useFakeTimers();
+    await act(async () => { render(<OrderReview id={orderId} area="orders" permissions={staffPermissions} />); });
+    fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
+    const form = screen.getByRole("form", { name: "Confirm order resolution" });
+    enter(form, "outcome", "UNDER_INVESTIGATION");
+    enter(form, "evidence", "Waiting for the courier to confirm the delivery");
+    const reason = within(form).getByLabelText("Reason for action") as HTMLTextAreaElement;
+    reason.focus();
+    enter(form, "reason", "Buyer reported that the delivery has not arrived");
+    fireEvent.click(form.querySelector('[name="confirmed"]')!);
+
+    fireEvent(window, new Event("focus"));
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(reads()).toHaveLength(1);
+    expect(document.activeElement).toBe(reason);
+    expect(reason.matches(":disabled")).toBe(false);
+    expect((within(form).getByRole("button", { name: "Review changes" }) as HTMLButtonElement).disabled).toBe(false);
+
+    await submit(form);
+    const code = within(form).getByLabelText("Authenticator code") as HTMLInputElement;
+    code.focus();
+    enter(form, "code", "123456");
+    fireEvent(document, new Event("visibilitychange"));
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(reads()).toHaveLength(1);
+    expect(document.activeElement).toBe(code);
+    expect(code.disabled).toBe(false);
+    expect((within(form).getByRole("button", { name: "Confirm and save" }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to details" }));
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(reads()).toHaveLength(2);
+  });
   it("opens directly from either detail view without leaving the record", async () => {
     for (const area of ["orders", "logistics"] as const) {
       const view = render(<OrderReview id={orderId} area={area} permissions={staffPermissions} />);
@@ -251,14 +285,14 @@ describe("exceptional resolution interface", () => {
     await screen.findByText("LL-1042");
     fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
     const form = screen.getByRole("form", { name: "Confirm order resolution" });
-    enter(form, "outcome", "CANCELLED"); enter(form, "financialAction", "REFUND");
+    enter(form, "outcome", "CANCELLED");
     enter(form, "evidence", "Buyer and courier confirmed the goods were lost");
     enter(form, "reason", "Investigation confirms the buyer did not receive the order");
     fireEvent.click(form.querySelector('[name="confirmed"]')!);
     await submit(form);
     expect(posts()).toEqual([]);
     expect(within(form).getByRole("table", { name: "Proposed changes" }).textContent).toContain("Refund buyer");
-    expect(within(form).queryByRole("combobox", { name: "Close order as" })).toBeNull();
+    expect(within(form).queryByRole("combobox", { name: "Resolution decision" })).toBeNull();
     enter(form, "code", "123456"); await submit(form);
     expect(posts()).toEqual([["auth/totp/step-up", { code: "123456" }], [`orders/${orderId}/resolve`, {
       outcome: "CANCELLED", financialAction: "REFUND", evidence: "Buyer and courier confirmed the goods were lost", reason: "Investigation confirms the buyer did not receive the order",
@@ -271,14 +305,24 @@ describe("exceptional resolution interface", () => {
     await screen.findByText("LL-1042");
     fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
     const form = screen.getByRole("form", { name: "Confirm order resolution" });
-    expect((within(form).getByRole("option", { name: "Release payment to farmer" }) as HTMLOptionElement).disabled).toBe(true);
+    expect((within(form).getByRole("option", { name: "Complete order and release payment to farmer" }) as HTMLOptionElement).disabled).toBe(true);
+    enter(form, "outcome", "UNDER_INVESTIGATION");
     expect((form.querySelector('[name="financialAction"]') as HTMLSelectElement).value).toBe("HOLD");
     enter(form, "reason", "Hold funds while the courier and buyer evidence is reviewed");
     fireEvent.click(screen.getByRole("button", { name: "Back to details" }));
     expect(screen.queryByRole("form")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Resolve Order" }));
     expect((form.querySelector('[name="reason"]') as HTMLTextAreaElement).value).toContain("Hold funds while");
+    expect(within(form).queryByRole("combobox", { name: "Payment outcome" })).toBeNull();
+    enter(form, "evidence", "Conflicting buyer and courier statements require investigation");
+    fireEvent.click(form.querySelector('[name="confirmed"]')!);
+    await submit(form);
     expect(posts()).toEqual([]);
+    const comparison = within(form).getByRole("table", { name: "Proposed changes" }).textContent;
+    expect(comparison).toContain("Under investigation");
+    expect(comparison).not.toContain("Cancelled by administrator");
+    enter(form, "code", "123456"); await submit(form);
+    expect(posts().find(([path]) => path.endsWith("/resolve"))?.[1]).toMatchObject({ outcome: "UNDER_INVESTIGATION", financialAction: "HOLD" });
   });
   it("requires both operational and financial permissions", async () => {
     render(<OrderReview id={orderId} area="orders" permissions={["orders.read", "orders.manage"]} />);

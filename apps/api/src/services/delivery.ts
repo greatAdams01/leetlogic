@@ -295,7 +295,7 @@ export async function applyTracking(deliveryId: string, tracked: TrackedShipment
     const d = await tx.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
     if (d.providerShipmentId !== tracked.id) throw new Error("SHIPMENT_MISMATCH");
     const resolvedOrder = await tx.tradeOrder.findUniqueOrThrow({ where: { id: d.orderId }, select: { adminResolution: true } });
-    if (resolvedOrder.adminResolution) {
+    if (resolvedOrder.adminResolution && (resolvedOrder.adminResolution as { financialAction?: string }).financialAction !== "HOLD") {
       if (!tracked.id.startsWith("split:")) await recordProviderTracking(tx, d.id, tracked);
       await tx.delivery.update({ where: { id: d.id }, data: { lastSyncedAt: new Date(), leaseUntil: null } });
       return;

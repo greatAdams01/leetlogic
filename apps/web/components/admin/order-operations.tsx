@@ -85,7 +85,7 @@ export function OrderOperations({ dispatch = false, permissions }: { dispatch?: 
   ];
   const hasFilters = !!query || status !== "ALL" || farmer !== "ALL" || view !== "ALL";
   const statuses = dispatch ? [...new Set([...deliveryPendingStates, ...deliveryActiveStates, "DELIVERED", "RETURNED", "CANCELLED"])]
-    : ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED"];
+    : ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED", "UNDER_INVESTIGATION"];
   if (!canRead) return <section className="live-card"><p role="alert">You do not have permission to view {dispatch ? "deliveries" : "orders"}.</p></section>;
   return <div className="operations-workspace">
     <nav className="finance-tabs" aria-label="Orders and deliveries">

@@ -3124,7 +3124,7 @@ suite("provider-backed payment safeguards", () => {
       vi.spyOn(bachs, "balances").mockResolvedValue([{ currency: "NGN", available_balance: "10000.00" }]);
       expect((await close(f.o.id, "COMPLETED", "RELEASE")).status).toBe(200);
       const op = await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "RELEASE" } });
-      expect((await close(f.o.id, "COMPLETED", "HOLD")).status).toBe(200);
+      expect((await close(f.o.id, "UNDER_INVESTIGATION", "HOLD")).status).toBe(200);
       await runMoneyOperation(op.id);
       expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: op.id } })).toMatchObject({ status: "BLOCKED", providerRef: null, leaseUntil: null });
       expect(bachs.call).not.toHaveBeenCalled();
@@ -3155,9 +3155,9 @@ suite("provider-backed payment safeguards", () => {
       expect((await close(f.o.id, "CANCELLED", "REFUND")).status).toBe(409);
       expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toEqual(before);
       await prisma.paymentAttempt.update({ where: { id: f.a.id }, data: { confirmedAt: verifiedPayment.confirmedAt } });
-      expect((await close(f.o.id, "CANCELLED", "HOLD")).status).toBe(200);
+      expect((await close(f.o.id, "UNDER_INVESTIGATION", "HOLD")).status).toBe(200);
       expect(await prisma.moneyOperation.count({ where: { orderId: f.o.id, kind: { in: ["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] } } })).toBe(0);
-      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "CANCELLED", financialHold: true, heldMinor: 10000n });
+      expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "UNDER_INVESTIGATION", financialHold: true, heldMinor: 10000n });
     });
   });
 

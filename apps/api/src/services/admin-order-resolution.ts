@@ -10,7 +10,7 @@ import { mode, requestRelease, requestRefund } from "./payments.js";
 import { settleManualBalance } from "./manual-escrow.js";
 
 export const resolutionSchema = adminMutationSchema.extend({
-  outcome: z.enum(["COMPLETED", "CANCELLED"]),
+  outcome: z.enum(["COMPLETED", "CANCELLED", "UNDER_INVESTIGATION"]),
   financialAction: z.enum(["RELEASE", "REFUND", "HOLD", "NONE"]),
   evidence: z.string().trim().min(10).max(500),
   confirmed: z.literal(true),
@@ -18,8 +18,10 @@ export const resolutionSchema = adminMutationSchema.extend({
   shippingRefundMinor: z.string().regex(/^(0|[1-9]\d{0,17})$/).default("0"),
   destinationId: z.string().uuid().optional(),
 }).strict().superRefine((body, ctx) => {
-  if (body.financialAction === "RELEASE" && body.outcome !== "COMPLETED" || body.financialAction === "REFUND" && body.outcome !== "CANCELLED")
-    ctx.addIssue({ code: "custom", message: "Release requires completion; refund requires cancellation." });
+  const valid = body.outcome === "UNDER_INVESTIGATION" ? body.financialAction === "HOLD"
+    : body.outcome === "COMPLETED" ? ["RELEASE", "NONE"].includes(body.financialAction)
+    : ["REFUND", "NONE"].includes(body.financialAction);
+  if (!valid) ctx.addIssue({ code: "custom", message: "Complete with release, cancel with refund, or keep the case open under investigation with funds held." });
   if (body.financialAction !== "REFUND" && body.shippingRefundMinor !== "0")
     ctx.addIssue({ code: "custom", message: "Delivery refunds require the refund outcome." });
 });
@@ -31,7 +33,7 @@ export async function resolveAdminOrder(req: Request, orderId: string) {
   if (age < 0 || age > 300) throw new AppError(403, "STEP_UP_REQUIRED", "Confirm resolution with a recent authenticator code.");
   const body = resolutionSchema.parse(req.body);
   req.body = body;
-  return mutateAdminOrder(req, orderId, "order.admin.resolved", body, async (tx, order) => {
+  return mutateAdminOrder(req, orderId, body.financialAction === "HOLD" ? "order.admin.investigation.opened" : "order.admin.resolved", body, async (tx, order) => {
     if (body.financialAction === "REFUND" && BigInt(body.shippingRefundMinor) > 0n) {
       const shipping = await tx.moneyJournalLine.aggregate({ where: { account: `held_shipping:${orderId}`, journal: { mode: mode() } }, _sum: { amountMinor: true } });
       if (BigInt(body.shippingRefundMinor) > -(shipping._sum.amountMinor || 0n))
@@ -49,11 +51,23 @@ export async function resolveAdminOrder(req: Request, orderId: string) {
     const previous = order.adminResolution as { outcome?: string; financialAction?: string } | null;
     // A hold may be revisited after investigation. Never reverse a submitted or completed settlement.
     const money = await tx.moneyOperation.findMany({ where: { orderId, kind: { in: ["RELEASE", "REFUND", "REFUND_TRANSFER", "REFUND_PAYOUT"] }, status: { not: "FAILED" } } });
-    if (body.financialAction !== "HOLD") {
+    if (body.financialAction === "HOLD") {
+      await tx.tradeOrder.update({ where: { id: orderId }, data: { status: "UNDER_INVESTIGATION", financialHold: true, adminResolution: {
+        id: body.mutationKey, outcome: "UNDER_INVESTIGATION", financialAction: "HOLD", reason: body.reason, evidence: body.evidence,
+        adminId: req.auth!.sub, resolvedAt: new Date().toISOString(), previousOrderStatus: order.status,
+        previousDeliveryStatus: order.delivery?.status || order.shipment?.status || null, previousFinancialHold: order.financialHold,
+        previousHeldMinor: order.heldMinor.toString(), shippingRefundMinor: "0",
+      } } });
+      // Keep real dispatch/tracking evidence intact. This is an open investigation, not closure.
+      if (order.delivery) await deliveryEvent(tx, order.delivery.id, "ADMIN_INVESTIGATION", "admin", `${body.mutationKey}:investigation`, req.auth!.sub, { outcome: "UNDER_INVESTIGATION", financialAction: "HOLD" });
+      await tx.fulfillmentDeadline.updateMany({ where: { orderId }, data: { state: "ADMIN_INVESTIGATION", failureCode: null } });
+      return { message: "Case remains open under investigation. Remaining funds are held; no new payout or refund was requested. Courier tracking is retained. Transfers already submitted may still complete." };
+    }
+    {
       await assertNoActiveCheckout(tx, orderId);
       if (body.financialAction !== "NONE" && order.delivery?.bookingStartedAt && !order.delivery.providerShipmentId)
         throw new AppError(409, "BOOKING_OUTCOME_UNKNOWN", "The courier booking cost is not confirmed. Hold payment while the booking is reconciled.");
-      if (money.length && !canResumeResolutionOperations(money, body.financialAction)) throw new AppError(409, "SETTLEMENT_EXISTS", "A settlement already exists. Reconcile it before requesting another financial outcome; you can close the case with funds held for review.");
+      if (money.length && !canResumeResolutionOperations(money, body.financialAction)) throw new AppError(409, "SETTLEMENT_EXISTS", "A settlement already exists. Reconcile it before requesting another financial outcome; keep the case open under investigation with funds held.");
       if (body.financialAction === "REFUND" && canResumeResolutionOperations(money, "REFUND")) {
         const shipping = money.reduce((sum, operation) => sum + BigInt((operation.payload as { shippingMinor?: string }).shippingMinor || "0"), 0n);
         if (shipping !== BigInt(body.shippingRefundMinor) || money.some(operation => operation.kind === "REFUND_TRANSFER" && (operation.payload as { destinationId?: string }).destinationId !== body.destinationId))
@@ -62,11 +76,11 @@ export async function resolveAdminOrder(req: Request, orderId: string) {
       if (body.financialAction !== "NONE" && (order.heldMinor <= 0n || order.heldMinor !== order.totalMinor || order.releasedMinor > 0n || order.refundedMinor > 0n))
         throw new AppError(409, "SETTLEMENT_RECONCILIATION_REQUIRED", "A full, unsettled held balance is required. Review prior releases and refunds.");
       if (body.financialAction !== "NONE" && await tx.supportTicket.count({ where: { orderId, kind: "DISPUTE", status: { not: "RESOLVED" } } }))
-        throw new AppError(409, "DISPUTE_OPEN", "Resolve the dispute first, or close the case with payment held for review.");
+        throw new AppError(409, "DISPUTE_OPEN", "Resolve the dispute first, or keep the case open under investigation with funds held.");
       if (body.financialAction === "NONE" && (order.heldMinor > 0n || order.releasedMinor > 0n || order.refundedMinor > 0n || await tx.paymentAttempt.count({ where: { orderId, paidMinor: { gt: 0n } } })))
         throw new AppError(409, "PAYMENT_OUTCOME_REQUIRED", "This order has payment records. Choose hold, release or refund.");
     }
-    if (previous?.financialAction === "NONE" && body.financialAction !== "HOLD")
+    if (previous?.financialAction === "NONE")
       throw new AppError(409, "ORDER_ALREADY_RESOLVED", "This order already has a final administrative resolution. Its financial outcome cannot be replaced.");
     // Active label purchases cannot be undone locally. Preserve their eventual provider reference,
     // but never claim that administrative closure cancels a booking at the courier.
@@ -76,7 +90,7 @@ export async function resolveAdminOrder(req: Request, orderId: string) {
       previousFinancialHold: order.financialHold, previousHeldMinor: order.heldMinor.toString(),
       shippingRefundMinor: body.shippingRefundMinor };
     await tx.tradeOrder.update({ where: { id: orderId }, data: {
-      adminResolution: resolution, status: body.outcome, financialHold: body.financialAction === "HOLD",
+      adminResolution: resolution, status: body.outcome, financialHold: false,
     } });
     const deliveryStatus = body.outcome === "COMPLETED" ? "DELIVERED" : "CANCELLED";
     if (order.delivery) {
@@ -86,7 +100,7 @@ export async function resolveAdminOrder(req: Request, orderId: string) {
     }
     if (order.shipment) await tx.shipment.update({ where: { id: order.shipment.id }, data: { status: deliveryStatus } });
     await tx.fulfillmentDeadline.updateMany({ where: { orderId }, data: { state: "ADMIN_RESOLVED", failureCode: null } });
-    let message = "Order closed by administrator. Remaining funds are held for review; already-submitted payments may still complete. No new payout or refund was requested.";
+    let message = "";
     if (body.financialAction === "NONE") {
       // Only unpaid reservations without an earlier stock disposition are released/sold here.
       if (!await tx.inventoryMovement.count({ where: { referenceType: "order", referenceId: orderId, type: { in: ["SALE", "RELEASE"] } } })) {
@@ -95,7 +109,7 @@ export async function resolveAdminOrder(req: Request, orderId: string) {
         await tx.inventoryMovement.create({ data: { listingId: order.listingId, type: body.outcome === "COMPLETED" ? "SALE" : "RELEASE", quantity: order.quantity, referenceType: "order", referenceId: orderId } });
       }
       message = "Order closed by administrator. No funds were moved.";
-    } else if (body.financialAction !== "HOLD") {
+    } else {
       if (order.fundsProvider === "bachs") {
         if (body.financialAction === "RELEASE") await requestRelease(orderId, req, tx, body.mutationKey);
         else await requestRefund(orderId, req, tx, body.mutationKey);
@@ -139,5 +153,5 @@ export async function readResolutionOptions(order: { id: string; heldMinor: bigi
   const bankRefundRequired = order.fundsProvider === "bachs" && payments.some(p => p.status === "SUCCEEDED" && p.method?.toUpperCase().includes("TRANSFER"));
   return { resumeShippingRefundMinor, resumeDestinationId, bankRefundRequired, refundDestinations: destinations, release: releaseReady && eligible && (!operations.length || canResumeResolutionOperations(operations, "RELEASE")), refund: refundReady && eligible && (!operations.length || canResumeResolutionOperations(operations, "REFUND")) && (!bankRefundRequired || !!destinations.length), hold: true, none,
     refundableShippingMinor: order.fundsProvider === "bachs" && availableShipping > 0n ? availableShipping.toString() : "0",
-    blockedReason: bookingUnknown ? "The courier booking outcome is still uncertain. Hold payment while its cost is reconciled." : !releaseReady && !refundReady ? "Provider payments are currently unavailable. Close with payment held for review until processing is restored." : bankRefundRequired && !destinations.length ? "The buyer needs an approved original-payer bank account before a bank transfer refund. Hold payment while this is verified." : (eligible && (!operations.length || canResumeResolutionOperations(operations, "RELEASE") || canResumeResolutionOperations(operations, "REFUND"))) || none ? null : operations.length ? "A payout or refund already exists. Reconcile its result before moving funds again." : disputes ? "An unresolved dispute requires payment to remain on hold." : checkout ? "An active or uncertain payment must be reconciled before moving funds." : "A full unsettled balance is required for release or refund. Hold the payment while reviewing the records." };
+    blockedReason: bookingUnknown ? "The courier booking outcome is still uncertain. Hold payment while its cost is reconciled." : !releaseReady && !refundReady ? "Provider payments are currently unavailable. Keep the case open under investigation until processing is restored." : bankRefundRequired && !destinations.length ? "The buyer needs an approved original-payer bank account before a bank transfer refund. Hold payment while this is verified." : (eligible && (!operations.length || canResumeResolutionOperations(operations, "RELEASE") || canResumeResolutionOperations(operations, "REFUND"))) || none ? null : operations.length ? "A payout or refund already exists. Reconcile its result before moving funds again." : disputes ? "An unresolved dispute requires payment to remain on hold." : checkout ? "An active or uncertain payment must be reconciled before moving funds." : "A full unsettled balance is required for release or refund. Hold the payment while reviewing the records." };
 }

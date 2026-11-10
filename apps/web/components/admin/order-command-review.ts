@@ -9,7 +9,7 @@ export function orderCommandChanges(command: AdminOrderCommand, body: Record<str
   const d = data.delivery, s = data.manualShipment || data.legacyShipment;
   switch (command) {
     case "resolve": return historyChanges({ orderStatus: orderStatusLabel(data.order.status), deliveryStatus: d?.status || s?.status ? deliveryStatusCopy(d?.status || s!.status).label : "Not arranged", financialOutcome: "Current payment records retained" },
-      { orderStatus: orderStatusLabel(body.outcome), deliveryStatus: body.outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator",
+      { orderStatus: orderStatusLabel(body.outcome), deliveryStatus: body.outcome === "UNDER_INVESTIGATION" ? (d?.status || s?.status ? deliveryStatusCopy(d?.status || s!.status).label : "Not arranged") : body.outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator",
         financialOutcome: resolutionFinancialLabels[body.financialAction as keyof typeof resolutionFinancialLabels],
         shippingRefundMinor: body.shippingRefundMinor || "0", evidence: body.evidence });
     case "correct-order": return historyChanges(Object.fromEntries(Object.keys(body.changes).map(key => [key,

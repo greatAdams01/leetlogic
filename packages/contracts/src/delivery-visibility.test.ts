@@ -112,3 +112,14 @@ it("identifies administrative closure without treating it as provider or buyer c
   expect(view.milestones.find(step => step.status === "DELIVERED")?.reported).toBe(false);
   expect(view.warnings).toEqual([]);
 });
+
+it("shows an open investigation after a previous closure and preserves courier evidence", () => {
+  const view = deliveryVisibility({ ...base, status: "IN_TRANSIT", events: [
+    { ...event("ADMIN_RESOLVED", "2026-11-05T12:00:00Z", { outcome: "CANCELLED" }), source: "admin" },
+    { ...event("ADMIN_INVESTIGATION", now.toISOString(), { outcome: "UNDER_INVESTIGATION" }), source: "admin" },
+  ] }, now);
+  expect(view.label).toBe("Under investigation");
+  expect(view.body).toContain("investigating");
+  expect(view.status).toBe("IN_TRANSIT");
+  expect(view.timeline.some(item => item.status === "ADMIN_RESOLVED")).toBe(true);
+});

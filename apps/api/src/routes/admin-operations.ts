@@ -218,7 +218,7 @@ for (const [name, resource] of Object.entries(resources)) {
     const allowed: Record<string, string[]> = {
       users: ["ACTIVE", "SUSPENDED", "CLOSED"],
       listings: ["DRAFT", "PENDING_REVIEW", "ACTIVE", "PAUSED", "SOLD_OUT", "REJECTED", "ARCHIVED"],
-      orders: ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED"],
+      orders: ["AWAITING_PAYMENT", "FUNDED", "DELIVERED", "COMPLETED", "REFUNDED", "CANCELLED", "UNDER_INVESTIGATION"],
       logistics: ["ASSIGNED", "IN_TRANSIT", "DELIVERED"],
       withdrawals: ["REQUESTED", "AUTHORIZED", "REJECTED"],
       support: ["OPEN", "IN_PROGRESS", "RESOLVED"],

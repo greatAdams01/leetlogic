@@ -116,3 +116,9 @@ it("closes all participant actions after administrative resolution without inven
   const view = orderFulfillment({ ...base, adminResolved: true, orderStatus: "COMPLETED", buyer: true, farmerDecision: "ACCEPTED", status: "DELIVERED", receiptReady: true, ready: true });
   expect(view).toMatchObject({ status: "Closed by administrator", canAccept: false, canReject: false, canHandover: false, canReady: false, canDispatch: false, canConfirm: false, confirmed: false });
 });
+
+it("keeps an investigation open while pausing participant actions", () => {
+  const view = orderFulfillment({ ...base, adminUnderInvestigation: true, orderStatus: "UNDER_INVESTIGATION", buyer: true, farmerDecision: "ACCEPTED", receiptReady: true });
+  expect(view).toMatchObject({ status: "Under investigation", canAccept: false, canReject: false, canReady: false, canDispatch: false, canHandover: false, canConfirm: false });
+  expect(view.next).toContain("case remains open");
+});
