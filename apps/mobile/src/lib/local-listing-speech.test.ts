@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
+type SpeechListener = (event: { isFinal?: boolean; results?: Array<{ transcript?: string }> }) => void;
 const h = vi.hoisted(() => ({
-  listeners: {} as Record<string, Function>,
+  listeners: {} as Record<string, SpeechListener>,
   recognition: {
     supportsOnDeviceRecognition: vi.fn(),
     getSupportedLocales: vi.fn(),
@@ -33,7 +34,7 @@ beforeEach(() => {
     installedLocales: ["en-US"],
   });
   h.speaker.available.mockResolvedValue(true);
-  h.recognition.addListener.mockImplementation((name: string, callback: Function) => {
+  h.recognition.addListener.mockImplementation((name: string, callback: SpeechListener) => {
     h.listeners[name] = callback;
     return { remove: () => delete h.listeners[name] };
   });

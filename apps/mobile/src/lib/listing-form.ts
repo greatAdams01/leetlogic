@@ -1,6 +1,7 @@
 import { quantity, toMinor } from "./domain";
 import {
   salePackagingSchema,
+  salePackagingMatches,
   minimumPackedWeight,
   type SalePackaging,
 } from "../../../../packages/contracts/src/sale-packaging";
@@ -74,11 +75,13 @@ export function listingDescriptionError(form: ListingForm): string {
   if (!form.addressId) return "Complete your farm address before listing produce.";
   return "";
 }
-export function listingDetailsError(form: ListingForm, units: ListingUnit[]): string {
+export function listingDetailsError(form: ListingForm, units: ListingUnit[], categorySlug?: string): string {
   const descriptionError = listingDescriptionError(form);
   if (descriptionError) return descriptionError;
   if (form.salePackaging && !salePackagingSchema.safeParse(form.salePackaging).success)
     return "Choose a packaging type and enter a valid package size.";
+  if (form.salePackaging && categorySlug && !salePackagingMatches(form.salePackaging, categorySlug, form.title, form.unitCode))
+    return "Choose packaging that matches this produce and selling unit.";
   const unit = units.find((item) => item.code === form.unitCode);
   if (!unit) return "Choose a selling unit.";
   try {

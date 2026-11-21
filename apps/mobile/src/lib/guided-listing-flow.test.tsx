@@ -188,8 +188,13 @@ it("ignores late recognition results after backgrounding and retains confirmed v
         initial={{
           ...emptyListing,
           title: "Saved yam",
+          description: "Clean white yam",
           voiceCursor: "quantity",
           unitCode: "PIECE",
+          categoryId: "roots",
+          salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
+          addressId: "farm",
+          packingAssistanceRequested: true,
         }}
       />,
     );
@@ -209,7 +214,18 @@ it("does not advance on an ambiguous quantity", async () => {
   );
   await act(async () => {
     renderer = create(
-      <Harness initial={{ ...emptyListing, voiceCursor: "quantity", unitCode: "PIECE" }} />,
+      <Harness initial={{
+        ...emptyListing,
+        title: "Saved yam",
+        description: "Clean white yam",
+        categoryId: "roots",
+        salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
+        unitCode: "PIECE",
+        addressId: "farm",
+        shippingScope: "LOCAL",
+        packingAssistanceRequested: true,
+        voiceCursor: "quantity",
+      }} />,
     );
   });
   await act(async () => button("Listen and answer").props.onPress());
@@ -220,7 +236,7 @@ it("does not advance on an ambiguous quantity", async () => {
 it("resumes older drafts at sale packaging after the unit question was replaced", async () => {
   await act(async () => {
     renderer = create(
-      <Harness initial={{ ...emptyListing, title: "Yam", categoryId: "roots", voiceCursor: "unitCode" }} />,
+      <Harness initial={{ ...emptyListing, title: "Yam", description: "Fresh yam", categoryId: "roots", unitCode: "PIECE", voiceCursor: "unitCode" }} />,
     );
   });
   await act(async () => button("Listen and answer").props.onPress());

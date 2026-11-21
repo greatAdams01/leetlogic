@@ -77,7 +77,6 @@ export function listenListing(locale: string, onTranscribing?: () => void): Prom
   return new Promise((resolve, reject) => {
     let settled = false;
     const subscriptions: { remove(): void }[] = [];
-    let timer: ReturnType<typeof setTimeout>;
     const finish = (text?: string, error?: Error) => {
       if (settled) return;
       settled = true;
@@ -95,21 +94,26 @@ export function listenListing(locale: string, onTranscribing?: () => void): Prom
       }),
     );
     subscriptions.push(
-      recognition.addListener("error", (event) =>
-        finish(
-          undefined,
-          new Error(`Could not hear your answer (${event.error}). Try again or choose Type.`),
-        ),
-      ),
+      recognition.addListener("error", (event) => {
+        const reason = String(event.error);
+        const message = reason === "no-speech"
+          ? "No speech was detected. Speak after the listening prompt and try again."
+          : ["not-allowed", "permission-denied"].includes(reason)
+            ? "Microphone access is off. Allow it in your phone settings, or continue by typing."
+            : ["network", "service-not-allowed"].includes(reason)
+              ? "Speech recognition is unavailable on this device right now. Try again or continue by typing."
+              : `Speech recognition could not understand that recording (${reason}). Please try again.`;
+        finish(undefined, new Error(message));
+      }),
     );
     subscriptions.push(
       recognition.addListener("end", () =>
-        finish(undefined, new Error("No clear answer was heard. Please try again.")),
+        finish(undefined, new Error("No speech was detected. Speak after the listening prompt and try again.")),
       ),
     );
     cancelListening = () =>
       finish(undefined, new Error("Voice listing paused. Your confirmed answers are saved."));
-    timer = setTimeout(
+    const timer = setTimeout(
       () =>
         finish(
           undefined,

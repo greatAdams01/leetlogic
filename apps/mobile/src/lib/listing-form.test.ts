@@ -8,6 +8,7 @@ import {
 } from "./listing-form";
 const units = [
   { code: "KG", allowsDecimal: true },
+  { code: "BAG", allowsDecimal: false },
   { code: "BASKET", allowsDecimal: false },
 ];
 const valid = {
@@ -59,6 +60,20 @@ describe("listing drafts", () => {
     ])
       expect(listingDetailsError(form, units)).not.toBe("");
     expect(listingDetailsError({ ...valid, unitCode: "BASKET", quantity: "2" }, units)).toBe("");
+  });
+  it("rejects package types that conflict with the selected produce category", () => {
+    expect(listingDetailsError({
+      ...valid,
+      salePackaging: { type: "BOTTLE", size: 1, measure: "LITRE" },
+      unitCode: "BAG",
+    }, units, "vegetables")).toContain("matches this produce");
+    expect(listingDetailsError({
+      ...valid,
+      packaging: { ...valid.packaging, weightKg: "50.5" },
+      salePackaging: { type: "BAG", size: 50, measure: "KG" },
+      unitCode: "BAG",
+      quantity: "20",
+    }, units, "grains")).toBe("");
   });
   it("sends exact money, scope and ordered photo references without private local URIs", () => {
     const payload = listingPayload({ ...valid, shippingScope: "LOCAL" }, "ig");

@@ -56,6 +56,7 @@ export async function listenServerListing(
   if (id !== operation) throw paused();
   const controller = new AbortController();
   let cancelled = false,
+    noSpeechDetected = false,
     recording = false,
     uri: string | null = null;
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -105,12 +106,14 @@ export async function listenServerListing(
           speech = true;
           lastSpeech = now;
         }
+        const silentTooLong = !speech && now - started >= 8000;
+        if (silentTooLong) noSpeechDetected = true;
         if (
           cancelled ||
           !status.isRecording ||
           now - started >= 29500 ||
-          (speech && now - lastSpeech >= 1500) ||
-          (!speech && now - started >= 8000)
+          (speech && now - lastSpeech >= 3500) ||
+          silentTooLong
         )
           resolve();
       }, 100);
@@ -120,10 +123,13 @@ export async function listenServerListing(
     recording = false;
     uri = recorder.uri;
     if (cancelled) throw paused();
+    if (noSpeechDetected) throw new Error("No speech was detected. Move closer to the microphone and try again.");
     await setAudioModeAsync({ allowsRecording: false });
     if (!uri) throw new Error("Could not record your answer. Please try again.");
     const file = new File(uri);
-    if (!file.exists || file.size < 16 || file.size > 2 * 1024 * 1024)
+    if (!file.exists || file.size < 16)
+      throw new Error("No speech was recorded. Please try again.");
+    if (file.size > 2 * 1024 * 1024)
       throw new Error("Please record a shorter answer and try again.");
     onTranscribing?.();
     const bytes = await file.bytes();
@@ -143,12 +149,16 @@ export async function listenServerListing(
     uri = uri || recorder.uri;
     try {
       recorder.release();
-    } catch {}
+    } catch {
+      // Native release can run before this cleanup after platform errors.
+    }
     if (uri) {
       try {
         const file = new File(uri);
         if (file.exists) file.delete();
-      } catch {}
+      } catch {
+        // Temporary recordings are not retained when the platform removes them early.
+      }
     }
     if (cancelActive === cancel) cancelActive = undefined;
     if (finishAnswer === end) finishAnswer = undefined;

@@ -3,7 +3,7 @@ import { SalePackagingForm } from "../components/sale-packaging";
 import { ListingCommission } from "../components/sale-earnings";
 import { saleUnitLabel, packagingOptions } from "../../../../packages/contracts/src/sale-packaging";
 import { PackingFieldsForm } from "../components/packing-fields";
-import { emptyPacking } from "../lib/packaging";
+import { emptyPacking, produceTotal } from "../lib/packaging";
 import { GuidedListing, ReadListingAloud } from "../components/guided-listing";
 import { listingReadback } from "../lib/guided-listing";
 import { AppSheet } from "../components/app-sheet";
@@ -264,7 +264,7 @@ export function Sell() {
       return;
     }
     const invalid =
-      step === 2 ? listingDescriptionError(form) : listingDetailsError(form, r.data?.units || []);
+      step === 2 ? listingDescriptionError(form) : listingDetailsError(form, r.data?.units || [], category?.slug);
     if (invalid) {
       setError(a.ui(invalid));
       return;
@@ -778,7 +778,8 @@ export function Review() {
   }, [busy]);
   const canSubmit = a.user?.farmerProfile?.verificationStatus === "APPROVED";
   const address = a.user?.addresses.find((item) => item.id === form?.addressId);
-  const reviewError = form && catalogue.data ? listingDetailsError(form, catalogue.data.units) : "";
+  const reviewCategory = catalogue.data?.categories.find((item) => item.id === form?.categoryId);
+  const reviewError = form && catalogue.data ? listingDetailsError(form, catalogue.data.units, reviewCategory?.slug) : "";
   const submit = async () => {
     if (!confirmed || !canSubmit || !form || catalogue.data?.commissionBasisPoints === undefined || reviewError || running.current)
       return;
@@ -947,6 +948,8 @@ export function Review() {
               `${form.quantity} × ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`,
             ],
             ...(form.salePackaging ? [["Packaging", saleUnitLabel(form.salePackaging, a.ui)]] : []),
+            ...(form.salePackaging?.measure === "KG" ? [["Total produce stock", `${new Intl.NumberFormat("en-NG", { maximumFractionDigits: 3 }).format(Number(form.salePackaging.size) * Number(form.quantity))} kg`]] : []),
+            ...(produceTotal(form.quantity, toMinor(form.price)) ? [["Gross stock value before commission", money(produceTotal(form.quantity, toMinor(form.price))!)]] : []),
             [
               "Price",
               `${money(toMinor(form.price))} per ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`,

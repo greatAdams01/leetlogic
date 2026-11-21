@@ -9,6 +9,8 @@ import {
   voiceFields,
   voiceCommand,
   listingReadback,
+  firstIncompleteVoiceField,
+  voicePackagingOptions,
   type VoiceField,
   type VoiceCatalogue,
 } from "../lib/guided-listing";
@@ -23,7 +25,6 @@ import {
   speechSetupMessage,
 } from "../lib/local-listing-speech";
 import { listingDetailsError, type ListingForm } from "../lib/listing-form";
-import { packagingOptions } from "../../../../packages/contracts/src/sale-packaging";
 
 export function GuidedListing({
   visible,
@@ -45,17 +46,15 @@ export function GuidedListing({
   const [phase, setPhase] = useState("Ready"),
     [message, setMessage] = useState(""),
     [transcript, setTranscript] = useState(""),
+    [interpretation, setInterpretation] = useState(""),
     [busy, setBusy] = useState(false),
     [unavailable, setUnavailable] = useState(false);
   const generation = useRef(0),
     latest = useRef(form),
     active = useRef(false);
   latest.current = form;
-  const fields = voiceFields(form),
-    savedCursor = form.voiceCursor === "unitCode" ? "salePackaging" : form.voiceCursor,
-    cursor = fields.includes(savedCursor as VoiceField)
-      ? (savedCursor as VoiceField)
-      : fields[0]!;
+  const fields = voiceFields(form, catalogue),
+    cursor = firstIncompleteVoiceField(form, catalogue) || fields[0]!;
   const pause = () => {
     generation.current++;
     active.current = false;
@@ -103,6 +102,7 @@ export function GuidedListing({
       });
       if (!current()) throw new Error("Paused");
       setTranscript(text);
+      setInterpretation("");
       return text;
     };
     let locale: string | null = null;
@@ -122,24 +122,37 @@ export function GuidedListing({
       await requestLocalSpeechPermission();
       if (!current()) return;
       let draft = latest.current;
-      let field = cursor;
-      while (current()) {
-        const available = voiceFields(draft);
+      let field = firstIncompleteVoiceField(draft, catalogue);
+      const finish = async () => {
+        const category = catalogue.categories.find((item) => item.id === draft.categoryId);
+        const error = listingDetailsError(draft, catalogue.units, category?.slug);
+        if (error) {
+          await onChange({ ...draft, voiceCursor: "review" });
+          throw new Error(error);
+        }
+        draft = { ...draft, voiceCursor: "review" };
+        await onChange(draft);
+        await say(`${listingReadback(draft, catalogue)} Next, add at least one clear photo. Use the camera or photo library buttons. The first photo is the cover. You will review everything before using the submit button.`);
+        if (current()) onDone();
+      };
+      if (!field) await finish();
+      while (current() && field) {
+        const available = voiceFields(draft, catalogue);
         let prompt = englishListing.prompts[field];
         if (field === "categoryId")
           prompt += ` Say the category name or number. ${catalogue.categories.map((c, i) => `${i + 1}: ${c.translations.find((t) => t.locale === "en")?.name || c.slug.replace(/-/g, " ")}`).join(". ")}.`;
         if (field === "salePackaging") {
           const category = catalogue.categories.find((item) => item.id === draft.categoryId);
           if (!category) throw new Error("Choose a produce category first.");
-          prompt += ` ${packagingOptions(category.slug, draft.title).map((option, index) => `${index + 1}: ${option.label}`).join(". ")}.`;
+          prompt += ` ${voicePackagingOptions(category.slug, draft.title, catalogue).map((option, index) => `${index + 1}: ${option.label}`).join(". ")}.`;
         }
+        if (field === "salePackageLabel") prompt += " Use between two and eighty characters.";
+        if (field === "salePackageMeasure") prompt += " Say kilograms, litres, or pieces.";
         if (field === "salePackageSize") {
           const category = catalogue.categories.find((item) => item.id === draft.categoryId);
-          const option = category && packagingOptions(category.slug, draft.title).find((item) => item.value === draft.salePackaging?.type);
+          const option = category && voicePackagingOptions(category.slug, draft.title, catalogue).find((item) => item.value === draft.salePackaging?.type);
           if (!option) throw new Error("Choose a selling package first.");
-          prompt += option.value === "CUSTOM"
-            ? " Say the amount in kilograms for one custom package, up to three decimal places."
-            : ` Available sizes: ${option.sizes.join(", ")} ${option.measure}.`;
+          prompt += ` Measurement: ${draft.salePackaging?.measure}. Suggested sizes: ${option.sizes.join(", ") || "your own size"}. You can say another size.`;
         }
         if (field === "addressId") {
           if (!catalogue.addresses.length)
@@ -160,6 +173,8 @@ export function GuidedListing({
           category: "categoryId",
           package: "salePackaging",
           "package size": "salePackageSize",
+          "package name": "salePackageLabel",
+          "package measurement": "salePackageMeasure",
           description: "description",
           unit: "unitCode",
           quantity: "quantity",
@@ -179,14 +194,14 @@ export function GuidedListing({
           available.includes(correctionFields[correction[1]!.toLowerCase()]!)
         ) {
           field = correctionFields[correction[1]!.toLowerCase()]!;
-          draft = { ...draft, voiceCursor: field };
+          draft = { ...draft, voiceCursor: `change:${field}` };
           await onChange(draft);
           continue;
         }
         if (command === "repeat") continue;
         if (command === "back") {
           field = available[Math.max(0, available.indexOf(field) - 1)]!;
-          draft = { ...draft, voiceCursor: field };
+          draft = { ...draft, voiceCursor: `change:${field}` };
           await onChange(draft);
           continue;
         }
@@ -196,6 +211,7 @@ export function GuidedListing({
           continue;
         }
         let confirmed = false;
+        setInterpretation(answer.spoken);
         while (current()) {
           await say(`I heard: ${answer.spoken}. Is that correct? Say yes or no.`);
           const confirmation = voiceCommand(await hear());
@@ -208,25 +224,12 @@ export function GuidedListing({
         }
         if (!confirmed) continue;
         draft = commitAnswer(draft, field, answer);
-        const next = voiceFields(draft),
-          index = next.indexOf(field);
-        if (index === next.length - 1) {
-          const error = listingDetailsError(draft, catalogue.units);
-          if (error) {
-            await onChange({ ...draft, voiceCursor: field });
-            throw new Error(error);
-          }
-          draft = { ...draft, voiceCursor: "title" };
-          await onChange(draft);
-          await say(
-            `${listingReadback(draft, catalogue)} Next, add at least one clear photo. Use the camera or photo library buttons. The first photo is the cover. You will review everything before using the submit button.`,
-          );
-          if (current()) onDone();
-          break;
-        }
-        field = next[index + 1]!;
-        draft = { ...draft, voiceCursor: field };
+        const next = voiceFields(draft, catalogue),
+          index = englishListing.fields.indexOf(field);
+        field = next.find((candidate) => englishListing.fields.indexOf(candidate) > index) || null;
+        draft = { ...draft, voiceCursor: field || "review" };
         await onChange(draft);
+        if (!field) await finish();
       }
     } catch (error) {
       if (current()) {
@@ -261,7 +264,7 @@ export function GuidedListing({
       }}
       footer={
         <View style={{ gap: 10 }}>
-          {serverVoiceEnabled && phase.startsWith("Listening") && (
+          {phase.startsWith("Listening") && (
             <Button title="Done speaking" onPress={() => void finishListingAnswer()} />
           )}
           {busy ? (
@@ -296,6 +299,7 @@ export function GuidedListing({
       <Label>{englishListing.prompts[cursor]}</Label>
       <Label>{phase}</Label>
       {!!transcript && <Label>{`You said: ${transcript}`}</Label>}
+      {!!interpretation && <Label>{`Interpreted as: ${interpretation}`}</Label>}
       {!!message && <Notice text={message} />}
       <Label>
         Listen to each question, then speak when the app says it is listening. Say repeat to hear a

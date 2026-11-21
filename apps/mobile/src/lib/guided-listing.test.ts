@@ -6,9 +6,10 @@ import {
   commitAnswer,
   voiceFields,
   listingReadback,
+  firstIncompleteVoiceField,
   type VoiceCatalogue,
 } from "./guided-listing";
-import { emptyListing, listingDetailsError, listingPayload, restoreListing } from "./listing-form";
+import { emptyListing, listingDetailsError, listingPayload, restoreListing, type ListingForm } from "./listing-form";
 const catalogue: VoiceCatalogue = {
   categories: [
     {
@@ -16,10 +17,12 @@ const catalogue: VoiceCatalogue = {
       slug: "roots-tubers",
       translations: [{ locale: "en", name: "Roots & Tubers" }],
     },
+    { id: "grains", slug: "grains", translations: [{ locale: "en", name: "Grains" }] },
   ],
   units: [
     { code: "PIECE", allowsDecimal: false },
     { code: "KG", allowsDecimal: true },
+    { code: "BAG", allowsDecimal: false },
   ],
   addresses: [
     { id: "farm", line1: "Farm road", city: "Enugu", lga: "Enugu North", state: "Enugu" },
@@ -68,7 +71,7 @@ describe("English guided listing grammar", () => {
       "roots",
     );
     expect(interpretAnswer("unitCode", "tubers", emptyListing, catalogue)?.value).toBe("PIECE");
-    expect(interpretAnswer("unitCode", "bags", emptyListing, catalogue)).toBeNull();
+    expect(interpretAnswer("unitCode", "bags", emptyListing, catalogue)?.value).toBe("BAG");
   });
   it("carries the selected sale package into size capture, including custom sizes", () => {
     const base = { ...emptyListing, title: "Yam", categoryId: "roots" };
@@ -77,19 +80,98 @@ describe("English guided listing grammar", () => {
     expect(selected.salePackaging).toMatchObject({ type: "PIECE", size: 1, measure: "PIECE" });
     expect(interpretAnswer("salePackageSize", "one", selected, catalogue)?.spoken).toContain("per individual piece");
     const customAnswer = interpretAnswer("salePackaging", "custom", base, catalogue)!;
-    const custom = commitAnswer(base, "salePackaging", customAnswer);
-    const size = interpretAnswer("salePackageSize", "2.5", custom, catalogue)!;
-    expect(commitAnswer(custom, "salePackageSize", size).salePackaging).toMatchObject({
+    const selectedCustom = commitAnswer(base, "salePackaging", customAnswer);
+    const custom = commitAnswer(selectedCustom, "salePackageLabel", interpretAnswer("salePackageLabel", "Family tub", selectedCustom, catalogue)!);
+    const measuredCustom = commitAnswer(custom, "salePackageMeasure", interpretAnswer("salePackageMeasure", "kilograms", custom, catalogue)!);
+    const size = interpretAnswer("salePackageSize", "2.5", measuredCustom, catalogue)!;
+    expect(commitAnswer(measuredCustom, "salePackageSize", size).salePackaging).toMatchObject({
       type: "CUSTOM",
       size: 2.5,
       measure: "KG",
-      customLabel: "Custom package",
+      customLabel: "Family tub",
     });
-    expect(interpretAnswer("salePackageSize", "2.5555", custom, catalogue)).toBeNull();
+    expect(interpretAnswer("salePackageSize", "2.5555", measuredCustom, catalogue)).toBeNull();
     expect(commitAnswer({ ...selected, quantity: "12", price: "500" }, "salePackageSize", interpretAnswer("salePackageSize", "one", selected, catalogue)!)).toMatchObject({
       quantity: "",
       price: "",
     });
+  });
+  it("understands package-aware Nigerian English without mixing stock, size, or price", () => {
+    const rice = { ...emptyListing, title: "Rice", categoryId: "grains" };
+    const bag = commitAnswer(rice, "salePackaging", interpretAnswer("salePackaging", "bag", rice, catalogue)!);
+    expect(interpretAnswer("salePackageSize", "fifty kilograms per bag", bag, catalogue)?.value).toContain('"size":50');
+    expect(interpretAnswer("salePackageSize", "each bag contains 50 kg", bag, catalogue)?.value).toContain('"size":50');
+    expect(interpretAnswer("salePackageSize", "two and a half kilograms", bag, catalogue)?.value).toContain('"size":2.5');
+    expect(interpretAnswer("salePackageSize", "half a tonne", bag, catalogue)?.value).toContain('"size":500');
+    const priced = { ...bag, salePackaging: { type: "BAG" as const, size: 50, measure: "KG" as const }, unitCode: "BAG" };
+    expect(interpretAnswer("quantity", "twenty bags", priced, catalogue)?.value).toBe("20");
+    expect(interpretAnswer("price", "seventy-five thousand naira", priced, catalogue)?.value).toBe("75000");
+    expect(interpretAnswer("price", "₦75,000 per bag", priced, catalogue)?.value).toBe("75000");
+    expect(interpretAnswer("price", "₦75k per bag", priced, catalogue)?.value).toBe("75000");
+    expect(interpretAnswer("quantity", "twenty baskets", priced, catalogue)).toBeNull();
+  });
+  it("resumes a custom package at its first missing detail instead of reasking its type", () => {
+    let form: ListingForm = {
+      ...emptyListing,
+      title: "Rice",
+      description: "Clean dry rice",
+      categoryId: "grains",
+      unitCode: "PIECE",
+    };
+    form = commitAnswer(form, "salePackaging", interpretAnswer("salePackaging", "custom", form, catalogue)!);
+    expect(firstIncompleteVoiceField(form, catalogue)).toBe("salePackageLabel");
+    form = commitAnswer(form, "salePackageLabel", interpretAnswer("salePackageLabel", "Family tub", form, catalogue)!);
+    form = { ...form, voiceCursor: "salePackageMeasure" };
+    expect(firstIncompleteVoiceField(form, catalogue)).toBe("salePackageMeasure");
+    form = commitAnswer(form, "salePackageMeasure", interpretAnswer("salePackageMeasure", "kilograms", form, catalogue)!);
+    form = { ...form, voiceCursor: "salePackageSize" };
+    expect(firstIncompleteVoiceField(form, catalogue)).toBe("salePackageSize");
+    const size = interpretAnswer("salePackageSize", "two and a half kilograms", form, catalogue)!;
+    form = commitAnswer(form, "salePackageSize", size);
+    expect(firstIncompleteVoiceField(form, catalogue)).toBe("quantity");
+    expect(form.salePackaging).toMatchObject({ type: "CUSTOM", customLabel: "Family tub", size: 2.5, measure: "KG" });
+  });
+  it("produces the same canonical rice listing from voice and typed inputs", () => {
+    const categoryCatalogue = { ...catalogue, commissionBasisPoints: 600 };
+    let voice = emptyListing;
+    const answer = (field: Parameters<typeof interpretAnswer>[0], raw: string) => {
+      const parsed = interpretAnswer(field, raw, voice, categoryCatalogue);
+      expect(parsed).not.toBeNull();
+      voice = commitAnswer(voice, field, parsed!);
+    };
+    answer("title", "Rice");
+    answer("categoryId", "Grains");
+    answer("description", "Clean dry rice in 50 kg bags");
+    answer("salePackaging", "Bag");
+    answer("salePackageSize", "fifty kilograms per bag");
+    answer("quantity", "twenty bags");
+    answer("price", "₦75,000 per bag");
+    answer("addressId", "one");
+    answer("shippingScope", "nationwide");
+    answer("packing", "help");
+    voice = { ...voice, inputMethod: "voice" };
+    const typed = {
+      ...voice,
+      inputMethod: "type" as const,
+      title: "Rice",
+      categoryId: "grains",
+      description: "Clean dry rice in 50 kg bags",
+      salePackaging: { type: "BAG" as const, size: 50, measure: "KG" as const },
+      unitCode: "BAG",
+      quantity: "20",
+      price: "75000",
+      addressId: "farm",
+      shippingScope: "NATIONWIDE" as const,
+      packingAssistanceRequested: true,
+    };
+    expect(voice.salePackaging).toEqual(typed.salePackaging);
+    expect(firstIncompleteVoiceField(voice, categoryCatalogue)).toBeNull();
+    expect(listingDetailsError(voice, categoryCatalogue.units, "grains")).toBe("");
+    expect(listingPayload(voice, "en")).toEqual(listingPayload(typed, "en"));
+    expect(listingReadback(voice, categoryCatalogue)).toContain("Total produce stock: 1,000 kilograms");
+    expect(listingReadback(voice, categoryCatalogue)).toContain("Gross stock value before commission: ₦1,500,000.00");
+    expect(listingReadback(voice, categoryCatalogue)).toContain("₦4,500.00 (6%)");
+    expect(listingReadback(voice, categoryCatalogue)).toContain("₦70,500.00");
   });
   it("rejects fractional pieces, excessive precision and implausible measurements", () => {
     const form = { ...emptyListing, unitCode: "PIECE" };
@@ -111,8 +193,8 @@ describe("English guided listing grammar", () => {
     };
     expect(commitAnswer(form, "title", { value: "White yam", spoken: "White yam" })).toMatchObject({
       title: "White yam",
-      quantity: "2",
-      price: "150",
+      quantity: "",
+      price: "",
     });
     expect(commitAnswer(form, "unitCode", { value: "PIECE", spoken: "pieces" })).toMatchObject({
       title: "Yam",

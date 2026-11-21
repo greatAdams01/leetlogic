@@ -114,15 +114,27 @@ it("uploads a bounded recording after Done speaking and deletes its temporary fi
   expect(h.deleted).toHaveBeenCalledOnce();
   expect(h.released).toHaveBeenCalledOnce();
 });
-it("stops after a spoken answer followed by silence", async () => {
+it("allows a natural pause before stopping after speech", async () => {
   h.meter = -20;
-  const result = listenServerListing("en");
+  let finished = false;
+  const result = listenServerListing("en").then((text) => { finished = true; return text; });
   await prepared();
   await vi.advanceTimersByTimeAsync(300);
   h.meter = -60;
   await vi.advanceTimersByTimeAsync(1600);
+  expect(finished).toBe(false);
+  await vi.advanceTimersByTimeAsync(2000);
   expect(await result).toBe("twenty five");
   expect(h.stopped).toHaveBeenCalledOnce();
+});
+it("reports silence without sending an empty recording to transcription", async () => {
+  const result = listenServerListing("en"),
+    rejected = expect(result).rejects.toThrow("No speech was detected");
+  await prepared();
+  await vi.advanceTimersByTimeAsync(8100);
+  await rejected;
+  expect(h.api).not.toHaveBeenCalled();
+  expect(h.deleted).toHaveBeenCalledOnce();
 });
 it("does not upload when paused during recording", async () => {
   const result = listenServerListing("en");

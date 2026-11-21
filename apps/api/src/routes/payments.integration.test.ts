@@ -1665,8 +1665,8 @@ suite("provider-backed payment safeguards", () => {
         sourceLocale: "en",
         categoryId: category.id,
         unitCode: "BAG",
-        quantity: "10",
-        unitPriceMinor: "500000",
+        quantity: "20",
+        unitPriceMinor: "7500000",
         addressId: address.id,
         salePackaging: { type: "BAG", size: 50, measure: "KG" },
         packaging,
@@ -1686,16 +1686,20 @@ suite("provider-backed payment safeguards", () => {
         await request(app)
           .put(`/v1/shopping/cart/${listingId}`)
           .set(buyerAuth)
-          .send({ quantity: "2", unitPriceMinor: "500000" })
+          .send({ quantity: "2", unitPriceMinor: "7500000" })
       ).status,
     ).toBe(200);
     const cart = await request(app)
       .post("/v1/shopping/cart/checkout")
       .set(buyerAuth)
       .set("Idempotency-Key", randomUUID())
-      .send({ items: [{ listingId, quantity: "2", unitPriceMinor: "500000" }] });
+      .send({ items: [{ listingId, quantity: "2", unitPriceMinor: "7500000" }] });
     expect(cart.status).toBe(201);
     const orderId = cart.body.orders[0].id;
+    const savedOrder = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(savedOrder.totalMinor).toBe(15000000n);
+    expect(savedOrder.quantity.toString()).toBe("2");
+    expect(savedOrder.packagingSnapshot).toMatchObject({ salePackaging: { type: "BAG", size: 50, measure: "KG" } });
     expect(
       (
         await request(app)
@@ -1794,12 +1798,12 @@ suite("provider-backed payment safeguards", () => {
       .set(buyerAuth)
       .send({});
     expect(checkoutResult.status).toBe(200);
-    expect(checkoutResult.body.amountMinor).toBe("1003000");
-    expect(write).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 1003000n }));
+    expect(checkoutResult.body.amountMinor).toBe("15003000");
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 15003000n }));
     const payment = await prisma.paymentAttempt.findUniqueOrThrow({
       where: { id: checkoutResult.body.id },
     });
-    mockReceipt(payment, { amount: "10030.00", amount_paid: "10031.00" });
+    mockReceipt(payment, { amount: "150030.00", amount_paid: "150031.00" });
     await reconcilePayment(payment.id);
     await reconcilePayment(payment.id);
     expect(await prisma.escrowEntry.count({ where: { orderId, kind: "FUND" } })).toBe(1);
