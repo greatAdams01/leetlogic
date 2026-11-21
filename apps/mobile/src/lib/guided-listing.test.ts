@@ -24,6 +24,7 @@ const catalogue: VoiceCatalogue = {
   addresses: [
     { id: "farm", line1: "Farm road", city: "Enugu", lga: "Enugu North", state: "Enugu" },
   ],
+  commissionBasisPoints: 600,
 };
 describe("English guided listing grammar", () => {
   it.each([
@@ -68,6 +69,27 @@ describe("English guided listing grammar", () => {
     );
     expect(interpretAnswer("unitCode", "tubers", emptyListing, catalogue)?.value).toBe("PIECE");
     expect(interpretAnswer("unitCode", "bags", emptyListing, catalogue)).toBeNull();
+  });
+  it("carries the selected sale package into size capture, including custom sizes", () => {
+    const base = { ...emptyListing, title: "Yam", categoryId: "roots" };
+    const packageAnswer = interpretAnswer("salePackaging", "piece", base, catalogue)!;
+    const selected = commitAnswer(base, "salePackaging", packageAnswer);
+    expect(selected.salePackaging).toMatchObject({ type: "PIECE", size: 1, measure: "PIECE" });
+    expect(interpretAnswer("salePackageSize", "one", selected, catalogue)?.spoken).toContain("per individual piece");
+    const customAnswer = interpretAnswer("salePackaging", "custom", base, catalogue)!;
+    const custom = commitAnswer(base, "salePackaging", customAnswer);
+    const size = interpretAnswer("salePackageSize", "2.5", custom, catalogue)!;
+    expect(commitAnswer(custom, "salePackageSize", size).salePackaging).toMatchObject({
+      type: "CUSTOM",
+      size: 2.5,
+      measure: "KG",
+      customLabel: "Custom package",
+    });
+    expect(interpretAnswer("salePackageSize", "2.5555", custom, catalogue)).toBeNull();
+    expect(commitAnswer({ ...selected, quantity: "12", price: "500" }, "salePackageSize", interpretAnswer("salePackageSize", "one", selected, catalogue)!)).toMatchObject({
+      quantity: "",
+      price: "",
+    });
   });
   it("rejects fractional pieces, excessive precision and implausible measurements", () => {
     const form = { ...emptyListing, unitCode: "PIECE" };
@@ -135,5 +157,7 @@ describe("English guided listing grammar", () => {
       packingAssistanceRequested: true,
     });
     expect(listingReadback(form, catalogue)).toContain("Only the submit button");
+    expect(listingReadback({ ...form, price: "1500" }, catalogue)).toContain("₦90.00 (6%)");
+    expect(listingReadback({ ...form, price: "1500" }, catalogue)).toContain("₦1,410.00");
   });
 });

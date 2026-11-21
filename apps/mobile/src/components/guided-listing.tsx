@@ -23,6 +23,7 @@ import {
   speechSetupMessage,
 } from "../lib/local-listing-speech";
 import { listingDetailsError, type ListingForm } from "../lib/listing-form";
+import { packagingOptions } from "../../../../packages/contracts/src/sale-packaging";
 
 export function GuidedListing({
   visible,
@@ -51,8 +52,9 @@ export function GuidedListing({
     active = useRef(false);
   latest.current = form;
   const fields = voiceFields(form),
-    cursor = fields.includes(form.voiceCursor as VoiceField)
-      ? (form.voiceCursor as VoiceField)
+    savedCursor = form.voiceCursor === "unitCode" ? "salePackaging" : form.voiceCursor,
+    cursor = fields.includes(savedCursor as VoiceField)
+      ? (savedCursor as VoiceField)
       : fields[0]!;
   const pause = () => {
     generation.current++;
@@ -126,6 +128,19 @@ export function GuidedListing({
         let prompt = englishListing.prompts[field];
         if (field === "categoryId")
           prompt += ` Say the category name or number. ${catalogue.categories.map((c, i) => `${i + 1}: ${c.translations.find((t) => t.locale === "en")?.name || c.slug.replace(/-/g, " ")}`).join(". ")}.`;
+        if (field === "salePackaging") {
+          const category = catalogue.categories.find((item) => item.id === draft.categoryId);
+          if (!category) throw new Error("Choose a produce category first.");
+          prompt += ` ${packagingOptions(category.slug, draft.title).map((option, index) => `${index + 1}: ${option.label}`).join(". ")}.`;
+        }
+        if (field === "salePackageSize") {
+          const category = catalogue.categories.find((item) => item.id === draft.categoryId);
+          const option = category && packagingOptions(category.slug, draft.title).find((item) => item.value === draft.salePackaging?.type);
+          if (!option) throw new Error("Choose a selling package first.");
+          prompt += option.value === "CUSTOM"
+            ? " Say the amount in kilograms for one custom package, up to three decimal places."
+            : ` Available sizes: ${option.sizes.join(", ")} ${option.measure}.`;
+        }
         if (field === "addressId") {
           if (!catalogue.addresses.length)
             throw new Error(
@@ -143,6 +158,8 @@ export function GuidedListing({
           "produce name": "title",
           "package units": "unitsPerPackage",
           category: "categoryId",
+          package: "salePackaging",
+          "package size": "salePackageSize",
           description: "description",
           unit: "unitCode",
           quantity: "quantity",

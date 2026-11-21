@@ -60,6 +60,7 @@ const catalogue = {
     },
   ],
   units: [{ code: "PIECE", allowsDecimal: false }],
+  commissionBasisPoints: 600,
   addresses: [
     { id: "farm", line1: "Farm road", city: "Enugu", lga: "Enugu North", state: "Enugu" },
   ],
@@ -103,7 +104,9 @@ it("speaks every question, commits only confirmed answers and finishes at photos
     "yes",
     "Freshly harvested white yam",
     "yes",
-    "tubers",
+    "piece",
+    "yes",
+    "one",
     "yes",
     "twenty",
     "yes",
@@ -135,7 +138,9 @@ it("speaks every question, commits only confirmed answers and finishes at photos
   });
   expect(h.speak.mock.calls.map((c) => c[0]).join(" ")).toContain("Is that correct?");
   expect(h.speak.mock.calls.at(-1)![0]).toContain("Only the submit button");
-  expect(h.listen).toHaveBeenCalledTimes(18);
+  expect(h.speak.mock.calls.at(-1)![0]).toContain("₦30.00 (6%)");
+  expect(h.speak.mock.calls.at(-1)![0]).toContain("₦470.00");
+  expect(h.listen).toHaveBeenCalledTimes(20);
 });
 it("does not save an unconfirmed answer and lets the farmer replace it", async () => {
   const answers = ["Yam", "no", "Cassava", "yes"];
@@ -210,5 +215,15 @@ it("does not advance on an ambiguous quantity", async () => {
   await act(async () => button("Listen and answer").props.onPress());
   expect(h.changed).not.toHaveBeenCalled();
   expect(h.speak.mock.calls.some((c) => c[0].includes("could not understand"))).toBe(true);
+  await act(async () => button("Pause").props.onPress());
+});
+it("resumes older drafts at sale packaging after the unit question was replaced", async () => {
+  await act(async () => {
+    renderer = create(
+      <Harness initial={{ ...emptyListing, title: "Yam", categoryId: "roots", voiceCursor: "unitCode" }} />,
+    );
+  });
+  await act(async () => button("Listen and answer").props.onPress());
+  expect(h.speak.mock.calls[0]![0]).toContain("How do you sell this produce?");
   await act(async () => button("Pause").props.onPress());
 });

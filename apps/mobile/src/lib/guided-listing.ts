@@ -1,4 +1,5 @@
-import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
+import { packagingOptions, packageUnitCode, saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
+import { commissionRate, estimateSale } from "../../../../packages/contracts/src/sale-earnings";
 import type { ListingForm, ListingUnit } from "./listing-form";
 import { emptyPacking, packingError } from "./packaging";
 import { quantity, toMinor, money } from "./domain";
@@ -7,6 +8,8 @@ export type VoiceField =
   | "title"
   | "categoryId"
   | "description"
+  | "salePackaging"
+  | "salePackageSize"
   | "unitCode"
   | "quantity"
   | "price"
@@ -23,6 +26,7 @@ export type VoiceCatalogue = {
   categories: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
   units: ListingUnit[];
   addresses: { id: string; line1: string; city: string; lga: string; state: string }[];
+  commissionBasisPoints?: number;
 };
 // Prompts, grammar and parsers belong to a locale profile. Only English is enabled.
 export const englishListing = {
@@ -31,7 +35,8 @@ export const englishListing = {
     "title",
     "categoryId",
     "description",
-    "unitCode",
+    "salePackaging",
+    "salePackageSize",
     "quantity",
     "price",
     "addressId",
@@ -48,6 +53,8 @@ export const englishListing = {
     title: "What produce would you like to sell?",
     categoryId: "Which category is your produce in?",
     description: "Tell buyers about the variety, freshness and condition of your produce.",
+    salePackaging: "How do you sell this produce? Choose the package type from the numbered options.",
+    salePackageSize: "How much produce is in each selling package? Say the package size shown in the options.",
     unitCode:
       "What unit will you sell by? For example, kilogram, bag, basket, crate, tonne, piece, bunch or litre. A tuber counts as one piece.",
     quantity: "How many selling units do you have available? Say only the number.",
@@ -239,6 +246,30 @@ export function interpretAnswer(
       ? { value, spoken: value === "PIECE" ? "pieces; each tuber is one piece" : text }
       : null;
   }
+  if (field === "salePackaging") {
+    const category = catalogue.categories.find((item) => item.id === form.categoryId);
+    if (!category) return null;
+    const options = packagingOptions(category.slug, form.title);
+    const position = spokenNumber(text);
+    const selected = position && /^\d+$/.test(position)
+      ? options[Number(position) - 1]
+      : options.find((option) => cleanSpeech(option.label) === text || cleanSpeech(option.value) === text);
+    const unitCode = selected && packageUnitCode(selected, catalogue.units);
+    return selected && unitCode
+      ? {
+          value: JSON.stringify({
+            salePackaging: {
+              type: selected.value,
+              size: selected.sizes[0] || 1,
+              measure: selected.measure,
+              ...(selected.value === "CUSTOM" ? { customLabel: "Custom package" } : {}),
+            },
+            unitCode,
+          }),
+          spoken: selected.label,
+        }
+      : null;
+  }
   if (field === "shippingScope") {
     const value = text === "local" ? "LOCAL" : text === "nationwide" ? "NATIONWIDE" : null;
     return value
@@ -280,6 +311,18 @@ export function interpretAnswer(
           spoken: `${address.line1}, ${address.city}, ${address.lga}, ${address.state}`,
         }
       : null;
+  }
+  if (field === "salePackageSize") {
+    const category = catalogue.categories.find((item) => item.id === form.categoryId);
+    const option = category && packagingOptions(category.slug, form.title).find((item) => item.value === form.salePackaging?.type);
+    if (!option || (option.value === "CUSTOM"
+      ? Number(number) > 1_000_000 || !/^\d+(\.\d{1,3})?$/.test(number)
+      : !option.sizes.includes(Number(number)))) return null;
+    const unitCode = packageUnitCode(option, catalogue.units);
+    if (!unitCode) return null;
+    const size = Number(number);
+    const salePackaging = { ...form.salePackaging, type: option.value, size, measure: option.measure } as const;
+    return { value: JSON.stringify({ salePackaging, unitCode }), spoken: `${size} ${option.measure.toLowerCase()} per ${option.label.toLowerCase()}` };
   }
   if (field === "quantity") {
     try {
@@ -343,6 +386,14 @@ export function commitAnswer(
       packingAssistanceRequested: answer.value === "assistance",
       packaging: { ...emptyPacking },
     };
+  if (field === "salePackaging") {
+    const { salePackaging, unitCode } = JSON.parse(answer.value) as { salePackaging: NonNullable<ListingForm["salePackaging"]>; unitCode: string };
+    return { ...form, salePackaging, unitCode, quantity: "", price: "" };
+  }
+  if (field === "salePackageSize") {
+    const { salePackaging, unitCode } = JSON.parse(answer.value) as { salePackaging: NonNullable<ListingForm["salePackaging"]>; unitCode: string };
+    return { ...form, salePackaging, unitCode, quantity: "", price: "" };
+  }
   if (["unitsPerPackage", "weightKg", "length", "width", "height", "handling"].includes(field))
     return { ...form, packaging: { ...(form.packaging || emptyPacking), [field]: answer.value } };
   // Unit changes require fresh confirmations for dependent quantities and money.
@@ -367,5 +418,9 @@ export function voiceFields(form: ListingForm) {
 }
 export function listingReadback(form: ListingForm, catalogue: VoiceCatalogue): string {
   const address = catalogue.addresses.find((a) => a.id === form.addressId);
-  return `Your listing: ${form.title}. ${form.description}. Category: ${catalogue.categories.find((c) => c.id === form.categoryId)?.translations.find((t) => t.locale === "en")?.name || "not selected"}. Available: ${form.quantity} ${form.unitCode}. Price: ${/^\d+(\.\d{1,2})?$/.test(form.price) && Number(form.price) > 0 ? money(toMinor(form.price)) : "not entered"} per ${saleUnitLabel(form.salePackaging) || form.unitCode}. Pickup: ${address ? `${address.line1}, ${address.city}, ${address.state}` : "missing farm address"}. Delivery: ${form.shippingScope === "LOCAL" ? "within your state" : "nationwide"}. ${form.packingAssistanceRequested ? "The team must complete package measurements before buyers can purchase." : packingError(form.packaging) ? "Package measurements are incomplete." : `Each package contains ${form.packaging!.unitsPerPackage} selling units, weighs ${form.packaging!.weightKg} kilograms, and measures ${form.packaging!.length} by ${form.packaging!.width} by ${form.packaging!.height} centimetres. Handling: ${form.packaging!.handling.replace(/_/g, " ")}.`} ${form.photos.length} photos. Review and correct any details. Only the submit button can send your listing for review.`;
+  const price = /^\d+(\.\d{1,2})?$/.test(form.price) && Number(form.price) > 0 ? toMinor(form.price) : null;
+  const earnings = price && catalogue.commissionBasisPoints !== undefined ? estimateSale(BigInt(price), catalogue.commissionBasisPoints) : null;
+  const commission = earnings ? `Estimated Leetlogic commission: ${money(earnings.commissionMinor)} (${commissionRate(catalogue.commissionBasisPoints!)}). From ${money(earnings.grossMinor)}, estimated earnings are ${money(earnings.netMinor)} per selling unit.` : "Commission estimate is unavailable.";
+  const packageDescription = form.salePackaging ? saleUnitLabel(form.salePackaging) : form.unitCode;
+  return `Your listing: ${form.title}. ${form.description}. Category: ${catalogue.categories.find((c) => c.id === form.categoryId)?.translations.find((t) => t.locale === "en")?.name || "not selected"}. Available: ${form.quantity} ${packageDescription}. Price: ${price ? money(price) : "not entered"} per ${packageDescription}. ${commission} Pickup: ${address ? `${address.line1}, ${address.city}, ${address.state}` : "missing farm address"}. Delivery: ${form.shippingScope === "LOCAL" ? "within your state" : "nationwide"}. ${form.packingAssistanceRequested ? "The team must complete package measurements before buyers can purchase." : packingError(form.packaging) ? "Package measurements are incomplete." : `Each courier package contains ${form.packaging!.unitsPerPackage} selling units, weighs ${form.packaging!.weightKg} kilograms, and measures ${form.packaging!.length} by ${form.packaging!.width} by ${form.packaging!.height} centimetres. Handling: ${form.packaging!.handling.replace(/_/g, " ")}.`} ${form.photos.length} photos. Review and correct any details. Only the submit button can send your listing for review.`;
 }
