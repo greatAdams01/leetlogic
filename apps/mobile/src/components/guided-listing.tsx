@@ -1,313 +1,143 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, View } from "react-native";
 import { AppSheet } from "./app-sheet";
-import { Button, Label, Notice } from "./ui";
-import {
-  englishListing,
-  interpretAnswer,
-  commitAnswer,
-  voiceFields,
-  voiceCommand,
-  listingReadback,
-  firstIncompleteVoiceField,
-  voicePackagingOptions,
-  type VoiceField,
-  type VoiceCatalogue,
-} from "../lib/guided-listing";
-import {
-  localSpeechAvailable,
-  serverVoiceEnabled,
-  finishListingAnswer,
-  requestLocalSpeechPermission,
-  speakListing,
-  listenListing,
-  stopListingSpeech,
-  speechSetupMessage,
-} from "../lib/local-listing-speech";
+import { Button, Field, Label, Notice } from "./ui";
+import { englishListing, interpretAnswer, commitAnswer, voiceFields, firstIncompleteVoiceField,
+  voicePackagingOptions, listingReadback, type VoiceCatalogue } from "../lib/guided-listing";
+import { localSpeechAvailable, finishListingAnswer, requestLocalSpeechPermission,
+  speakListing, listenListing, stopListingSpeech, speechSetupMessage } from "../lib/local-listing-speech";
 import { listingDetailsError, type ListingForm } from "../lib/listing-form";
+import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 
-export function GuidedListing({
-  visible,
-  form,
-  catalogue,
-  onChange,
-  onClose,
-  onDone,
-  onActivityChange,
-}: {
-  visible: boolean;
-  form: ListingForm;
-  catalogue: VoiceCatalogue;
+export function GuidedListing({ visible, form, catalogue, onChange, onClose, onDone, onActivityChange }: {
+  visible: boolean; form: ListingForm; catalogue: VoiceCatalogue;
   onChange: (form: ListingForm) => void | Promise<void>;
-  onClose: () => void;
-  onDone: () => void;
-  onActivityChange: (active: boolean) => void;
+  onClose: () => void; onDone: () => void; onActivityChange: (active: boolean) => void;
 }) {
-  const [phase, setPhase] = useState("Ready"),
-    [message, setMessage] = useState(""),
-    [transcript, setTranscript] = useState(""),
-    [interpretation, setInterpretation] = useState(""),
-    [busy, setBusy] = useState(false),
-    [unavailable, setUnavailable] = useState(false);
-  const generation = useRef(0),
-    latest = useRef(form),
-    active = useRef(false);
-  latest.current = form;
-  const fields = voiceFields(form, catalogue),
-    cursor = firstIncompleteVoiceField(form, catalogue) || fields[0]!;
+  const [input, setInput] = useState(""), [message, setMessage] = useState(""),
+    [transcript, setTranscript] = useState(""), [phase, setPhase] = useState(""),
+    [busy, setBusy] = useState(false);
+  const generation = useRef(0), active = useRef(false), saving = useRef(false);
+  const cursor = firstIncompleteVoiceField(form, catalogue);
+  const category = catalogue.categories.find(c => c.id === form.categoryId);
+  const options = category ? voicePackagingOptions(category.slug, form.title, catalogue) : [];
+  const option = options.find(o => o.value === form.salePackaging?.type);
+  const unit = saleUnitLabel(form.salePackaging) || "selling unit";
+  const numeric = !!cursor && ["quantity", "price", "salePackageSize", "unitsPerPackage", "weightKg", "length", "width", "height"].includes(cursor);
+  const prompt = cursor === "quantity" ? `How many ${unit} do you have available?`
+    : cursor === "price" ? `Price in naira per ${unit}`
+    : cursor === "salePackaging" ? "Choose your selling package"
+    : cursor === "salePackageSize" ? `Size of each package (${form.salePackaging?.measure || ""})`
+    : cursor === "addressId" ? "Choose your pickup address"
+    : cursor === "shippingScope" ? "Where can buyers order delivery?"
+    : cursor === "packing" ? "Do you have the courier package measurements?"
+    : cursor ? englishListing.prompts[cursor].replace(/ Say.*$/, "") : "Your listing details are ready";
   const pause = () => {
     generation.current++;
     active.current = false;
-    setBusy(false);
+    setBusy(false); setPhase("");
     onActivityChange(false);
     void stopListingSpeech();
-    setPhase("Paused");
   };
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "background") pause();
-    });
-    return () => {
-      sub.remove();
-      generation.current++;
-      active.current = false;
-      onActivityChange(false);
-      void stopListingSpeech();
-    };
+    const sub = AppState.addEventListener("change", state => { if (state === "background") pause(); });
+    return () => { sub.remove(); generation.current++; active.current = false; void stopListingSpeech(); onActivityChange(false); };
   }, []);
+  useEffect(() => { if (!visible) pause(); }, [visible]);
   useEffect(() => {
-    if (!visible) pause();
-  }, [visible]);
-  const run = async () => {
-    if (active.current) return;
-    active.current = true;
-    setBusy(true);
-    onActivityChange(true);
-    setMessage("");
-    setUnavailable(false);
+    setMessage(""); setTranscript("");
+    if (!cursor) { setInput(""); return; }
+    const value = cursor === "salePackageSize" ? form.salePackaging?.size
+      : cursor === "salePackageLabel" ? form.salePackaging?.customLabel
+      : ["unitsPerPackage", "weightKg", "length", "width", "height"].includes(cursor)
+        ? form.packaging?.[cursor as "weightKg"] : form[cursor as "title"];
+    setInput(typeof value === "string" ? value : typeof value === "number" && value > 0 ? String(value) : "");
+  }, [cursor, visible]);
+  const parsed = cursor ? interpretAnswer(cursor, input, form, catalogue) : null;
+  const record = async (readOnly = false) => {
+    if (active.current || saving.current) return;
+    active.current = true; setBusy(true); onActivityChange(true); setMessage("");
     const token = ++generation.current;
     const current = () => token === generation.current;
-    const say = async (text: string) => {
-      if (!current()) throw new Error("Paused");
-      setPhase("Speaking");
-      setMessage(text);
-      await speakListing(text);
-      if (!current()) throw new Error("Paused");
-    };
-    const hear = async () => {
-      if (!current()) throw new Error("Paused");
-      setPhase("Listening — speak now");
-      const text = await listenListing(locale!, () => {
-        if (current()) setPhase("Transcribing your answer…");
-      });
-      if (!current()) throw new Error("Paused");
-      setTranscript(text);
-      setInterpretation("");
-      return text;
-    };
-    let locale: string | null = null;
     try {
-      setPhase(serverVoiceEnabled ? "Checking voice service" : "Checking offline English speech");
-      try {
-        locale = await localSpeechAvailable();
-      } catch (error) {
-        setUnavailable(true);
-        throw error;
-      }
+      const locale = await localSpeechAvailable();
       if (!current()) return;
-      if (!locale) {
-        setUnavailable(true);
-        throw new Error(speechSetupMessage);
-      }
-      await requestLocalSpeechPermission();
-      if (!current()) return;
-      let draft = latest.current;
-      let field = firstIncompleteVoiceField(draft, catalogue);
-      const finish = async () => {
-        const category = catalogue.categories.find((item) => item.id === draft.categoryId);
-        const error = listingDetailsError(draft, catalogue.units, category?.slug);
-        if (error) {
-          await onChange({ ...draft, voiceCursor: "review" });
-          throw new Error(error);
-        }
-        draft = { ...draft, voiceCursor: "review" };
-        await onChange(draft);
-        await say(`${listingReadback(draft, catalogue)} Next, add at least one clear photo. Use the camera or photo library buttons. The first photo is the cover. You will review everything before using the submit button.`);
-        if (current()) onDone();
-      };
-      if (!field) await finish();
-      while (current() && field) {
-        const available = voiceFields(draft, catalogue);
-        let prompt = englishListing.prompts[field];
-        if (field === "categoryId")
-          prompt += ` Say the category name or number. ${catalogue.categories.map((c, i) => `${i + 1}: ${c.translations.find((t) => t.locale === "en")?.name || c.slug.replace(/-/g, " ")}`).join(". ")}.`;
-        if (field === "salePackaging") {
-          const category = catalogue.categories.find((item) => item.id === draft.categoryId);
-          if (!category) throw new Error("Choose a produce category first.");
-          prompt += ` ${voicePackagingOptions(category.slug, draft.title, catalogue).map((option, index) => `${index + 1}: ${option.label}`).join(". ")}.`;
-        }
-        if (field === "salePackageLabel") prompt += " Use between two and eighty characters.";
-        if (field === "salePackageMeasure") prompt += " Say kilograms, litres, or pieces.";
-        if (field === "salePackageSize") {
-          const category = catalogue.categories.find((item) => item.id === draft.categoryId);
-          const option = category && voicePackagingOptions(category.slug, draft.title, catalogue).find((item) => item.value === draft.salePackaging?.type);
-          if (!option) throw new Error("Choose a selling package first.");
-          prompt += ` Measurement: ${draft.salePackaging?.measure}. Suggested sizes: ${option.sizes.join(", ") || "your own size"}. You can say another size.`;
-        }
-        if (field === "addressId") {
-          if (!catalogue.addresses.length)
-            throw new Error(
-              "Save your farm address in your farmer profile, then return to continue. Your confirmed answers are saved.",
-            );
-          prompt += ` ${catalogue.addresses.map((a, i) => `${i + 1}: ${a.line1}, ${a.city}, ${a.state}`).join(". ")}`;
-        }
-        await say(prompt);
-        const raw = await hear(),
-          command = voiceCommand(raw);
-        const correction = /^change (.+)$/i.exec(raw.trim().replace(/[.!?]+$/, ""));
-        const correctionFields: Record<string, VoiceField> = {
-          name: "title",
-          title: "title",
-          "produce name": "title",
-          "package units": "unitsPerPackage",
-          category: "categoryId",
-          package: "salePackaging",
-          "package size": "salePackageSize",
-          "package name": "salePackageLabel",
-          "package measurement": "salePackageMeasure",
-          description: "description",
-          unit: "unitCode",
-          quantity: "quantity",
-          price: "price",
-          address: "addressId",
-          delivery: "shippingScope",
-          packing: "packing",
-          weight: "weightKg",
-          length: "length",
-          width: "width",
-          height: "height",
-          handling: "handling",
-        };
-        if (
-          correction &&
-          correctionFields[correction[1]!.toLowerCase()] &&
-          available.includes(correctionFields[correction[1]!.toLowerCase()]!)
-        ) {
-          field = correctionFields[correction[1]!.toLowerCase()]!;
-          draft = { ...draft, voiceCursor: `change:${field}` };
-          await onChange(draft);
-          continue;
-        }
-        if (command === "repeat") continue;
-        if (command === "back") {
-          field = available[Math.max(0, available.indexOf(field) - 1)]!;
-          draft = { ...draft, voiceCursor: `change:${field}` };
-          await onChange(draft);
-          continue;
-        }
-        const answer = interpretAnswer(field, raw, draft, catalogue);
-        if (!answer) {
-          await say("I could not understand a valid answer. Let us try that question again.");
-          continue;
-        }
-        let confirmed = false;
-        setInterpretation(answer.spoken);
-        while (current()) {
-          await say(`I heard: ${answer.spoken}. Is that correct? Say yes or no.`);
-          const confirmation = voiceCommand(await hear());
-          if (confirmation === "yes") {
-            confirmed = true;
-            break;
-          }
-          if (confirmation === "no") break;
-          await say("Please say yes to keep that answer, or no to record it again.");
-        }
-        if (!confirmed) continue;
-        draft = commitAnswer(draft, field, answer);
-        const next = voiceFields(draft, catalogue),
-          index = englishListing.fields.indexOf(field);
-        field = next.find((candidate) => englishListing.fields.indexOf(candidate) > index) || null;
-        draft = { ...draft, voiceCursor: field || "review" };
-        await onChange(draft);
-        if (!field) await finish();
+      if (!locale) throw new Error(speechSetupMessage);
+      if (readOnly) {
+        setPhase("Reading");
+        await speakListing(cursor ? prompt : listingReadback(form, catalogue));
+      } else {
+        await requestLocalSpeechPermission();
+        if (!current()) return;
+        setPhase("Listening — speak now");
+        const raw = await listenListing(locale, () => { if (current()) setPhase("Transcribing…"); });
+        if (!current() || !cursor) return;
+        const answer = interpretAnswer(cursor, raw, form, catalogue);
+        setTranscript(raw);
+        // Financial and package amounts always remain editable and require a tap to save.
+        setInput(answer && numeric ? answer.value : raw);
+        if (!answer) setMessage("Please edit the answer below, or record again.");
       }
     } catch (error) {
-      if (current()) {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "Voice listing paused. Try again or choose Type.",
-        );
-        setPhase("Paused");
-      }
+      if (current()) setMessage(error instanceof Error ? error.message : "Please try again or type your answer.");
     } finally {
-      if (current()) {
-        active.current = false;
-        setBusy(false);
-        onActivityChange(false);
-      }
+      if (current()) { active.current = false; setBusy(false); setPhase(""); onActivityChange(false); }
     }
   };
-  return (
-    <AppSheet
-      visible={visible}
-      title="Guided voice listing"
-      onShow={() => void run()}
-      subtitle={
-        serverVoiceEnabled
-          ? "English · recordings sent to LeetLogic for transcription"
-          : "English · processed on your device"
-      }
-      onClose={() => {
-        pause();
-        onClose();
-      }}
-      footer={
-        <View style={{ gap: 10 }}>
-          {phase.startsWith("Listening") && (
-            <Button title="Done speaking" onPress={() => void finishListingAnswer()} />
-          )}
-          {busy ? (
-            <Button title="Pause" onPress={pause} />
-          ) : (
-            <Button
-              title={unavailable ? "Continue by typing" : "Listen and answer"}
-              onPress={() => {
-                if (unavailable) {
-                  pause();
-                  onClose();
-                } else void run();
-              }}
-            />
-          )}
-          <Button
-            title={unavailable ? "Try voice again" : "Use Type instead"}
-            secondary
-            onPress={() => {
-              if (unavailable) {
-                void run();
-              } else {
-                pause();
-                onClose();
-              }
-            }}
-          />
-        </View>
-      }
-    >
-      <Label>{`Question ${fields.indexOf(cursor) + 1} of ${fields.length}`}</Label>
-      <Label>{englishListing.prompts[cursor]}</Label>
-      <Label>{phase}</Label>
-      {!!transcript && <Label>{`You said: ${transcript}`}</Label>}
-      {!!interpretation && <Label>{`Interpreted as: ${interpretation}`}</Label>}
-      {!!message && <Notice text={message} />}
-      <Label>
-        Listen to each question, then speak when the app says it is listening. Say repeat to hear a
-        question again, or back to correct the previous answer. Confirmed answers are saved. Voice
-        cannot submit a listing.
-      </Label>
-    </AppSheet>
-  );
+  const save = async (raw = input) => {
+    if (active.current || saving.current) return;
+    const answer = cursor && interpretAnswer(cursor, raw, form, catalogue);
+    if (!cursor || !answer) { setMessage("Choose an option or enter a valid answer to continue."); return; }
+    saving.current = true; setBusy(true); onActivityChange(true);
+    try {
+      let draft = commitAnswer(form, cursor, answer);
+      const next = voiceFields(draft, catalogue).find(f => englishListing.fields.indexOf(f) > englishListing.fields.indexOf(cursor));
+      draft = { ...draft, voiceCursor: next ? `change:${next}` : "review" };
+      await onChange(draft);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save. Please try again."); }
+    finally { saving.current = false; setBusy(false); onActivityChange(false); }
+  };
+  const choices: { label: string; value: string }[] =
+    cursor === "categoryId" ? catalogue.categories.map((c, i) => ({ label: c.translations.find(t => t.locale === "en")?.name || c.slug, value: String(i + 1) }))
+    : cursor === "salePackaging" ? options.map((o, i) => ({ label: o.label, value: String(i + 1) }))
+    : cursor === "salePackageSize" ? (option?.sizes || []).map(size => ({ label: `${size} ${form.salePackaging?.measure}`, value: String(size) }))
+    : cursor === "salePackageMeasure" ? [{ label: "Kilograms", value: "kilograms" }, { label: "Litres", value: "litres" }, { label: "Pieces", value: "pieces" }]
+    : cursor === "addressId" ? catalogue.addresses.map((a, i) => ({ label: `${a.line1}, ${a.city}, ${a.state}`, value: String(i + 1) }))
+    : cursor === "shippingScope" ? [{ label: "Within my state", value: "local" }, { label: "Nationwide", value: "nationwide" }]
+    : cursor === "packing" ? [{ label: "Enter measurements", value: "yes" }, { label: "Ask for packing assistance", value: "help" }]
+    : cursor === "handling" ? ["Standard", "Perishable", "Cold chain", "Bulk"].map(label => ({ label, value: label })) : [];
+  const choiceOnly = !!cursor && ["categoryId", "salePackaging", "salePackageMeasure", "addressId", "shippingScope", "packing", "handling"].includes(cursor);
+  const finish = () => {
+    const error = listingDetailsError(form, catalogue.units, category?.slug);
+    if (error) { setMessage(error); return; }
+    onDone();
+  };
+  return <AppSheet visible={visible} title="Create your listing" subtitle="Tap, type or speak — choose what is easiest"
+    onClose={() => { pause(); onClose(); }} footer={<View style={{ gap: 10 }}>
+      {busy ? <>
+        {phase.startsWith("Listening") && <Button title="Done speaking" onPress={() => void finishListingAnswer()} />}
+        {!saving.current && <Button title="Cancel recording" secondary onPress={pause} />}
+      </> : <>
+        {cursor && !choiceOnly && <Button title="Continue" disabled={!parsed} onPress={() => void save()} />}
+        {!cursor && <Button title="Continue to photos and review" onPress={finish} />}
+        {cursor && !choiceOnly && <Button title={transcript ? "Record again" : "Answer by voice"} secondary onPress={() => void record()} />}
+        <Button title="Read aloud" secondary onPress={() => void record(true)} />
+        <Button title="Use full form" secondary onPress={() => { pause(); onClose(); }} />
+      </>}
+    </View>}>
+    <Label>{prompt}</Label>
+    {!!phase && <Label>{phase}</Label>}
+    {choices.map(choice => <Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={() => void save(choice.value)} />)}
+    {cursor === "addressId" && !choices.length && <Notice text="Save a farm address in your profile, then return to continue." />}
+    {cursor && !choiceOnly && <Field label={numeric ? prompt : "Your answer"} value={input} editable={!busy}
+      keyboardType={numeric ? "decimal-pad" : "default"} multiline={cursor === "description"}
+      onChangeText={value => { setInput(value); setMessage(""); }} />}
+    {!!transcript && <Label>{`You said: ${transcript}`}</Label>}
+    {parsed && !choiceOnly && <Label>{`Check your answer: ${parsed.spoken}`}</Label>}
+    {!cursor && <Label>Next, add photos and review your package, stock, price and estimated earnings before submitting.</Label>}
+    {!!message && <Notice text={message} />}
+    <Label>Tap Continue to save each answer. You can edit everything before submitting your listing.</Label>
+  </AppSheet>;
 }
 
 export function ReadListingAloud({ text }: { text: string }) {

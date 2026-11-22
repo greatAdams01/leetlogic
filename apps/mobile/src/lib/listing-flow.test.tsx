@@ -161,7 +161,7 @@ describe("seller listing wizard", () => {
     expect(nodes("ListingPage")[0]!.props.choosingMethod).toBe(false);
     await act(async () => nodes("ListingPage")[0]!.props.onBack());
     expect(nodes("ListingPage")[0]!.props.choosingMethod).toBe(true);
-    await act(async () => button("Use guided voice · English").props.onPress());
+    await act(async () => button("Guided listing · tap, type or speak").props.onPress());
     expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
   });
   it("separates details, packaging and photos and keeps the selling basis explicit", async () => {
@@ -473,7 +473,7 @@ it("switches from guided voice to typing without losing confirmed draft answers"
   await act(async () => {
     renderer = create(<Sell />);
   });
-  await act(async () => button("Continue guided voice").props.onPress());
+  await act(async () => button("Continue guided listing").props.onPress());
   expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
   await act(async () => nodes("GuidedListing")[0]!.props.onClose());
   expect(nodes("GuidedListing")[0]!.props.visible).toBe(false);

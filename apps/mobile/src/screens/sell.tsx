@@ -366,7 +366,7 @@ export function Sell() {
           <Text style={listingStyles.title}>Choose Voice or Type</Text>
           <Label>How would you like to create your listing?</Label>
           <Button
-            title="Use guided voice · English"
+            title="Guided listing · tap, type or speak"
             icon="listingVoiceMic"
             iconNativeSize={{ width: 24, height: 24 }}
             disabled={!r.data}
@@ -388,14 +388,14 @@ export function Sell() {
                   "Voice answers are sent to LeetLogic for transcription and deleted after processing.",
                 )
               : a.ui(
-                  "Voice asks one question at a time and reads your answers back. English speech stays on your device.",
+                  "Tap choices or type answers. Use English voice whenever it helps; speech stays on your device.",
                 )}
           </Label>
         </Card>
       )}
       {ready && form.inputMethod && (
         <Button
-          title={form.inputMethod === "voice" ? "Continue guided voice" : "Switch to guided voice"}
+          title={form.inputMethod === "voice" ? "Continue guided listing" : "Switch to guided listing"}
           secondary
           disabled={busy}
           onPress={() => {

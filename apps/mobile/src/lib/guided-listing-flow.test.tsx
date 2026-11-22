@@ -43,7 +43,7 @@ vi.mock("../components/app-sheet", async () => {
 vi.mock("../components/ui", async () => {
   const { createElement } = await import("react");
   return Object.fromEntries(
-    ["Button", "Label", "Notice"].map((name) => [
+    ["Button", "Field", "Label", "Notice"].map((name) => [
       name,
       ({ children, ...props }: any) => createElement(name, props, children),
     ]),
@@ -96,159 +96,76 @@ beforeEach(() => {
 afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
 });
-it("speaks every question, commits only confirmed answers and finishes at photos without submitting", async () => {
-  const answers = [
-    "I want to sell yam",
-    "yes",
-    "roots and tubers",
-    "yes",
-    "Freshly harvested white yam",
-    "yes",
-    "piece",
-    "yes",
-    "one",
-    "yes",
-    "twenty",
-    "yes",
-    "five hundred",
-    "yes",
-    "one",
-    "yes",
-    "local",
-    "yes",
-    "help",
-    "yes",
-  ];
-  h.listen.mockImplementation(() => Promise.resolve(answers.shift()!));
-  await act(async () => {
-    renderer = create(<Harness />);
-  });
-  await act(async () => button("Listen and answer").props.onPress());
-  expect(h.done).toHaveBeenCalledOnce();
-  const final = h.changed.mock.calls.at(-1)![0];
-  expect(final).toMatchObject({
-    title: "yam",
-    categoryId: "roots",
-    unitCode: "PIECE",
-    quantity: "20",
-    price: "500",
-    addressId: "farm",
-    shippingScope: "LOCAL",
-    packingAssistanceRequested: true,
-  });
-  expect(h.speak.mock.calls.map((c) => c[0]).join(" ")).toContain("Is that correct?");
-  expect(h.speak.mock.calls.at(-1)![0]).toContain("Only the submit button");
-  expect(h.speak.mock.calls.at(-1)![0]).toContain("₦30.00 (6%)");
-  expect(h.speak.mock.calls.at(-1)![0]).toContain("₦470.00");
-  expect(h.listen).toHaveBeenCalledTimes(20);
-});
-it("does not save an unconfirmed answer and lets the farmer replace it", async () => {
-  const answers = ["Yam", "no", "Cassava", "yes"];
-  h.listen.mockImplementation(() =>
-    answers.length ? Promise.resolve(answers.shift()!) : new Promise(() => {}),
-  );
-  await act(async () => {
-    renderer = create(<Harness />);
-  });
-  await act(async () => button("Listen and answer").props.onPress());
-  expect(h.changed.mock.calls.every((c) => c[0].title !== "Yam")).toBe(true);
-  expect(h.changed.mock.calls.at(-1)![0]).toMatchObject({
-    title: "Cassava",
-    voiceCursor: "categoryId",
-  });
-  await act(async () => button("Pause").props.onPress());
-});
-it("offers typing without install instructions or permission prompts when voice is unavailable", async () => {
-  h.available.mockResolvedValue(null);
-  await act(async () => {
-    renderer = create(<Harness />);
-  });
-  await act(async () => button("Listen and answer").props.onPress());
-  expect(h.listen).not.toHaveBeenCalled();
-  expect(h.changed).not.toHaveBeenCalled();
-  expect(h.done).not.toHaveBeenCalled();
-  expect(h.permission).not.toHaveBeenCalled();
-  expect(button("Continue by typing")).toBeDefined();
-  expect(button("Try voice again")).toBeDefined();
-  expect(JSON.stringify(renderer.toJSON())).not.toMatch(
-    /install|native app build|Open device settings/i,
-  );
-});
-it("continues after the inactive transition caused by the microphone permission dialog", async () => {
-  h.permission.mockImplementationOnce(async () => { h.background!("inactive"); });
+const edit = async (value: string) => {
+  await act(async () => renderer.root.findByType("Field" as never).props.onChangeText(value));
+};
+const tap = async (title: string) => { await act(async () => button(title).props.onPress()); };
+const saved = () => h.changed.mock.calls.at(-1)?.[0];
+const stockForm: ListingForm = {
+  ...emptyListing, title: "Yam", description: "Fresh yam", categoryId: "roots",
+  unitCode: "PIECE", salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
+  addressId: "farm", packingAssistanceRequested: true,
+};
+it("completes a hybrid listing without starting speech or asking spoken yes/no", async () => {
   await act(async () => { renderer = create(<Harness />); });
-  await act(async () => button("Listen and answer").props.onPress());
-  expect(h.speak).toHaveBeenCalled();
-  expect(h.listen).toHaveBeenCalled();
-  expect(button("Pause")).toBeDefined();
-  await act(async () => button("Pause").props.onPress());
+  await edit("Yam"); await tap("Continue");
+  await tap("Roots and tubers");
+  await edit("Fresh white yam"); await tap("Continue");
+  await tap("Individual piece / tuber"); await tap("1 PIECE");
+  await edit("20"); await tap("Continue");
+  await edit("500"); await tap("Continue");
+  await tap("Farm road, Enugu, Enugu"); await tap("Within my state");
+  await tap("Ask for packing assistance");
+  expect(saved()).toMatchObject({ quantity: "20", price: "500", shippingScope: "LOCAL", packingAssistanceRequested: true });
+  expect(h.listen).not.toHaveBeenCalled(); expect(h.permission).not.toHaveBeenCalled();
+  expect(JSON.stringify(renderer.toJSON())).toContain("estimated earnings before submitting");
+  expect(h.done).not.toHaveBeenCalled();
+  await tap("Continue to photos and review"); expect(h.done).toHaveBeenCalledOnce();
 });
-it("ignores late recognition results after backgrounding and retains confirmed values", async () => {
-  let resolve!: (text: string) => void;
-  h.listen.mockImplementation(
-    () =>
-      new Promise<string>((r) => {
-        resolve = r;
-      }),
-  );
-  await act(async () => {
-    renderer = create(
-      <Harness
-        initial={{
-          ...emptyListing,
-          title: "Saved yam",
-          description: "Clean white yam",
-          voiceCursor: "quantity",
-          unitCode: "PIECE",
-          categoryId: "roots",
-          salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
-          addressId: "farm",
-          packingAssistanceRequested: true,
-        }}
-      />,
-    );
-  });
-  await act(async () => button("Listen and answer").props.onPress());
+it("lets the farmer edit a transcribed amount before tapping Continue", async () => {
+  h.listen.mockResolvedValueOnce("five");
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
+  await tap("Answer by voice");
+  expect(h.changed).not.toHaveBeenCalled();
+  expect(renderer.root.findByType("Field" as never).props.value).toBe("5");
+  await edit("20"); await tap("Continue");
+  expect(saved().quantity).toBe("20"); expect(h.listen).toHaveBeenCalledOnce();
+});
+it("keeps unclear speech editable without restarting or guessing a quantity", async () => {
+  h.listen.mockResolvedValueOnce("one or two");
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
+  await tap("Answer by voice");
+  expect(h.changed).not.toHaveBeenCalled(); expect(button("Continue").props.disabled).toBe(true);
+  await edit("20"); await tap("Continue"); expect(saved().quantity).toBe("20");
+});
+it("supports typing when the speech service is unavailable", async () => {
+  h.available.mockRejectedValueOnce(new Error("Voice service unavailable"));
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
+  await tap("Answer by voice");
+  expect(JSON.stringify(renderer.toJSON())).toContain("Voice service unavailable");
+  await edit("20"); await tap("Continue"); expect(saved().quantity).toBe("20");
+});
+it("continues recording after a permission dialog makes iOS inactive", async () => {
+  h.permission.mockImplementationOnce(async () => { h.background!("inactive"); });
+  h.listen.mockResolvedValueOnce("twenty");
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
+  await tap("Answer by voice");
+  expect(renderer.root.findByType("Field" as never).props.value).toBe("20");
+});
+it("ignores a late transcription after backgrounding", async () => {
+  let resolve!: (value: string) => void;
+  h.listen.mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
+  await tap("Answer by voice");
   await act(async () => h.background!("background"));
   await act(async () => resolve("twenty"));
+  expect(renderer.root.findByType("Field" as never).props.value).toBe("");
   expect(h.changed).not.toHaveBeenCalled();
-  expect(h.done).not.toHaveBeenCalled();
-  expect(h.stop).toHaveBeenCalled();
-  expect(button("Listen and answer")).toBeDefined();
 });
-it("does not advance on an ambiguous quantity", async () => {
-  const answers = ["one or two"];
-  h.listen.mockImplementation(() =>
-    answers.length ? Promise.resolve(answers.shift()!) : new Promise(() => {}),
-  );
-  await act(async () => {
-    renderer = create(
-      <Harness initial={{
-        ...emptyListing,
-        title: "Saved yam",
-        description: "Clean white yam",
-        categoryId: "roots",
-        salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
-        unitCode: "PIECE",
-        addressId: "farm",
-        shippingScope: "LOCAL",
-        packingAssistanceRequested: true,
-        voiceCursor: "quantity",
-      }} />,
-    );
-  });
-  await act(async () => button("Listen and answer").props.onPress());
-  expect(h.changed).not.toHaveBeenCalled();
-  expect(h.speak.mock.calls.some((c) => c[0].includes("could not understand"))).toBe(true);
-  await act(async () => button("Pause").props.onPress());
-});
-it("resumes older drafts at sale packaging after the unit question was replaced", async () => {
-  await act(async () => {
-    renderer = create(
-      <Harness initial={{ ...emptyListing, title: "Yam", description: "Fresh yam", categoryId: "roots", unitCode: "PIECE", voiceCursor: "unitCode" }} />,
-    );
-  });
-  await act(async () => button("Listen and answer").props.onPress());
-  expect(h.speak.mock.calls[0]![0]).toContain("How do you sell this produce?");
-  await act(async () => button("Pause").props.onPress());
+it("does not save invalid stock or price", async () => {
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
+  await edit("1.5"); expect(button("Continue").props.disabled).toBe(true);
+  await edit("20"); await tap("Continue");
+  await edit("0"); expect(button("Continue").props.disabled).toBe(true);
+  expect(saved().price).toBe("");
 });
