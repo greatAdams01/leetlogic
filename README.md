@@ -163,13 +163,46 @@ unexpected exit; services explicitly stopped still need the command above.
 
 ## Delivery and language pilot
 
-Delivery, customer language selection, cached Azure translation, and typed produce drafts extend the existing app. See [delivery and language operations](docs/delivery-language.md) for configuration, APIs, tests, and launch blockers. Voice remains disabled until a free Igbo speech service passes the required validation. Provider switches default off.
+Delivery, customer language selection, cached Azure translation, and produce drafts extend the existing app. See [delivery and language operations](docs/delivery-language.md) for configuration, APIs, tests, and launch blockers. Guided listing speech currently supports English; other recognition languages remain disabled pending validation. The optional local transcription service below is for testing only.
 
 Optional NIPOST NDAPS postcode checks and saved addresses support nationwide quote requests without promising carrier coverage. See [NIPOST keys, sandbox data, manual fallback and migration rollout](docs/nipost-addresses.md).
 
 ## Native mobile app
 
-The Expo/React Native customer app is in `apps/mobile` and connects to the same API as the website. Run `pnpm --filter @leetlogic/mobile ios` or `pnpm --filter @leetlogic/mobile android` after starting the API. See [mobile scope, simulator setup and test checklist](docs/mobile.md). No mobile admin, wallet provider, or unvalidated voice feature is introduced.
+The Expo/React Native customer app is in `apps/mobile` and connects to the same API as the website. Run `pnpm --filter @leetlogic/mobile ios` or `pnpm --filter @leetlogic/mobile android` after starting the API. See [mobile scope, simulator setup and test checklist](docs/mobile.md). Guided listing supports English speech on-device; the optional local server transcription setup is for testing.
+
+### Start the guided voice listing service locally
+
+The local Meta ASR worker is optional. First install its Python runtime and download the checkpoint as described in [local ASR setup](scripts/asr/README.md). Keep the worker, API, and Metro running in three separate terminals from the repository root. The phone and development computer must share Wi-Fi; the phone sends audio to the API on port 3000, and the API forwards it to the worker on port 8091.
+
+**Terminal 1 — local transcription worker:**
+
+```sh
+docker compose up -d postgres redis
+bash scripts/asr/start-local-service.sh
+```
+
+Wait for `ASR ready: http://127.0.0.1:8091/health`. The script creates a private token in `.local/asr-benchmark/service.env` the first time it runs.
+
+**Terminal 2 — API with the worker enabled:**
+
+Stop any existing API dev process first, then run:
+
+```sh
+pnpm --filter @leetlogic/api dev:voice
+```
+
+The root `.env` still supplies the API's database, Redis, and authentication settings. Keep the private worker token out of the mobile app and all `EXPO_PUBLIC_*` variables.
+
+**Terminal 3 — mobile app in server-voice mode:**
+
+```sh
+EXPO_PUBLIC_LISTING_VOICE_PROVIDER=server pnpm --filter @leetlogic/mobile start --clear --lan
+```
+
+Open the app from Metro and choose **Use guided voice · English**. If the phone cannot reach the API at the address Metro detects, set `EXPO_PUBLIC_API_URL` to the development computer's LAN address, for example `http://192.168.1.10:3000`. Do not use `localhost` on the phone. Metro tunnel mode does not expose the API, and the phone does not connect directly to port 8091.
+
+For service prerequisites, optional API URL configuration, troubleshooting, and the physical-device checklist, see [local app voice testing](docs/local-asr-app-testing.md). The server transcription provider is English-only and intended for local testing, not production.
 
 Dojah seller identity verification setup and sandbox testing: [integration guide](docs/dojah-identity.md).
 

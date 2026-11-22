@@ -59,6 +59,23 @@ it("reports disabled without contacting the worker when not configured", async (
   ).toBe(false);
   expect(fetchMock).not.toHaveBeenCalled();
 });
+it("rechecks voice capabilities instead of returning a bodyless 304", async () => {
+  fetchMock.mockImplementation(async () => new Response(JSON.stringify({ status: "ready" }), { status: 200 }));
+  const first = await request(app)
+    .get("/voice/capabilities")
+    .set("Authorization", "Bearer customer-session");
+  const etag = first.headers.etag;
+  if (!etag) throw new Error("Expected an ETag for the conditional request fixture.");
+  const second = await request(app)
+    .get("/voice/capabilities")
+    .set("Authorization", "Bearer customer-session")
+    .set("Cache-Control", "no-cache")
+    .set("If-None-Match", etag);
+  expect(first.status).toBe(200);
+  expect(first.headers["cache-control"]).toContain("no-store");
+  expect(second.status).toBe(200);
+  expect(second.body).toMatchObject({ enabled: true, languages: ["en"] });
+});
 it("forwards binary audio with only the backend service credential and returns the transcript", async () => {
   fetchMock.mockResolvedValue(
     new Response(JSON.stringify({ text: " twenty five ", language: "en" }), { status: 200 }),

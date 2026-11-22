@@ -12,6 +12,7 @@ const unavailable = () =>
     "Voice listing is unavailable right now. You can continue by typing.",
   );
 listingSpeechRouter.get("/capabilities", async (_req, res) => {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
   const c = getConfig();
   if (!c.LISTING_ASR_ENABLED || !c.LISTING_ASR_TOKEN) {
     res.json({ enabled: false, languages: [] });

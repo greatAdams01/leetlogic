@@ -12,6 +12,12 @@ vi.mock("expo-constants", () => ({ default: { expoConfig: { hostUri: "localhost:
 import { api, authHeaders, clearSession, saveSession, sessionVersion } from "./api";
 afterEach(() => vi.unstubAllGlobals());
 describe("account refresh session identity", () => {
+  it("forces a fresh response for dynamic voice capabilities", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ enabled: true, languages: ["en"] }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(api("/listing-drafts/voice/capabilities", { noCache: true })).resolves.toMatchObject({ enabled: true });
+    expect(fetcher.mock.calls[0]![1].headers["Cache-Control"]).toBe("no-cache");
+  });
   it("keeps the same identity while refreshing expired access tokens", async () => {
     await saveSession({ accessToken: "expired", refreshToken: "old-refresh" });
     const version = sessionVersion();

@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
   voices: vi.fn(),
   speak: vi.fn(),
   speechStop: vi.fn(),
-  meter: -60,
+  meter: -60 as number | undefined,
   recorders: [] as any[],
   fileSize: 128,
 }));
@@ -89,9 +89,9 @@ const prepared = async () => {
 it("checks the authenticated backend instead of requiring an installed recognition model", async () => {
   h.api.mockResolvedValue({ enabled: true, languages: ["en"] });
   expect(await serverSpeechAvailable()).toBe("en");
-  expect(h.api).toHaveBeenCalledWith("/listing-drafts/voice/capabilities");
+  expect(h.api).toHaveBeenCalledWith("/listing-drafts/voice/capabilities", { noCache: true });
   h.api.mockResolvedValue({ enabled: false, languages: [] });
-  expect(await serverSpeechAvailable()).toBeNull();
+  await expect(serverSpeechAvailable()).rejects.toThrow("voice service is unavailable");
 });
 it("requires microphone permission", async () => {
   h.permission.mockResolvedValue({ granted: false });
@@ -135,6 +135,16 @@ it("reports silence without sending an empty recording to transcription", async 
   await rejected;
   expect(h.api).not.toHaveBeenCalled();
   expect(h.deleted).toHaveBeenCalledOnce();
+});
+it("does not mistake unavailable native metering for silence", async () => {
+  h.meter = undefined;
+  const result = listenServerListing("en");
+  await prepared();
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(h.stopped).not.toHaveBeenCalled();
+  finishServerAnswer();
+  expect(await result).toBe("twenty five");
+  expect(h.api).toHaveBeenCalledOnce();
 });
 it("does not upload when paused during recording", async () => {
   const result = listenServerListing("en");

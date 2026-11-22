@@ -174,6 +174,15 @@ it("offers typing without install instructions or permission prompts when voice 
     /install|native app build|Open device settings/i,
   );
 });
+it("continues after the inactive transition caused by the microphone permission dialog", async () => {
+  h.permission.mockImplementationOnce(async () => { h.background!("inactive"); });
+  await act(async () => { renderer = create(<Harness />); });
+  await act(async () => button("Listen and answer").props.onPress());
+  expect(h.speak).toHaveBeenCalled();
+  expect(h.listen).toHaveBeenCalled();
+  expect(button("Pause")).toBeDefined();
+  await act(async () => button("Pause").props.onPress());
+});
 it("ignores late recognition results after backgrounding and retains confirmed values", async () => {
   let resolve!: (text: string) => void;
   h.listen.mockImplementation(

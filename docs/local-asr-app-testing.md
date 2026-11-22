@@ -35,10 +35,7 @@ Stop an existing backend dev process with Ctrl+C before restarting on the same p
 
 ```bash
 cd /Users/greatadams/Documents/ChatGPT/LEETLOGIC
-set -a
-source .local/asr-benchmark/service.env
-set +a
-pnpm --filter @leetlogic/api dev
+pnpm --filter @leetlogic/api dev:voice
 ```
 
 This supplies `LISTING_ASR_ENABLED`, `LISTING_ASR_URL` and the private token to the API. The normal root `.env` continues to supply database, Redis and authentication settings. Never put the service token into `EXPO_PUBLIC_*` variables or the mobile app.
@@ -62,7 +59,7 @@ Use your actual Mac LAN IP in that optional command, not `localhost` on the phon
 
 ## What to test
 
-1. Listen to the question, answer, then pause briefly or tap **Done speaking**. Recording ends after approximately 1.5 seconds of detected silence or at the recording cap. A manual Done control also works where metering is unreliable.
+1. Listen to the question, answer, then pause briefly or tap **Done speaking**. Recording ends after approximately 3.5 seconds of detected silence or at the recording cap. If native metering is unavailable, use Done speaking; the app must not mistake missing measurements for silence.
 2. The app displays that it is transcribing, then reads the interpreted answer back. Say yes/no to confirm or replace it. Spoken commands cannot submit the listing.
 3. Try price and quantity answers carefully: e.g. `twenty five`, `one thousand five hundred`, and a rejection/correction. The initial synthetic benchmark contained numeric errors; do not assume a readable transcript is correct.
 4. Test Pause/backgrounding while recording and while uploading. Temporary recordings must be removed after cleanup; cancelled/late results must not change fields.

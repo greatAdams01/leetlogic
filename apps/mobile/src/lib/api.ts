@@ -99,6 +99,7 @@ export async function api<T = any>(
     method?: string;
     body?: unknown;
     key?: string;
+    noCache?: boolean;
     imageResponse?: boolean;
     signal?: AbortSignal;
     binary?: { bytes: Uint8Array; contentType: string };
@@ -117,6 +118,7 @@ export async function api<T = any>(
           ? { "Content-Type": options.binary.contentType }
           : { "Content-Type": "application/json" }),
         ...(options.key ? { "Idempotency-Key": options.key } : {}),
+        ...(options.noCache ? { "Cache-Control": "no-cache" } : {}),
       },
       ...(options.body !== undefined
         ? { body: JSON.stringify(options.body) }

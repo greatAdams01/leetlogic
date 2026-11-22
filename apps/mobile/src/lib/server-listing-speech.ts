@@ -12,8 +12,10 @@ export async function serverSpeechAvailable() {
   if (Platform.OS === "web") return null;
   const capability = await api<{ enabled: boolean; languages: string[] }>(
     "/listing-drafts/voice/capabilities",
+    { noCache: true },
   );
-  if (!capability.enabled || !capability.languages.includes("en")) return null;
+  if (!capability.enabled || !capability.languages.includes("en"))
+    throw new Error("The voice service is unavailable. Please try again shortly or continue by typing. Your confirmed answers are saved.");
   const voices = await Speech.getAvailableVoicesAsync();
   return voices.some((voice) => /^en[-_]/i.test(voice.language)) ? "en" : null;
 }
@@ -95,18 +97,21 @@ export async function listenServerListing(
     recording = true;
     const started = Date.now();
     let lastSpeech = started,
-      speech = false;
+      speech = false,
+      meteringAvailable = false;
     await new Promise<void>((resolve) => {
       end = resolve;
       finishAnswer = resolve;
       timer = setInterval(() => {
         const now = Date.now(),
           status = recorder.getStatus();
+        if (typeof status.metering === "number" && Number.isFinite(status.metering))
+          meteringAvailable = true;
         if (typeof status.metering === "number" && status.metering > -45) {
           speech = true;
           lastSpeech = now;
         }
-        const silentTooLong = !speech && now - started >= 8000;
+        const silentTooLong = meteringAvailable && !speech && now - started >= 8000;
         if (silentTooLong) noSpeechDetected = true;
         if (
           cancelled ||

@@ -65,7 +65,7 @@ export function GuidedListing({
   };
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state !== "active") pause();
+      if (state === "background") pause();
     });
     return () => {
       sub.remove();
@@ -110,9 +110,9 @@ export function GuidedListing({
       setPhase(serverVoiceEnabled ? "Checking voice service" : "Checking offline English speech");
       try {
         locale = await localSpeechAvailable();
-      } catch {
+      } catch (error) {
         setUnavailable(true);
-        throw new Error(speechSetupMessage);
+        throw error;
       }
       if (!current()) return;
       if (!locale) {
