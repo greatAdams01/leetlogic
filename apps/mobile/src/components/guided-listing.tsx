@@ -17,6 +17,7 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
   const [input, setInput] = useState(""), [message, setMessage] = useState(""),
     [transcript, setTranscript] = useState(""), [phase, setPhase] = useState(""),
     [busy, setBusy] = useState(false);
+  const narration = useRef(0);
   const generation = useRef(0), active = useRef(false), saving = useRef(false);
   const cursor = firstIncompleteVoiceField(form, catalogue);
   const category = catalogue.categories.find(c => c.id === form.categoryId);
@@ -33,6 +34,7 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
     : cursor === "packing" ? "Do you have the courier package measurements?"
     : cursor ? englishListing.prompts[cursor].replace(/ Say.*$/, "") : "Your listing details are ready";
   const pause = () => {
+    narration.current++;
     generation.current++;
     active.current = false;
     setBusy(false); setPhase("");
@@ -41,7 +43,7 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
   };
   useEffect(() => {
     const sub = AppState.addEventListener("change", state => { if (state === "background") pause(); });
-    return () => { sub.remove(); generation.current++; active.current = false; void stopListingSpeech(); onActivityChange(false); };
+    return () => { sub.remove(); narration.current++; generation.current++; active.current = false; void stopListingSpeech(); onActivityChange(false); };
   }, []);
   useEffect(() => { if (!visible) pause(); }, [visible]);
   useEffect(() => {
@@ -54,30 +56,28 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
     setInput(typeof value === "string" ? value : typeof value === "number" && value > 0 ? String(value) : "");
   }, [cursor, visible]);
   const parsed = cursor ? interpretAnswer(cursor, input, form, catalogue) : null;
-  const record = async (readOnly = false) => {
+  const record = async () => {
     if (active.current || saving.current) return;
     active.current = true; setBusy(true); onActivityChange(true); setMessage("");
     const token = ++generation.current;
     const current = () => token === generation.current;
     try {
+      narration.current++;
+      await stopListingSpeech();
+      if (!current()) return;
       const locale = await localSpeechAvailable();
       if (!current()) return;
       if (!locale) throw new Error(speechSetupMessage);
-      if (readOnly) {
-        setPhase("Reading");
-        await speakListing(cursor ? prompt : listingReadback(form, catalogue));
-      } else {
-        await requestLocalSpeechPermission();
-        if (!current()) return;
-        setPhase("Listening — speak now");
-        const raw = await listenListing(locale, () => { if (current()) setPhase("Transcribing…"); });
-        if (!current() || !cursor) return;
-        const answer = interpretAnswer(cursor, raw, form, catalogue);
-        setTranscript(raw);
-        // Financial and package amounts always remain editable and require a tap to save.
-        setInput(answer && numeric ? answer.value : raw);
-        if (!answer) setMessage("Please edit the answer below, or record again.");
-      }
+      await requestLocalSpeechPermission();
+      if (!current()) return;
+      setPhase("Listening — speak now");
+      const raw = await listenListing(locale, () => { if (current()) setPhase("Transcribing…"); });
+      if (!current() || !cursor) return;
+      const answer = interpretAnswer(cursor, raw, form, catalogue);
+      setTranscript(raw);
+      // Financial and package amounts always remain editable and require a tap to save.
+      setInput(answer && numeric ? answer.value : raw);
+      if (!answer) setMessage("Please edit the answer below, or record again.");
     } catch (error) {
       if (current()) setMessage(error instanceof Error ? error.message : "Please try again or type your answer.");
     } finally {
@@ -106,6 +106,25 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
     : cursor === "shippingScope" ? [{ label: "Within my state", value: "local" }, { label: "Nationwide", value: "nationwide" }]
     : cursor === "packing" ? [{ label: "Enter measurements", value: "yes" }, { label: "Ask for packing assistance", value: "help" }]
     : cursor === "handling" ? ["Standard", "Perishable", "Cold chain", "Bulk"].map(label => ({ label, value: label })) : [];
+  const spokenPrompt = cursor
+    ? `${prompt}. ${choices.map(choice => choice.label).join(". ")}${choices.length ? ". Tap your choice." : " Type your answer or tap Answer by voice."}`
+    : listingReadback(form, catalogue);
+  useEffect(() => {
+    if (!visible) return;
+    const token = ++narration.current;
+    let live = true;
+    void (async () => {
+      try {
+        await stopListingSpeech();
+        if (!live || token !== narration.current) return;
+        await speakListing(spokenPrompt);
+      } catch {
+        if (live && token === narration.current)
+          setMessage("Could not read this question aloud. You can still tap or type your answer.");
+      }
+    })();
+    return () => { live = false; narration.current++; void stopListingSpeech(); };
+  }, [visible, spokenPrompt]);
   const choiceOnly = !!cursor && ["categoryId", "salePackaging", "salePackageMeasure", "addressId", "shippingScope", "packing", "handling"].includes(cursor);
   const finish = () => {
     const error = listingDetailsError(form, catalogue.units, category?.slug);
@@ -121,7 +140,6 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
         {cursor && !choiceOnly && <Button title="Continue" disabled={!parsed} onPress={() => void save()} />}
         {!cursor && <Button title="Continue to photos and review" onPress={finish} />}
         {cursor && !choiceOnly && <Button title={transcript ? "Record again" : "Answer by voice"} secondary onPress={() => void record()} />}
-        <Button title="Read aloud" secondary onPress={() => void record(true)} />
         <Button title="Use full form" secondary onPress={() => { pause(); onClose(); }} />
       </>}
     </View>}>

@@ -106,6 +106,26 @@ const stockForm: ListingForm = {
   unitCode: "PIECE", salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
   addressId: "farm", packingAssistanceRequested: true,
 };
+it("automatically reads each question and its choices without repeating while typing", async () => {
+  await act(async () => { renderer = create(<Harness />); });
+  expect(h.speak).toHaveBeenCalledOnce();
+  expect(h.speak.mock.calls[0]![0]).toContain("What produce");
+  expect(button("Read aloud")).toBeUndefined();
+  await edit("Yam");
+  expect(h.speak).toHaveBeenCalledOnce();
+  await tap("Continue");
+  expect(h.speak).toHaveBeenCalledTimes(2);
+  expect(h.speak.mock.calls[1]![0]).toContain("Roots and tubers");
+  expect(h.permission).not.toHaveBeenCalled();
+  expect(h.listen).not.toHaveBeenCalled();
+});
+it("keeps typing available if automatic speech fails", async () => {
+  h.speak.mockRejectedValueOnce(new Error("speaker unavailable"));
+  await act(async () => { renderer = create(<Harness />); });
+  expect(JSON.stringify(renderer.toJSON())).toContain("Could not read this question aloud");
+  await edit("Yam"); await tap("Continue");
+  expect(saved().title).toBe("Yam");
+});
 it("completes a hybrid listing without starting speech or asking spoken yes/no", async () => {
   await act(async () => { renderer = create(<Harness />); });
   await edit("Yam"); await tap("Continue");
