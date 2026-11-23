@@ -1,4 +1,5 @@
 import {
+  categoryProduceError,
   packagingSchema,
   salePackagingSchema,
   salePackagingMatches,
@@ -87,8 +88,14 @@ listingDraftRouter.get("/catalogue", async (req, res) => {
     }),
   );
 });
+async function validateProduce(fields: z.infer<typeof draftSchema>) {
+  const category = await prisma.category.findUnique({ where: { id: fields.categoryId } });
+  const error = categoryProduceError(category?.isActive ? category : null, fields.title);
+  if (error) throw new AppError(422, "INVALID_CATEGORY_PRODUCE", error);
+}
 listingDraftRouter.post("/", async (req, res) => {
   const fields = draftSchema.parse(req.body);
+  await validateProduce(fields);
   const draft = await prisma.listingDraft.create({ data: { userId: req.auth!.sub, fields } });
   res.status(201).json(draft);
 });
@@ -119,6 +126,7 @@ listingDraftRouter.delete("/:id", async (req, res) => {
 listingDraftRouter.patch("/:id", async (req, res) => {
   const id = z.string().uuid().parse(req.params.id);
   const fields = draftSchema.parse(req.body);
+  await validateProduce(fields);
   const result = await prisma.listingDraft.updateMany({
     where: { id, userId: req.auth!.sub, listingId: null },
     data: { fields, confirmed: false },
@@ -158,6 +166,8 @@ listingDraftRouter.post("/:id/submit", async (req, res) => {
     if (!address) throw new AppError(422, "INVALID_ADDRESS", "Choose your saved farm address");
     const category = await tx.category.findUnique({ where: { id: body.categoryId } });
     const unit = await tx.unit.findUnique({ where: { code: body.unitCode } });
+    const produceError = categoryProduceError(category?.isActive ? category : null, body.title);
+    if (produceError) throw new AppError(422, "INVALID_CATEGORY_PRODUCE", produceError);
     if (!category?.isActive || !unit)
       throw new AppError(422, "INVALID_CATALOGUE", "Choose a valid category and unit");
     if (body.salePackaging) {

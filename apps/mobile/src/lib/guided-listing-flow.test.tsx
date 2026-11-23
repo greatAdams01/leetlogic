@@ -51,11 +51,11 @@ vi.mock("../components/ui", async () => {
 });
 import { GuidedListing, ReadListingAloud } from "../components/guided-listing";
 import { emptyListing, type ListingForm } from "./listing-form";
-const catalogue = {
+const catalogue: import("./guided-listing").VoiceCatalogue = {
   categories: [
     {
       id: "roots",
-      slug: "roots-tubers",
+      slug: "roots-tubers", produceItems: ["Yam", "Cassava"],
       translations: [{ locale: "en", name: "Roots and tubers" }],
     },
   ],
@@ -106,28 +106,27 @@ const stockForm: ListingForm = {
   unitCode: "PIECE", salePackaging: { type: "PIECE", size: 1, measure: "PIECE" },
   addressId: "farm", packingAssistanceRequested: true,
 };
-it("automatically reads each question and its choices without repeating while typing", async () => {
+it("requires category selection before showing only its backend produce items", async () => {
   await act(async () => { renderer = create(<Harness />); });
-  expect(h.speak).toHaveBeenCalledOnce();
-  expect(h.speak.mock.calls[0]![0]).toContain("What produce");
-  expect(button("Read aloud")).toBeUndefined();
-  await edit("Yam");
-  expect(h.speak).toHaveBeenCalledOnce();
-  await tap("Continue");
-  expect(h.speak).toHaveBeenCalledTimes(2);
-  expect(h.speak.mock.calls[1]![0]).toContain("Tell buyers");
-  expect(h.permission).not.toHaveBeenCalled();
-  expect(h.listen).not.toHaveBeenCalled();
+  expect(h.speak.mock.calls[0]![0]).toContain("category");
+  expect(button("Yam")).toBeUndefined();
+  expect(button("Continue")).toBeUndefined();
+  await tap("Roots and tubers");
+  expect(button("Yam")).toBeDefined();
+  expect(button("Rice")).toBeUndefined();
+  await tap("Yam");
+  expect(saved()).toMatchObject({ title: "Yam", categoryId: "roots" });
 });
 it("keeps typing available if automatic speech fails", async () => {
   h.speak.mockRejectedValueOnce(new Error("speaker unavailable"));
-  await act(async () => { renderer = create(<Harness />); });
+  await act(async () => { renderer = create(<Harness initial={stockForm} />); });
   expect(JSON.stringify(renderer.toJSON())).toContain("Could not read this question aloud");
-  await edit("Yam"); await tap("Continue");
-  expect(saved().title).toBe("Yam");
+  await edit("20"); await tap("Continue");
+  expect(saved().quantity).toBe("20");
 });
 it("completes a hybrid listing without starting speech or asking spoken yes/no", async () => {
   await act(async () => { renderer = create(<Harness />); });
+  await tap("Roots and tubers");
   await tap("Yam");
   await tap("Freshly harvested");
   await tap("Individual piece / tuber");
@@ -197,11 +196,10 @@ it("saves packing assistance before leaving a complete older draft", async () =>
   expect(saved().packingAssistanceRequested).toBe(true);
   expect(h.done).toHaveBeenCalledOnce();
 });
-it("does not guess the category for an unfamiliar produce name", async () => {
-  await act(async () => { renderer = create(<Harness />); });
-  await edit("Unknown crop"); await tap("Continue");
-  expect(saved().categoryId).toBe("");
-  expect(button("Roots and tubers")).toBeDefined();
+it("returns a resumed invalid category-produce pair to produce selection", async () => {
+  await act(async () => { renderer = create(<Harness initial={{ ...stockForm, title: "Rice", voiceCursor: "price" }} />); });
+  expect(button("Yam")).toBeDefined();
+  expect(button("Continue")).toBeUndefined();
 });
 
 it("reads photo and review guidance automatically and stops on exit", async () => {
@@ -212,4 +210,18 @@ it("reads photo and review guidance automatically and stops on exit", async () =
   expect(h.speak).toHaveBeenLastCalledWith("Confirm the details and tap Submit listing.");
   await act(async () => h.background!("background"));
   expect(h.stop).toHaveBeenCalled();
+});
+
+it("reads the category explanation supplied by the backend and allows changing category", async () => {
+  const original = catalogue.categories;
+  catalogue.categories = [{ id: "new", slug: "custom", explanation: "Crops grown for their grain.", produceItems: ["Sorghum"], translations: [{ locale: "en", name: "Cereals" }] }];
+  try {
+    await act(async () => { renderer = create(<Harness />); });
+    expect(h.speak.mock.calls[0]![0]).toContain("Crops grown for their grain.");
+    await tap("Cereals — Crops grown for their grain.");
+    expect(button("Sorghum")).toBeDefined();
+    expect(button("Yam")).toBeUndefined();
+    await tap("Choose another category");
+    expect(button("Cereals — Crops grown for their grain.")).toBeDefined();
+  } finally { catalogue.categories = original; }
 });

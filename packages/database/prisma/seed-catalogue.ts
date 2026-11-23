@@ -27,6 +27,15 @@ const categories = [
     ],
   },
 ];
+const produceCatalogue: Record<string, { explanation: string; produceItems: string[] }> = {
+  vegetables: { explanation: "Vegetables used for cooking, such as tomatoes, peppers and leafy greens.", produceItems: ["Tomatoes", "Peppers", "Leafy greens"] },
+  fruits: { explanation: "Fruit sold fresh, such as plantain and bananas.", produceItems: ["Plantain", "Bananas"] },
+  grains: { explanation: "Cereal crops, such as rice, maize and millet.", produceItems: ["Rice", "Maize", "Millet"] },
+  "roots-tubers": { explanation: "Crops harvested from under the soil, such as yam, cassava and potatoes.", produceItems: ["Yam", "Cassava", "Potatoes"] },
+  legumes: { explanation: "Beans and related crops, such as peas and groundnuts.", produceItems: ["Beans", "Peas", "Groundnuts"] },
+  oils: { explanation: "Edible oils, such as palm oil.", produceItems: ["Palm oil"] },
+  "processed-produce": { explanation: "Farm produce already processed for sale, such as garri and flour.", produceItems: ["Garri", "Flour", "Dried produce"] },
+};
 const legacyCategories: Record<string, string> = {
   tomatoes: "vegetables",
   pepper: "vegetables",
@@ -40,7 +49,7 @@ export async function seedCatalogue(prisma: PrismaClient) {
   for (const [sortOrder, item] of categories.entries()) {
     const category = await prisma.category.upsert({
       where: { slug: item.slug },
-      create: { slug: item.slug, sortOrder },
+      create: { slug: item.slug, sortOrder, ...produceCatalogue[item.slug] },
       update: {},
     });
     for (const [index, locale] of ["en", "pcm", "ha", "ig", "yo"].entries())

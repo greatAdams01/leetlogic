@@ -15,7 +15,7 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
   onClose: () => void; onUseFullForm?: () => void; onDone: () => void; onActivityChange: (active: boolean) => void;
 }) {
   const form = guidedListingForm(savedForm, catalogue);
-  const produceChoices = guidedProduceChoices(catalogue);
+  const produceChoices = guidedProduceChoices(catalogue, form.categoryId);
   const [input, setInput] = useState(""), [message, setMessage] = useState(""),
     [transcript, setTranscript] = useState(""), [phase, setPhase] = useState(""),
     [busy, setBusy] = useState(false);
@@ -93,10 +93,6 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
     saving.current = true; setBusy(true); onActivityChange(true);
     try {
       let draft = commitAnswer(form, cursor, answer);
-      if (cursor === "title") {
-        const produce = produceChoices.find(p => p.title.toLowerCase() === answer.value.toLowerCase());
-        if (produce) draft = commitAnswer(draft, "categoryId", { value: produce.categoryId, spoken: produce.title });
-      }
       draft = guidedListingForm({ ...draft, voiceCursor: undefined }, catalogue);
       const next = firstIncompleteVoiceField(draft, catalogue);
       draft.voiceCursor = cursor === "salePackageLabel" ? "change:salePackageMeasure"
@@ -108,7 +104,7 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
   const choices: { label: string; value: string }[] =
     cursor === "title" ? produceChoices.map(p => ({ label: p.title, value: p.title }))
     : cursor === "description" ? ["Freshly harvested", "Clean and dry", "Ready for sale"].map(value => ({ label: value, value }))
-    : cursor === "categoryId" ? catalogue.categories.map((c, i) => ({ label: c.translations.find(t => t.locale === "en")?.name || c.slug, value: String(i + 1) }))
+    : cursor === "categoryId" ? catalogue.categories.map((c, i) => ({ label: `${c.translations.find(t => t.locale === "en")?.name || c.slug}${c.explanation ? ` — ${c.explanation}` : ""}`, value: String(i + 1) }))
     : cursor === "salePackaging" ? options.map((o, i) => ({ label: o.label, value: String(i + 1) }))
     : cursor === "salePackageSize" ? (option?.sizes || []).map(size => ({ label: `${size} ${form.salePackaging?.measure}`, value: String(size) }))
     : cursor === "salePackageMeasure" ? [{ label: "Kilograms", value: "kilograms" }, { label: "Litres", value: "litres" }, { label: "Pieces", value: "pieces" }]
@@ -135,7 +131,7 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
     })();
     return () => { live = false; narration.current++; void stopListingSpeech(); };
   }, [visible, spokenPrompt]);
-  const choiceOnly = !!cursor && ["categoryId", "salePackaging", "salePackageMeasure", "addressId", "shippingScope", "packing", "handling"].includes(cursor);
+  const choiceOnly = !!cursor && ["categoryId", "title", "salePackaging", "salePackageMeasure", "addressId", "shippingScope", "packing", "handling"].includes(cursor);
   const finish = async () => {
     if (saving.current || active.current) return;
     const error = listingDetailsError(form, catalogue.units, category?.slug);
@@ -163,6 +159,9 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
     <Label>{prompt}</Label>
     {!!phase && <Label>{phase}</Label>}
     {choices.map(choice => <Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={() => void save(choice.value)} />)}
+    {cursor === "title" && <Button title="Choose another category" secondary disabled={busy}
+      onPress={() => void onChange({ ...form, voiceCursor: "change:categoryId" })} />}
+    {cursor === "title" && !choices.length && <Notice text="No produce items are available in this category. Please choose another category or contact support." />}
     {cursor === "addressId" && !choices.length && <Notice text="Save a farm address in your profile, then return to continue." />}
     {cursor && !choiceOnly && <Field label={numeric ? prompt : "Your answer"} value={input} editable={!busy}
       keyboardType={numeric ? "decimal-pad" : "default"} multiline={cursor === "description"}

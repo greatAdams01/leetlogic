@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
   draft: {} as any,
   catalogue: {
     categories: [
-      { id: "tomatoes", slug: "vegetables", translations: [{ locale: "en", name: "Vegetables" }] },
+      { id: "tomatoes", slug: "vegetables", produceItems: ["Tomatoes"], translations: [{ locale: "en", name: "Vegetables" }] },
     ],
     units: [{ code: "KG", allowsDecimal: true }],
     addresses: [
@@ -183,8 +183,8 @@ describe("seller listing wizard", () => {
     );
     await act(async () => button("Continue to packaging").props.onPress());
     expect(nodes("ListingPage")[0]!.props.step).toBe(2);
+    await act(async () => nodes("Select").find(n => n.props.label === "Produce item *")!.props.onChange("Tomatoes"));
     for (const [label, value] of [
-      ["Product title *", "My tomatoes"],
       ["Description *", "Fresh produce"],
     ]) {
       await act(async () =>
@@ -220,8 +220,8 @@ describe("seller listing wizard", () => {
     await act(async () => nodes("ListingPage")[0]!.props.onBack());
     expect(nodes("ListingPage")[0]!.props.step).toBe(3);
     await act(async () => nodes("ListingPage")[0]!.props.onBack());
-    expect(nodes("Field").find((node) => node.props.label === "Product title *")!.props.value).toBe(
-      "My tomatoes",
+    expect(nodes("Select").find((node) => node.props.label === "Produce item *")!.props.value).toBe(
+      "Tomatoes",
     );
   });
   it("recovers a device draft and saves only ordered references to the server before review", async () => {
@@ -255,8 +255,8 @@ describe("seller listing wizard", () => {
     const categories = h.catalogue.categories,
       units = h.catalogue.units;
     h.catalogue.categories = [
-      { id: "grain", slug: "grains", translations: [{ locale: "en", name: "Grains" }] },
-      { id: "oil", slug: "oils", translations: [{ locale: "en", name: "Oils" }] },
+      { id: "grain", slug: "grains", produceItems: ["Rice"], translations: [{ locale: "en", name: "Grains" }] },
+      { id: "oil", slug: "oils", produceItems: ["Palm oil"], translations: [{ locale: "en", name: "Oils" }] },
     ];
     h.catalogue.units = [
       { code: "BAG", allowsDecimal: false },
@@ -329,6 +329,7 @@ describe("seller listing wizard", () => {
         salePackaging: undefined,
       });
       await act(async () => button("Continue").props.onPress());
+      await act(async () => select("Produce item *").props.onChange("Palm oil"));
       await act(async () => button("Continue to packaging").props.onPress());
       expect(select("Packaging type *").props.options.map((option: any) => option.value)).toContain(
         "BOTTLE",
@@ -444,7 +445,7 @@ describe("seller listing wizard", () => {
 it("uses the admin catalogue order and supports categories outside the bundled examples", async () => {
   const original = h.catalogue.categories;
   h.catalogue.categories = [
-    { id: "new", slug: "seasonal", translations: [{ locale: "en", name: "Seasonal crops" }] },
+    { id: "new", slug: "seasonal", produceItems: ["Seasonal crop"], translations: [{ locale: "en", name: "Seasonal crops" }] },
     ...original,
   ];
   try {
@@ -530,4 +531,18 @@ it("saves guided mode when closing the guide instead of silently switching to ty
   await act(async () => nodes("GuidedListing")[0]!.props.onClose());
   expect(h.reset).toHaveBeenCalledWith("myListings");
   expect(JSON.parse(h.set.mock.calls.at(-1)![1]).inputMethod).toBe("voice");
+});
+
+it("revalidates the category-produce pair when a typed draft resumes at photos", async () => {
+  h.get.mockResolvedValue(JSON.stringify({ ...valid, title: "Rice", inputMethod: "type", step: 4, flowVersion: 2 }));
+  await act(async () => { renderer = create(<Sell />); });
+  expect(nodes("ListingPage")[0]!.props.step).toBe(2);
+  const produce = nodes("Select").find(n => n.props.label === "Produce item *")!;
+  expect(produce.props.options.map((o: any) => o.value)).toEqual(["Tomatoes"]);
+  await act(async () => button("Continue to packaging").props.onPress());
+  expect(nodes("ListingPage")[0]!.props.step).toBe(2);
+  expect(h.api).not.toHaveBeenCalled();
+  await act(async () => button("Switch to guided listing").props.onPress());
+  expect(nodes("GuidedListing")[0]!.props.form.categoryId).toBe("tomatoes");
+  expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
 });

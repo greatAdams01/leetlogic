@@ -505,6 +505,8 @@ model Language {
 }
 
 model Category {
+  explanation String @default("") @db.Text
+  produceItems String[] @default([]) @map("produce_items")
   id           String                @id @default(uuid()) @db.Uuid
   slug         String                @unique @db.VarChar(100)
   isActive     Boolean               @default(true) @map("is_active")

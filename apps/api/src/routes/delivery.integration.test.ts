@@ -123,7 +123,7 @@ suite("delivery and language database workflows", () => {
         },
       })
     ).id;
-    categoryId = (await prisma.category.create({ data: { slug: `delivery-${randomUUID()}` } })).id;
+    categoryId = (await prisma.category.create({ data: { slug: `delivery-${randomUUID()}`, produceItems: ["Beans", "Assisted yam", "Fresh tomatoes", "Saved beans", "Updated beans", "Other produce"] } })).id;
     await prisma.unit.upsert({
       where: { code: "KG" },
       create: { code: "KG", name: "Kilogram", allowsDecimal: true },
@@ -1291,12 +1291,29 @@ suite("delivery and language database workflows", () => {
       ).status,
     ).toBe(201);
   });
+  it("uses database category produce and rejects invalid or retired combinations on save and resume", async () => {
+    const sellerAuth = { Authorization: `Bearer ${seller}` };
+    const category = await prisma.category.create({ data: { slug: `custom-${randomUUID()}`, explanation: "Cereals harvested as grain.", produceItems: ["Sorghum"] } });
+    const other = await prisma.category.create({ data: { slug: `other-${randomUUID()}`, produceItems: ["Cashew"] } });
+    const catalogue = await request(app).get("/v1/listing-drafts/catalogue").set(sellerAuth);
+    expect(catalogue.body.categories.find((c: any) => c.id === category.id)).toMatchObject({ explanation: category.explanation, produceItems: ["Sorghum"] });
+    const fields = { title: "Sorghum", description: "Dry sorghum", sourceLocale: "en", categoryId: category.id, unitCode: "KG", quantity: "20", unitPriceMinor: "50000", addressId, packingAssistanceRequested: true, inputMethod: "voice" };
+    expect((await request(app).post("/v1/listing-drafts").set(sellerAuth).send({ ...fields, categoryId: other.id })).body.error.code).toBe("INVALID_CATEGORY_PRODUCE");
+    const draft = await request(app).post("/v1/listing-drafts").set(sellerAuth).send(fields);
+    expect(draft.status).toBe(201);
+    expect((await request(app).patch(`/v1/listing-drafts/${draft.body.id}`).set(sellerAuth).send({ ...fields, title: "Cashew" })).status).toBe(422);
+    // A catalogue change after saving must also be checked on final submission.
+    await prisma.category.update({ where: { id: category.id }, data: { produceItems: ["Millet"] } });
+    expect((await request(app).post(`/v1/listing-drafts/${draft.body.id}/submit`).set(sellerAuth).send({ confirmed: true })).body.error.code).toBe("INVALID_CATEGORY_PRODUCE");
+    await prisma.category.update({ where: { id: category.id }, data: { isActive: false } });
+    expect((await request(app).get("/v1/listing-drafts/catalogue").set(sellerAuth)).body.categories.some((c: any) => c.id === category.id)).toBe(false);
+  });
   it("persists the priced package, validates its category and weight, and retains it during packing assistance", async () => {
     const sellerAuth = { Authorization: `Bearer ${seller}` };
     const grain = await prisma.category.upsert({
       where: { slug: "grains" },
-      create: { slug: "grains", isActive: true },
-      update: { isActive: true },
+      create: { slug: "grains", isActive: true, produceItems: ["Rice"] },
+      update: { isActive: true, produceItems: ["Rice"] },
     });
     await prisma.unit.upsert({
       where: { code: "BAG" },

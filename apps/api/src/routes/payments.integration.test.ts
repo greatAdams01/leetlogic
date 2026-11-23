@@ -1625,8 +1625,8 @@ suite("provider-backed payment safeguards", () => {
     const { combineParcelRates } = await import("../providers/shipping/shipbubble.js");
     const category = await prisma.category.upsert({
       where: { slug: "grains" },
-      create: { slug: "grains" },
-      update: { isActive: true },
+      create: { slug: "grains", produceItems: ["Rice"] },
+      update: { isActive: true, produceItems: ["Rice"] },
     });
     await prisma.unit.upsert({
       where: { code: "BAG" },

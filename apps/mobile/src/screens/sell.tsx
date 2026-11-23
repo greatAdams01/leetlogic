@@ -8,7 +8,8 @@ import { GuidedListing, ReadListingAloud } from "../components/guided-listing";
 import { listingReadback } from "../lib/guided-listing";
 import { AppSheet } from "../components/app-sheet";
 import { ListingPage, ListingProgress } from "../components/listing-layout";
-import { listingCategories } from "../lib/listing-art";
+import { Select } from "../components/Select";
+import { categoryProduceError } from "../../../../packages/contracts/src/listing-catalogue";
 import {
   emptyListing,
   restoreListing,
@@ -34,7 +35,7 @@ import { money, toMinor, type Listing, type Address } from "../lib/domain";
 import { ListingPhoto } from "./market";
 import { ListingControls } from "../components/seller-listing-controls";
 export { choosePhoto, photoBody } from "../lib/produce-photo";
-type Category = { id: string; slug: string; translations: { locale: string; name: string }[] };
+type Category = { id: string; slug: string; translations: { locale: string; name: string }[]; explanation?: string; produceItems?: string[] };
 type Catalogue = {
   categories: Category[];
   categoryAliases?: Record<string, string>;
@@ -154,7 +155,8 @@ export function Sell() {
     if (ready && target)
       setForm((current) => ({
         ...current,
-        categoryId: target,
+        categoryId: "",
+        title: "",
         salePackaging: undefined,
         unitCode: "",
         quantity: "",
@@ -181,6 +183,14 @@ export function Sell() {
         packaging: { ...emptyPacking },
       }));
   }, [ready, category?.slug, form.title, form.salePackaging?.type]);
+  useEffect(() => {
+    if (!ready || !r.data || !form.inputMethod) return;
+    if (!category) { setStep(1); if (form.inputMethod === "voice") setGuided(true); }
+    else if (categoryProduceError(category, form.title)) {
+      if (step > 2) setStep(2);
+      if (form.inputMethod === "voice") setGuided(true);
+    }
+  }, [ready, r.data?.categories, form.categoryId, form.title, form.inputMethod]);
   const categoryName = (item: Category) =>
     item.translations.find((text) => text.locale === a.locale)?.name ||
     item.translations.find((text) => text.locale === "en")?.name ||
@@ -223,6 +233,7 @@ export function Sell() {
         ? {
             ...current,
             [key]: value,
+            title: "",
             salePackaging: undefined,
             unitCode: "",
             quantity: "",
@@ -265,6 +276,8 @@ export function Sell() {
       if (category) goStep(2);
       return;
     }
+    const produceError = categoryProduceError(category, form.title);
+    if (produceError) { setError(a.ui(produceError)); return; }
     if (step === 3 && !form.salePackaging) {
       setError(a.ui("Choose a packaging type and enter a valid package size."));
       return;
@@ -456,7 +469,7 @@ export function Sell() {
           )}
           <View style={listingStyles.grid}>
             {categories.map((item) => {
-              const examples = listingCategories[item.slug],
+              const examples = item.explanation,
                 selected = item.id === form.categoryId;
               return (
                 <Pressable
@@ -513,12 +526,11 @@ export function Sell() {
             <Notice text="You can save and review drafts while your seller application is in progress. Approval is required before submitting produce for sale." />
           )}
           <Card style={{ borderRadius: 16 }}>
-            <Field
-              label="Product title *"
-              value={form.title}
-              maxLength={160}
-              onChangeText={(value) => field("title", value)}
-            />
+            <Select label="Produce item *" value={form.title}
+              options={(category?.produceItems || []).map(value => ({ value, label: value }))}
+              onChange={(value) => setForm(current => current.title === value ? current : {
+                ...current, title: value, salePackaging: undefined, unitCode: "", quantity: "", price: "", packaging: { ...emptyPacking },
+              })} />
             <Field
               label="Description *"
               inputRef={descriptionInput}
@@ -792,7 +804,7 @@ export function Review() {
   const canSubmit = a.user?.farmerProfile?.verificationStatus === "APPROVED";
   const address = a.user?.addresses.find((item) => item.id === form?.addressId);
   const reviewCategory = catalogue.data?.categories.find((item) => item.id === form?.categoryId);
-  const reviewError = form && catalogue.data ? listingDetailsError(form, catalogue.data.units, reviewCategory?.slug) : "";
+  const reviewError = form && catalogue.data ? categoryProduceError(reviewCategory, form.title) || listingDetailsError(form, catalogue.data.units, reviewCategory?.slug) : "";
   const submit = async () => {
     if (!confirmed || !canSubmit || !form || catalogue.data?.commissionBasisPoints === undefined || reviewError || running.current)
       return;

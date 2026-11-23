@@ -16,10 +16,10 @@ const catalogue: VoiceCatalogue = {
   categories: [
     {
       id: "roots",
-      slug: "roots-tubers",
+      slug: "roots-tubers", produceItems: ["Yam", "Cassava"],
       translations: [{ locale: "en", name: "Roots & Tubers" }],
     },
-    { id: "grains", slug: "grains", translations: [{ locale: "en", name: "Grains" }] },
+    { id: "grains", slug: "grains", produceItems: ["Rice", "Maize"], translations: [{ locale: "en", name: "Grains" }] },
   ],
   units: [
     { code: "PIECE", allowsDecimal: false },
@@ -141,8 +141,8 @@ describe("English guided listing grammar", () => {
       expect(parsed).not.toBeNull();
       voice = commitAnswer(voice, field, parsed!);
     };
-    answer("title", "Rice");
     answer("categoryId", "Grains");
+    answer("title", "Rice");
     answer("description", "Clean dry rice in 50 kg bags");
     answer("salePackaging", "Bag");
     answer("salePackageSize", "fifty kilograms per bag");
@@ -268,7 +268,17 @@ describe("guided listing assistance", () => {
     expect(draft.packingAssistanceRequested).toBe(false);
   });
   it("only offers produce with a live matching category", () => {
-    expect(guidedProduceChoices(catalogue)).toContainEqual({ title: "Rice", categoryId: "grains" });
-    expect(guidedProduceChoices({ ...catalogue, categories: [] })).toEqual([]);
+    expect(guidedProduceChoices(catalogue, "grains")).toContainEqual({ title: "Rice", categoryId: "grains" });
+    expect(guidedProduceChoices({ ...catalogue, categories: [] }, "grains")).toEqual([]);
   });
+});
+
+it("enforces category first despite a saved cursor and uses arbitrary backend produce", () => {
+  const backend = { ...catalogue, categories: [{ id: "new", slug: "custom", explanation: "Cereals harvested as grain.", produceItems: ["Sorghum"], translations: [{ locale: "en", name: "Cereals" }] }] };
+  expect(firstIncompleteVoiceField({ ...emptyListing, title: "Sorghum", voiceCursor: "price" }, backend)).toBe("categoryId");
+  expect(firstIncompleteVoiceField({ ...emptyListing, categoryId: "new", title: "Rice", voiceCursor: "price" }, backend)).toBe("title");
+  expect(guidedProduceChoices(backend, "new")).toEqual([{ title: "Sorghum", categoryId: "new" }]);
+  expect(interpretAnswer("title", "Rice", { ...emptyListing, categoryId: "new" }, backend)).toBeNull();
+  const changed = commitAnswer({ ...emptyListing, categoryId: "roots", title: "Yam", quantity: "20", price: "500" }, "categoryId", { value: "new", spoken: "Cereals" });
+  expect(changed).toMatchObject({ title: "", quantity: "", price: "", categoryId: "new" });
 });

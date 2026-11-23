@@ -25,7 +25,7 @@ export type VoiceField =
   | "height"
   | "handling";
 export type VoiceCatalogue = {
-  categories: { id: string; slug: string; translations: { locale: string; name: string }[] }[];
+  categories: { id: string; slug: string; translations: { locale: string; name: string }[]; explanation?: string; produceItems?: string[] }[];
   units: ListingUnit[];
   addresses: { id: string; line1: string; city: string; lga: string; state: string }[];
   commissionBasisPoints?: number;
@@ -33,20 +33,9 @@ export type VoiceCatalogue = {
 export const voicePackagingOptions = (categorySlug: string, title: string, catalogue: VoiceCatalogue) =>
   packagingOptions(categorySlug, title).filter((option) => option.value === "CUSTOM" || packageUnitCode(option, catalogue.units));
 
-// These explicit produce choices only appear when their category exists in the live catalogue.
-export function guidedProduceChoices(catalogue: VoiceCatalogue) {
-  const produce = [
-    ["Rice", "rice", "grains"], ["Maize", "maize", "grains"],
-    ["Beans", "beans", "legumes"], ["Yam", "yam", "roots-tubers"],
-    ["Cassava", "cassava", "roots-tubers"], ["Tomatoes", "tomatoes", "vegetables"],
-    ["Plantain", "plantain", "fruits"], ["Palm oil", "palm-oil", "oils"],
-    ["Garri", "garri", "processed-produce"],
-  ];
-  return produce.flatMap(([title, slug, group]) => {
-    const category = catalogue.categories.find(c => c.slug === slug)
-      || catalogue.categories.find(c => c.slug === group);
-    return category ? [{ title: title!, categoryId: category.id }] : [];
-  });
+export function guidedProduceChoices(catalogue: VoiceCatalogue, categoryId: string) {
+  const category = catalogue.categories.find(c => c.id === categoryId);
+  return (category?.produceItems || []).map(title => ({ title, categoryId }));
 }
 
 export function guidedListingForm(form: ListingForm, catalogue: VoiceCatalogue): ListingForm {
@@ -64,8 +53,8 @@ export function guidedListingForm(form: ListingForm, catalogue: VoiceCatalogue):
 export const englishListing = {
   locale: "en" as const,
   fields: [
-    "title",
     "categoryId",
+    "title",
     "description",
     "salePackaging",
     "salePackageLabel",
@@ -314,11 +303,16 @@ export function interpretAnswer(
   catalogue: VoiceCatalogue,
 ): VoiceAnswer | null {
   const text = cleanSpeech(raw);
-  if (field === "title" || field === "description") {
+  if (field === "title") {
+    const spoken = cleanSpeech(raw.replace(/^(i want to sell|i am selling|i'm selling)\s+/i, ""));
+    const matches = guidedProduceChoices(catalogue, form.categoryId).filter(p => cleanSpeech(p.title) === spoken);
+    return matches.length === 1 ? { value: matches[0]!.title, spoken: matches[0]!.title } : null;
+  }
+  if (field === "description") {
     const value = raw
       .trim()
-      .replace(field === "title" ? /^(i want to sell|i am selling|i'm selling)\s+/i : /^$/, "");
-    return value.length >= 2 && value.length <= (field === "title" ? 160 : 5000)
+      .replace(/^$/, "");
+    return value.length >= 2 && value.length <= 5000
       ? { value, spoken: value }
       : null;
   }
@@ -493,6 +487,7 @@ export function commitAnswer(
     return {
       ...form,
       categoryId: answer.value,
+      title: "",
       salePackaging: undefined,
       unitCode: "",
       quantity: "",
@@ -559,6 +554,10 @@ export function voiceFields(form: ListingForm, catalogue?: VoiceCatalogue) {
   );
 }
 export function firstIncompleteVoiceField(form: ListingForm, catalogue: VoiceCatalogue): VoiceField | null {
+  const selectedCategory = catalogue.categories.find(c => c.id === form.categoryId);
+  if (!selectedCategory) return "categoryId";
+  if (form.voiceCursor === "change:categoryId") return "categoryId";
+  if (!guidedProduceChoices(catalogue, form.categoryId).some(p => p.title === form.title)) return "title";
   const correction = /^change:(.+)$/.exec(form.voiceCursor || "");
   if (correction && englishListing.fields.includes(correction[1] as VoiceField)) return correction[1] as VoiceField;
   if (form.salePackaging?.type === "CUSTOM" && form.voiceCursor === "salePackageMeasure") return "salePackageMeasure";
