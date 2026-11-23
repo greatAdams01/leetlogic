@@ -6,10 +6,11 @@ import { useApp, useResource } from "../state";
 import { Button, Card, Heading, Label, Notice, s } from "./ui";
 
 type Amounts = FarmerOrderEarnings;
-export function SaleBreakdown({ amounts, netLabel, grossLabel = "Gross produce amount" }: {
+export function SaleBreakdown({ amounts, netLabel, grossLabel = "Gross produce amount", stacked = false }: {
   amounts: Pick<Amounts, "grossMinor" | "commissionMinor" | "netMinor"> & { basisPoints?: number };
   netLabel: string;
   grossLabel?: string;
+  stacked?: boolean;
 }) {
   const a = useApp();
   const commissionLabel = a.ui("Leetlogic commission");
@@ -18,20 +19,20 @@ export function SaleBreakdown({ amounts, netLabel, grossLabel = "Gross produce a
       [a.ui(grossLabel), money(amounts.grossMinor)],
       [amounts.basisPoints === undefined ? commissionLabel : `${commissionLabel} (${commissionRate(amounts.basisPoints)})`, money(amounts.commissionMinor)],
       [a.ui(netLabel), money(amounts.netMinor)],
-    ].map(([label, amount]) => <View key={label} style={[s.between, { gap: 12, flexWrap: "wrap" }]}>
-      <Label>{label}</Label><Label style={{ fontFamily: "NotoBold" }}>{amount}</Label>
+    ].map(([label, amount]) => <View key={label} style={stacked ? { gap: 4, paddingVertical: 10 } : [s.between, { gap: 12, flexWrap: "wrap" }]}>
+      <Label>{label}</Label><Label style={{ fontFamily: "NotoBold", ...(stacked ? { fontSize: 20, lineHeight: 28 } : {}) }}>{amount}</Label>
     </View>)}
   </>;
 }
 
-export function ListingCommission({ basisPoints, price }: { basisPoints?: number; price: string }) {
+export function ListingCommission({ basisPoints, price, stacked = false }: { basisPoints?: number; price: string; stacked?: boolean }) {
   const a = useApp();
   if (basisPoints === undefined) return <Notice text="The current commission rate is unavailable. Refresh before submitting your listing." />;
   let grossMinor = 0n;
   try { grossMinor = BigInt(toMinor(price)); } catch { /* Wait for a valid price. */ }
   return <>
     <Label>{a.ui("Current Leetlogic commission: {rate} of produce sales.", { rate: commissionRate(basisPoints) })}</Label>
-    {grossMinor > 0n && <SaleBreakdown amounts={estimateSale(grossMinor, basisPoints)} grossLabel="Price per selling unit" netLabel="Estimated earnings per unit" />}
+    {grossMinor > 0n && <SaleBreakdown stacked={stacked} amounts={estimateSale(grossMinor, basisPoints)} grossLabel="Price per selling unit" netLabel="Estimated earnings per unit" />}
     <Label muted>Each order shows its own commission and expected earnings before you accept.</Label>
   </>;
 }

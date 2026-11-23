@@ -924,20 +924,12 @@ export function Review() {
       }
     >
       <View style={{ gap: 6 }}>
-        <Text style={listingStyles.title}>Check this.</Text>
+        <Text style={listingStyles.title}>Review listing</Text>
         <Label muted>Review your produce details before submitting.</Label>
       </View>
       {!!reviewError && <Notice text={reviewError} />}
-      {form && <Card>
-        <Heading>What you can earn</Heading>
-        <ListingCommission basisPoints={catalogue.data?.commissionBasisPoints} price={form.price} />
-        {catalogue.data?.commissionBasisPoints === undefined && <Button title="Refresh" secondary onPress={() => void catalogue.reload()} />}
-      </Card>}
-      {form && catalogue.data && <ReadListingAloud automatic={guidedReview}
+      {form && catalogue.data && <ReadListingAloud automatic={guidedReview} showText={false}
         text={`${listingReadback(form, catalogue.data)} Check the photos and details below. Tick the confirmation when everything is correct, then tap Submit listing.`} />}
-      {form?.packingAssistanceRequested && (
-        <Notice text="Our team will complete missing measurements during listing review before approving it for buyers." />
-      )}
       <View style={{ gap: 8 }}>
         <Label style={{ fontFamily: "NotoBold" }}>Uploaded photos</Label>
         {image}
@@ -951,78 +943,39 @@ export function Review() {
           </View>
         )}
       </View>
-      {form && (
-        <Card style={listingStyles.reviewCard}>
-          {[
-            ["Produce", form.title],
-            ...(categoryLabel ? [["Category", categoryLabel]] : []),
-            [
-              "Quantity",
-              `${form.quantity} × ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`,
-            ],
-            ...(form.salePackaging ? [["Packaging", saleUnitLabel(form.salePackaging, a.ui)]] : []),
-            ...(form.salePackaging?.measure === "KG" ? [["Total produce stock", `${new Intl.NumberFormat("en-NG", { maximumFractionDigits: 3 }).format(Number(form.salePackaging.size) * Number(form.quantity))} kg`]] : []),
-            ...(produceTotal(form.quantity, toMinor(form.price)) ? [["Gross stock value before commission", money(produceTotal(form.quantity, toMinor(form.price))!)]] : []),
-            [
-              "Price",
-              `${money(toMinor(form.price))} per ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`,
-            ],
-            [
-              "Farm location",
-              address
-                ? [address.line1, address.city, address.lga, address.state]
-                    .filter(Boolean)
-                    .join(", ")
-                : a.ui("Saved pickup address"),
-            ],
-            ...(form.packaging?.weightKg
-              ? [
-                  ["Packed weight (kg)", form.packaging.weightKg],
-                  ["Units in one package", form.packaging.unitsPerPackage],
-                  [
-                    "Package size (cm)",
-                    `${form.packaging.length} × ${form.packaging.width} × ${form.packaging.height}`,
-                  ],
-                  ["Required handling", a.status(form.packaging.handling)],
-                  ["Handling instructions", form.packaging.notes || a.ui("None")],
-                  ...(form.packaging.specialHandling?.length ? [["Required handling", form.packaging.specialHandling.map((flag) => a.ui({ FRAGILE: "Fragile produce", VENTILATED: "Needs ventilation", UPRIGHT: "Keep upright", SHADE: "Protect from sunlight", NON_STACKABLE: "Do not stack" }[flag])).join(", ")]] : []),
-                  ...(form.packaging.pickupInstructions ? [["Pickup instructions (optional)", form.packaging.pickupInstructions]] : []),
-                ]
-              : []),
-            ["Shipping scope", a.ui(form.shippingScope === "LOCAL" ? "Local" : "Sells in Nigeria")],
-            ["Description", form.description],
-          ].map(([label, value]) => (
-            <View key={label} style={listingStyles.reviewRow}>
-              <Label muted style={{ flex: 1 }}>
-                {label}
-              </Label>
-              <View
-                style={{
-                  flex: 1.5,
-                  flexDirection: "row",
-                  justifyContent: "flex-end",
-                  alignItems: "center",
-                  gap: 4,
-                }}
-              >
-                {label === "Farm location" && (
-                  <Icon name="listingLocation" nativeSize={{ width: 14.61, height: 14.61 }} />
-                )}
-                <Label
-                  style={{
-                    flexShrink: 1,
-                    textAlign: "right",
-                    fontFamily: "NotoBold",
-                    color: label === "Price" ? colors.gold : colors.ink,
-                  }}
-                >
-                  {value}
-                </Label>
-              </View>
-            </View>
-          ))}
-        </Card>
+      {form && <ReviewSection title="Produce details" rows={[
+          ["Produce", form.title],
+          ...(categoryLabel ? [["Category", categoryLabel]] : []),
+          ["Packaging", saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)],
+          ["Quantity", `${form.quantity} × ${saleUnitLabel(form.salePackaging, a.ui) || a.unit(form.unitCode)}`],
+          ...(form.salePackaging?.measure === "KG" ? [["Total produce stock", `${new Intl.NumberFormat("en-NG", { maximumFractionDigits: 3 }).format(form.salePackaging.size * Number(form.quantity))} kg`]] : []),
+          ["Description", form.description],
+        ]} />}
+      {form && <Card style={listingStyles.reviewCard}>
+        <Heading>What you can earn</Heading>
+        <ListingCommission basisPoints={catalogue.data?.commissionBasisPoints} price={form.price} stacked />
+        {produceTotal(form.quantity, toMinor(form.price)) && <View style={listingStyles.reviewRow}>
+          <Label muted>Gross stock value before commission</Label>
+          <Label style={listingStyles.reviewValue}>{money(produceTotal(form.quantity, toMinor(form.price))!)}</Label>
+        </View>}
+        {catalogue.data?.commissionBasisPoints === undefined && <Button title="Refresh" secondary onPress={() => void catalogue.reload()} />}
+      </Card>}
+      {form && <ReviewSection title="Location and delivery" rows={[
+        ["Farm location", address ? [address.line1, address.city, address.lga, address.state].filter(Boolean).join(", ") : a.ui("Saved pickup address")],
+        ["Shipping scope", a.ui(form.shippingScope === "LOCAL" ? "Local" : "Sells in Nigeria")],
+      ]} />}
+      {form?.packingAssistanceRequested && (
+        <Notice text="Our team will complete missing measurements during listing review before approving it for buyers." />
       )}
+      {form && !form.packingAssistanceRequested && form.packaging?.weightKg && <ReviewSection title="Packing and handling" rows={[
+        ["Packed weight (kg)", form.packaging.weightKg],
+        ["Units in one package", form.packaging.unitsPerPackage],
+        ["Package size (cm)", `${form.packaging.length} × ${form.packaging.width} × ${form.packaging.height}`],
+        ["Required handling", a.status(form.packaging.handling)],
+        ["Handling instructions", form.packaging.notes || a.ui("None")],
+        ...(form.packaging.specialHandling?.length ? [["Required handling", form.packaging.specialHandling.map(flag => a.ui({ FRAGILE: "Fragile produce", VENTILATED: "Needs ventilation", UPRIGHT: "Keep upright", SHADE: "Protect from sunlight", NON_STACKABLE: "Do not stack" }[flag])).join(", ")]] : []),
+        ...(form.packaging.pickupInstructions ? [["Pickup instructions (optional)", form.packaging.pickupInstructions]] : []),
+      ]} />}
       {!canSubmit && (
         <>
           <Notice text="Your draft is saved. Complete seller approval before submitting it for sale." />
@@ -1040,6 +993,15 @@ export function Review() {
       </Label>
     </ListingPage>
   );
+}
+function ReviewSection({ title, rows }: { title: string; rows: string[][] }) {
+  return <Card style={listingStyles.reviewCard}>
+    <Heading>{title}</Heading>
+    {rows.map(([label, value], index) => <View key={`${label}-${index}`} style={listingStyles.reviewRow}>
+      <Label muted style={{ fontSize: 14, lineHeight: 20 }}>{label}</Label>
+      <Label style={listingStyles.reviewValue}>{value}</Label>
+    </View>)}
+  </Card>;
 }
 const listingStyles = StyleSheet.create({
   title: {
@@ -1139,12 +1101,12 @@ const listingStyles = StyleSheet.create({
     backgroundColor: "#00000033",
     borderRadius: 22,
   },
-  reviewCard: { borderWidth: 1, borderColor: "#e7e5e4" },
+  reviewCard: { borderWidth: 1, borderColor: "#e7e5e4", gap: 16 },
+  reviewValue: { fontFamily: "NotoBold", fontSize: 17, lineHeight: 26, textAlign: "left" },
   reviewRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 16,
-    paddingVertical: 10,
+    alignItems: "stretch",
+    gap: 6,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderColor: "#f5f5f4",
   },

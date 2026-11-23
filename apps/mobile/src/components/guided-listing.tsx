@@ -175,7 +175,7 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
   </AppSheet>;
 }
 
-export function ReadListingAloud({ text, automatic = false }: { text: string; automatic?: boolean }) {
+export function ReadListingAloud({ text, automatic = false, showText = true }: { text: string; automatic?: boolean; showText?: boolean }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const live = useRef(true);
@@ -208,7 +208,7 @@ export function ReadListingAloud({ text, automatic = false }: { text: string; au
   }, [automatic, text]);
   return (
     <View style={{ gap: 8 }}>
-      {automatic && <Label>{text}</Label>}
+      {automatic && showText && <Label>{text}</Label>}
       {!automatic && <Button
         title={busy ? "Stop reading" : "Read listing aloud"}
         secondary

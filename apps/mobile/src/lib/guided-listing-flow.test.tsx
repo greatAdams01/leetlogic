@@ -225,3 +225,9 @@ it("reads the category explanation supplied by the backend and allows changing c
     expect(button("Cereals — Crops grown for their grain.")).toBeDefined();
   } finally { catalogue.categories = original; }
 });
+
+it("keeps automatic review narration without displaying a duplicate summary paragraph", async () => {
+  await act(async () => { renderer = create(<ReadListingAloud automatic showText={false} text="Your full spoken listing summary." />); });
+  expect(h.speak).toHaveBeenLastCalledWith("Your full spoken listing summary.");
+  expect(JSON.stringify(renderer.toJSON())).not.toContain("Your full spoken listing summary.");
+});
