@@ -115,7 +115,7 @@ it("shows legacy shipment stages without enabling new farmer or buyer actions", 
 
 it("closes all participant actions after administrative resolution without inventing receipt", () => {
   const view = orderFulfillment({ ...base, adminResolved: true, orderStatus: "COMPLETED", buyer: true, farmerDecision: "ACCEPTED", status: "DELIVERED", receiptReady: true, ready: true });
-  expect(view).toMatchObject({ status: "Closed by administrator", canAccept: false, canReject: false, canHandover: false, canReady: false, canDispatch: false, canConfirm: false, confirmed: false });
+  expect(view).toMatchObject({ status: "Completed by administrator", canAccept: false, canReject: false, canHandover: false, canReady: false, canDispatch: false, canConfirm: false, confirmed: false });
 });
 
 it("keeps an investigation open while pausing participant actions", () => {

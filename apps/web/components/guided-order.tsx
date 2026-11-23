@@ -1,4 +1,5 @@
 "use client";
+import { customerResolutionFinancialLabels } from "../../../packages/contracts/src/order-resolution";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { orderJourney } from "../../../packages/contracts/src/order-journey";
@@ -36,6 +37,7 @@ export function GuidedOrder({
     buyer,
     progress: data.progress,
     orderStatus: o.status,
+    resolution: o.resolution,
     decision: o.farmerDecision,
     handedOver: !!o.handedOverAt,
     money: data.money,
@@ -147,6 +149,7 @@ export function GuidedOrder({
         <p className="journey-eyebrow">{say(buyer ? "YOUR ORDER" : "FARMER ORDER")}</p>
         <h1>{say(guide.title)}</h1>
         <p>{say(guide.body)}</p>
+        {o.resolution && <p>{say(customerResolutionFinancialLabels[o.resolution.financialAction as keyof typeof customerResolutionFinancialLabels])} · {new Date(o.resolution.resolvedAt).toLocaleString("en-NG")}</p>}
       </section>
       {(error || notice || loadError) && (
         <p className="journey-feedback" role="alert">

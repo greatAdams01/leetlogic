@@ -73,3 +73,13 @@ it("keeps buyer payment messages free of earnings and bank withdrawal copy", () 
     expect(buyer.body).not.toMatch(/earnings|withdrawal/i);
   }
 });
+
+it("describes admin-authorized settlement without claiming buyer receipt or bank payout", () => {
+  for (const status of ["QUEUED", "SUCCEEDED"]) {
+    const progress = orderPaymentProgress({ verified: true, receiptConfirmed: false,
+      heldMinor: status === "QUEUED" ? "10000" : "0", releasedMinor: status === "SUCCEEDED" ? "10000" : "0", release: { status } });
+    expect(progress.body).not.toMatch(/receipt/i);
+    expect(buyerPaymentProgress(progress).body).not.toMatch(/receipt|earnings|withdrawal/i);
+    expect(progress.stage).toBe(status === "QUEUED" ? "PROCESSING" : "AVAILABLE");
+  }
+});

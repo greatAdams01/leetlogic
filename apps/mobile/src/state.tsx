@@ -1,3 +1,4 @@
+import { subscribeOrderChanges } from "./lib/order-invalidation";
 import { Feedback, type FeedbackMessage } from "./components/feedback";
 import { LocaleProvider } from "./localization";
 import { ui, localizedError, unitLabel, dateLabel, localizedStatus } from "./lib/localization";
@@ -386,9 +387,11 @@ export function useResource<T>(path: string, enabled = true, refreshMs = 0) {
       refreshing = true;
       void reload(true).finally(() => { refreshing = false; });
     };
+    const unsubscribe = path.startsWith("/orders/") && !path.startsWith("/orders/notifications") ? subscribeOrderChanges(refresh) : () => {};
     const timer = refreshMs > 0 ? setInterval(refresh, refreshMs) : null;
     const subscription = refreshMs > 0 ? AppState.addEventListener("change", (state) => { if (state === "active") refresh(); }) : null;
     return () => {
+      unsubscribe();
       if (timer) clearInterval(timer);
       subscription?.remove();
       request.current++;

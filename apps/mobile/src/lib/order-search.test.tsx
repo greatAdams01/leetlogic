@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("react-native", () => ({ AppState: { addEventListener: () => ({ remove() {} }) } }));
 vi.mock("./api", () => ({ api: h.api }));
 vi.mock("../state", () => ({ useApp: () => ({ error: (e: Error) => e.message }) }));
+import { notifyOrderChanges } from "./order-invalidation";
 import { useOrderSearch } from "./use-order-search";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer, current: ReturnType<typeof useOrderSearch>;
@@ -29,4 +30,19 @@ it("ignores a late response from a previous filter", async () => {
   await act(async () => resolve({ items: [{ id: "stale" }], nextCursor: "stale" }));
   expect(current.data.items.map(i => i.id)).toEqual(["new"]);
   expect(current.nextCursor).toBeNull();
+});
+
+it("refreshes admin changes through push and polling without blanking existing orders", async () => {
+  h.api.mockResolvedValueOnce({ items: [{ id: "a", status: "FUNDED" }] });
+  await act(async () => { tree = create(<Probe />); });
+  let resolve!: (page: object) => void;
+  h.api.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  await act(async () => notifyOrderChanges());
+  expect(current.loading).toBe(false);
+  expect(current.data.items[0]!.status).toBe("FUNDED");
+  await act(async () => resolve({ items: [{ id: "a", status: "COMPLETED" }] }));
+  expect(current.data.items[0]!.status).toBe("COMPLETED");
+  h.api.mockResolvedValue({ items: [{ id: "a", status: "CANCELLED" }] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+  expect(current.data.items[0]!.status).toBe("CANCELLED");
 });

@@ -473,7 +473,7 @@ function BuyerCheckout({ data, reload }: { data: DeliveryData; reload: () => Pro
 }
 export function Delivery() {
   const a = useApp(),
-    r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`, true, 30000),
+    r = useResource<DeliveryData>(`/orders/${a.route.id}/delivery`, true, 10000),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [tab, setTab] = useState<OrderTab>("details"),

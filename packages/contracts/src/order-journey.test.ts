@@ -155,3 +155,22 @@ it("does not call a receipted order completed until settlement completes", () =>
   expect(orderJourney({ buyer: true, orderStatus: "DELIVERED", progress: p })).toMatchObject({ title: "Receipt confirmed", stage: 3 });
   expect(orderJourney({ buyer: true, orderStatus: "COMPLETED", progress: p })).toMatchObject({ title: "Order completed", stage: 4 });
 });
+
+it.each([true, false])("shows admin decisions without inventing receipt confirmation (buyer=%s)", buyer => {
+  for (const [outcome, financialAction, status, title] of [
+    ["COMPLETED", "RELEASE", "COMPLETED", "Completed by administrator"],
+    ["CANCELLED", "REFUND", "CANCELLED", "Cancelled by administrator"],
+    ["UNDER_INVESTIGATION", "HOLD", "UNDER_INVESTIGATION", "Under investigation"],
+    ["COMPLETED", "NONE", "COMPLETED", "Completed by administrator"],
+    ["CANCELLED", "NONE", "CANCELLED", "Cancelled by administrator"],
+  ] as const) {
+    const progress = orderFulfillment({ ...base, buyer, farmer: !buyer, orderStatus: status,
+      adminResolved: financialAction !== "HOLD", adminUnderInvestigation: financialAction === "HOLD" });
+    const journey = orderJourney({ buyer, orderStatus: status, progress,
+      resolution: { outcome, financialAction, resolvedAt: "2026-11-23T11:24:55.957Z" } });
+    expect(journey).toMatchObject({ title, action: null, receiptPending: false, stage: outcome === "COMPLETED" ? 4 : 0 });
+    expect(journey.body).toContain(buyer ? "purchase" : "sale");
+    expect(progress).toMatchObject({ confirmed: false, canAccept: false, canConfirm: false, canReady: false, canDispatch: false });
+  }
+  expect(orderJourney({ buyer, orderStatus: "COMPLETED" })).toMatchObject({ title: "Order completed", stage: 4, action: null });
+});

@@ -2,6 +2,7 @@ import type { OrderFulfillment } from "./order-fulfillment.js";
 import { deliveryProblemStates, deliveryStatusCopy, farmerDeliveryStatusCopy } from "./delivery-visibility.js";
 export type JourneyAction = "accept" | "ready" | "dispatch" | "handover" | "confirm" | null;
 export function orderJourney(input: {
+  resolution?: import("./order-resolution.js").CustomerOrderResolution | null;
   buyer: boolean;
   progress?: OrderFulfillment;
   orderStatus: string;
@@ -43,9 +44,22 @@ export function orderJourney(input: {
     receiptPending = false,
     stage = 0;
   const closed =
-    ["CANCELLED", "REFUNDED"].includes(input.orderStatus) || input.decision === "REJECTED";
+    ["COMPLETED", "CANCELLED", "REFUNDED"].includes(input.orderStatus) || input.decision === "REJECTED";
   const review = p?.status === "Needs review";
-  if (closed) {
+  if (input.resolution) {
+    const resolution = input.resolution;
+    if (resolution.outcome === "UNDER_INVESTIGATION") {
+      title = "Under investigation";
+      body = buyer ? "An administrator is reviewing your purchase. Remaining funds are held while the case is open." : "An administrator is reviewing this sale. Remaining funds are held while the case is open.";
+    } else {
+      stage = resolution.outcome === "COMPLETED" ? 4 : 0;
+      title = resolution.outcome === "COMPLETED" ? "Completed by administrator" : "Cancelled by administrator";
+      body = buyer ? "An administrator closed your purchase. Check Payment and receipt for the financial outcome." : "An administrator closed this sale. Check Payment and receipt for your earnings or the buyer’s refund.";
+    }
+  } else if (input.orderStatus === "COMPLETED") {
+    title = "Order completed"; stage = 4;
+    body = "This order is complete. Check Payment and receipt for the financial outcome.";
+  } else if (closed) {
     title = refunded
       ? "Order refunded"
       : input.decision === "REJECTED"

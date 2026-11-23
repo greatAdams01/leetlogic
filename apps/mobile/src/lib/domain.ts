@@ -80,6 +80,7 @@ export type Customer = {
   addresses: Address[];
 };
 export type Order = {
+  resolution?: import("../../../../packages/contracts/src/order-resolution").CustomerOrderResolution | null;
   sellerName?: string;
   farmName?: string;
   farmerDecision?: string;
@@ -116,6 +117,7 @@ export type DeliveryData = {
   progress?: import("../../../../packages/contracts/src/order-fulfillment").OrderFulfillment;
   fulfillment?: { state: string; collectionBuyerAt: string | null } | null;
   order: {
+    resolution?: import("../../../../packages/contracts/src/order-resolution").CustomerOrderResolution | null;
     id: string;
     reference: string;
     status: string;

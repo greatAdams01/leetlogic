@@ -103,6 +103,8 @@ export function recoveryExperience(record: RecoveryRecord, now = new Date()) {
 export function orderUpdateCopy(messageKey: string, buyer: boolean) {
   const state = messageKey.replace(/^status\./, "");
   const recovery: Record<string, [string, string]> = {
+    ADMIN_RESOLVED: ["Administrator decision recorded", buyer ? "An administrator resolved your purchase. Open the order for its status and payment details." : "An administrator resolved this sale. Open the order for its status and earnings or refund details."],
+    ADMIN_INVESTIGATION: ["Under investigation", "An administrator opened a review. Remaining funds are held while the case is open."],
     ORDER_ACCEPTED: ["Order accepted", buyer ? "The farmer is preparing your goods." : "You accepted this order. Prepare the goods for collection."],
     ORDER_REJECTED: ["Order declined", buyer ? "The farmer cannot fulfill this order. Follow the refund status in your order." : "You declined this order. Follow the buyer’s refund status in the order."],
     BUYER_COLLECTED: ["Goods handed over", "The buyer should inspect the goods and confirm receipt."],

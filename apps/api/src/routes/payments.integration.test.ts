@@ -3107,6 +3107,29 @@ suite("provider-backed payment safeguards", () => {
     });
   });
   describe("administrator resolution of provider-backed orders", () => {
+    const expectCustomerDecision = async (id: string, outcome: string, financialAction: string, status: string) => {
+      const sellerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+      for (const [view, accessToken] of [["buyer", token], ["seller", sellerToken]]) {
+        const detail = await request(app).get(`/v1/orders/${id}/delivery`).set("Authorization", `Bearer ${accessToken}`);
+        expect(detail.status).toBe(200);
+        expect(detail.body.order.resolution).toEqual({ outcome, financialAction, resolvedAt: expect.any(String) });
+        expect(detail.body.order.status).toBe(status);
+        expect(detail.body.progress).toMatchObject({ canConfirm: false, canAccept: false, canReady: false, canDispatch: false });
+        const list = await request(app).get(`/v1/orders?view=${view}`).set("Authorization", `Bearer ${accessToken}`);
+        expect(list.status).toBe(200);
+        const item = list.body.items.find((row: any) => row.id === id);
+        expect(item.resolution).toEqual(detail.body.order.resolution);
+        expect(item.fulfillmentStatus).toBe(detail.body.progress.status);
+        expect(item.adminResolution).toBeUndefined();
+        expect(item.tickets).toBeUndefined();
+        if (outcome === "CANCELLED") {
+          const cancelled = await request(app).get(`/v1/orders?view=${view}&filter=CANCELLED`).set("Authorization", `Bearer ${accessToken}`);
+          expect(cancelled.body.items.some((row: any) => row.id === id)).toBe(true);
+          const inbox = await request(app).get(`/v1/orders/notifications?view=${view}`).set("Authorization", `Bearer ${accessToken}`);
+          expect(inbox.body.items.some((row: any) => row.orderId === id && row.status === "ADMIN_RESOLVED")).toBe(true);
+        }
+      }
+    };
     const close = async (key: string, outcome: string, financialAction: string, extra: Record<string, unknown> = {}) => request(app).post(`/v1/admin/orders/${key}/resolve`).set(staffAuth()).send({
       ...await adminMutation(key, "Verified exceptional delivery outcome with both parties"), outcome, financialAction, evidence: "Buyer and courier correspondence independently reviewed", confirmed: true, ...extra,
     });
@@ -3115,6 +3138,7 @@ suite("provider-backed payment safeguards", () => {
       await expect(requestRelease(f.o.id, req())).rejects.toMatchObject({ code: "RELEASE_BLOCKED" });
       const result = await close(f.o.id, "COMPLETED", "RELEASE");
       expect(result.status).toBe(200);
+      await expectCustomerDecision(f.o.id, "COMPLETED", "RELEASE", "COMPLETED");
       expect(result.body.message).toContain("pending until the provider confirms");
       const op = await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "RELEASE" } });
       expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "COMPLETED", heldMinor: 10000n, releasedMinor: 0n, deliveryConfirmedAt: null, receiptPhotoKey: null });
@@ -3149,6 +3173,7 @@ suite("provider-backed payment safeguards", () => {
       expect(write).toHaveBeenCalledTimes(1);
       expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "CANCELLED", heldMinor: 0n, refundedMinor: 10000n });
       expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: f.a.id } })).status).toBe("REFUNDED");
+      await expectCustomerDecision(f.o.id, "CANCELLED", "REFUND", "CANCELLED");
       expect((await prisma.delivery.findUniqueOrThrow({ where: { id: f.d.id } })).status).toBe("CANCELLED");
       await applyTracking(f.d.id, { id: `resolved-${f.d.id}`, status: "delivered", courier: "Late courier" });
       expect(await prisma.tradeOrder.findUniqueOrThrow({ where: { id: f.o.id } })).toMatchObject({ status: "CANCELLED", financialHold: false });
@@ -3161,6 +3186,7 @@ suite("provider-backed payment safeguards", () => {
       expect((await close(f.o.id, "COMPLETED", "RELEASE")).status).toBe(200);
       const op = await prisma.moneyOperation.findFirstOrThrow({ where: { orderId: f.o.id, kind: "RELEASE" } });
       expect((await close(f.o.id, "UNDER_INVESTIGATION", "HOLD")).status).toBe(200);
+      await expectCustomerDecision(f.o.id, "UNDER_INVESTIGATION", "HOLD", "UNDER_INVESTIGATION");
       await runMoneyOperation(op.id);
       expect(await prisma.moneyOperation.findUniqueOrThrow({ where: { id: op.id } })).toMatchObject({ status: "BLOCKED", providerRef: null, leaseUntil: null });
       expect(bachs.call).not.toHaveBeenCalled();

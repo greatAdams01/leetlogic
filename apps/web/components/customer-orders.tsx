@@ -24,13 +24,13 @@ export function CustomerOrders() {
     return () => clearTimeout(timer);
   }, [search]);
   const load = useCallback(
-    async (next?: string) => {
+    async (next?: string, background = false) => {
       if (next && running.current) return;
       const request = ++version.current;
       running.current = true;
       setError("");
       if (next) setMore(true);
-      else {
+      else if (!background) {
         setLoading(true);
         setItems([]);
         setCursor(null);
@@ -70,10 +70,16 @@ export function CustomerOrders() {
   }, [load]);
   useEffect(() => {
     const focus = () => {
-      if (!running.current) void load();
+      if (!running.current && document.visibilityState !== "hidden") void load(undefined, true);
     };
     window.addEventListener("focus", focus);
-    return () => window.removeEventListener("focus", focus);
+    document.addEventListener("visibilitychange", focus);
+    const timer = setInterval(focus, 15000);
+    return () => {
+      window.removeEventListener("focus", focus);
+      document.removeEventListener("visibilitychange", focus);
+      clearInterval(timer);
+    };
   }, [load]);
   const searching = loading || search.trim() !== query;
   return (

@@ -1,3 +1,4 @@
+import { subscribeOrderChanges } from "./order-invalidation";
 import { AppState } from "react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -26,12 +27,12 @@ export function useOrderSearch(view: "buyer" | "seller") {
     return () => clearTimeout(timer);
   }, [search]);
   const fetchPage = useCallback(
-    async (cursor?: string) => {
+    async (cursor?: string, background = false) => {
       if (cursor && busy.current) return;
       const request = ++version.current;
       busy.current = true;
       if (cursor) setLoadingMore(true);
-      else {
+      else if (!background) {
         setLoading(true);
         setResultContext(contextKey);
         setItems([]);
@@ -69,10 +70,13 @@ export function useOrderSearch(view: "buyer" | "seller") {
     };
   }, [fetchPage]);
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active" && !busy.current) void fetchPage();
-    });
-    return () => sub.remove();
+    const refresh = () => {
+      if (!busy.current && AppState.currentState !== "background" && AppState.currentState !== "inactive") void fetchPage(undefined, true);
+    };
+    const sub = AppState.addEventListener("change", state => { if (state === "active") refresh(); });
+    const unsubscribe = subscribeOrderChanges(refresh);
+    const timer = setInterval(refresh, 15000);
+    return () => { sub.remove(); unsubscribe(); clearInterval(timer); };
   }, [fetchPage]);
   return {
     search,

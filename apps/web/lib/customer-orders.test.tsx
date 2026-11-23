@@ -24,3 +24,17 @@ it("shows a clear empty state without leaking previous results", async () => {
   render(<CustomerOrders />); await screen.findByText("No orders match your search and filters.");
   expect(screen.queryByRole("button", { name: "Load more orders" })).toBeNull();
 });
+
+it("refreshes a saved admin decision on focus without clearing the current order", async () => {
+  const row = { id: "first", reference: "ORDER-123", listing: { title: "Rice" }, totalMinor: "10000", status: "FUNDED", fulfillmentStatus: "Preparing" };
+  h.api.mockResolvedValueOnce({ items: [row] });
+  render(<CustomerOrders />);
+  await screen.findByText(/Preparing/);
+  let resolve!: (page: object) => void;
+  h.api.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(screen.getByText("Rice")).toBeTruthy();
+  expect(screen.queryByText("Loading orders…")).toBeNull();
+  await act(async () => resolve({ items: [{ ...row, status: "COMPLETED", fulfillmentStatus: "Completed by administrator" }] }));
+  expect(screen.getByText(/Completed by administrator/)).toBeTruthy();
+});

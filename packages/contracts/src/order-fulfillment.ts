@@ -110,7 +110,7 @@ export function orderFulfillment(input: {
     participantActions && !terminal && accepted && buyer && paid && !confirmed && !blocked && receiptReady;
   const stage = !paid
     ? -1
-    : confirmed
+    : input.adminResolved && input.orderStatus === "COMPLETED" ? 4 : confirmed
       ? input.orderStatus === "COMPLETED" ? 4 : 3
       : collection
         ? status === "PICKUP_READY"
@@ -164,7 +164,7 @@ export function orderFulfillment(input: {
     rejected,
     handedOver: !!input.handedOver,
     method: collection ? "Pickup" : "Delivery",
-    status: input.adminUnderInvestigation ? "Under investigation" : input.adminResolved ? "Closed by administrator" : terminal
+    status: input.adminUnderInvestigation ? "Under investigation" : input.adminResolved ? input.orderStatus === "COMPLETED" ? "Completed by administrator" : input.orderStatus === "REFUNDED" ? "Refunded by administrator" : "Cancelled by administrator" : terminal
       ? input.orderStatus === "REFUNDED"
         ? "Refunded"
         : "Cancelled"

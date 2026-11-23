@@ -1,3 +1,4 @@
+import { customerOrderResolution } from "@leetlogic/contracts";
 import { readResolutionOptions } from "../services/admin-order-resolution.js";
 import { logger } from "../lib/logger.js";
 import { ownedOrderWhere } from "../services/order-search.js";
@@ -95,7 +96,7 @@ async function orderAccess(req: Request) {
   if (
     req.auth!.subject !== "admin" &&
     order.buyerId !== req.auth!.sub &&
-    (["AWAITING_PAYMENT", "CANCELLED"].includes(order.status) ||
+    (order.status === "AWAITING_PAYMENT" ||
       !(await prisma.escrowEntry.count({ where: { orderId: order.id, kind: "FUND" } })))
   )
     throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
@@ -166,6 +167,8 @@ customerDeliveryRouter.get("/", async (req, res) => {
       status: true,
       deliveryConfirmedAt: true,
       financialHold: true,
+      adminResolution: true,
+      tickets: { where: { kind: "DISPUTE", status: { not: "RESOLVED" } }, select: { id: true }, take: 1 },
       farmerDecision: true,
       handedOverAt: true,
       totalMinor: true,
@@ -181,7 +184,26 @@ customerDeliveryRouter.get("/", async (req, res) => {
   const hasMore = rows.length > query.limit;
   const items = rows.slice(0, query.limit);
   res.set("Cache-Control", "private, no-store");
-  res.json(serialize({hasMore, nextCursor: hasMore ? items.at(-1)!.id : null, items:items.map(item=>({...item, sellerName: item.farmerProfile.user.profile?.fullName || item.farmerProfile.user.profile?.displayName || item.farmerProfile.farmName, farmName: item.farmerProfile.farmName, farmerProfile: undefined, delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({orderStatus:item.status,farmerDecision:item.farmerDecision,handedOver:!!item.handedOverAt,review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
+  res.json(serialize({ hasMore, nextCursor: hasMore ? items.at(-1)!.id : null, items: items.map(({ adminResolution, tickets, ...item }) => {
+    const resolution = customerOrderResolution(adminResolution);
+    const paid = ["FUNDED", "DELIVERED", "COMPLETED"].includes(item.status);
+    return {
+      ...item, resolution,
+      sellerName: item.farmerProfile.user.profile?.fullName || item.farmerProfile.user.profile?.displayName || item.farmerProfile.farmName,
+      farmName: item.farmerProfile.farmName, farmerProfile: undefined,
+      delivery: item.delivery ? { status: item.delivery.status, shippingMinor: item.delivery.shippingMinor } : null,
+      fulfillmentStatus: resolution || paid ? orderFulfillment({
+        adminResolved: !!resolution && resolution.financialAction !== "HOLD",
+        adminUnderInvestigation: resolution?.financialAction === "HOLD",
+        orderStatus: item.status, farmerDecision: item.farmerDecision, handedOver: !!item.handedOverAt,
+        review: item.financialHold || !!tickets.length, paid, confirmed: !!item.deliveryConfirmedAt,
+        blocked: item.financialHold, buyer: view === "buyer", farmer: view === "seller",
+        status: item.delivery?.status || "", ready: !!item.delivery?.events.some(e => e.status === "READY_FOR_PICKUP"),
+        dispatched: !!item.delivery?.events.some(e => e.status === "FARMER_DISPATCHED"),
+        booked: false, receiptReady: false, collection: !!item.delivery?.status.startsWith("PICKUP_"),
+      }).status : item.status,
+    };
+  }) }));
 });
 // Buyer collection uses no courier quote or shipping charge.
 customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
@@ -532,6 +554,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
           receiptPhoto: order.receiptPhotoAt ? { uploadedAt: order.receiptPhotoAt, url: `/orders/${order.id}/delivery/receipt-photo` } : null,
           reference: order.reference,
           status: order.status,
+          resolution: customerOrderResolution(order.adminResolution),
           deliveryConfirmedAt: order.deliveryConfirmedAt,
           title: order.listing.title,
           description: order.listing.description,

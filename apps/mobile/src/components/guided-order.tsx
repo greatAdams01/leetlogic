@@ -1,3 +1,4 @@
+import { customerResolutionFinancialLabels } from "../../../../packages/contracts/src/order-resolution";
 import React, { useEffect, useRef, useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { orderJourney } from "../../../../packages/contracts/src/order-journey";
@@ -33,6 +34,7 @@ export function GuidedOrder({
     buyer,
     progress: data.progress,
     orderStatus: order.status,
+    resolution: order.resolution,
     decision: order.farmerDecision,
     handedOver: !!order.handedOverAt,
     money: data.money,
@@ -141,6 +143,10 @@ export function GuidedOrder({
           </View>
         </View>
         <Label>{a.ui(guide.body)}</Label>
+        {order.resolution && <View style={{ gap: 6 }}>
+          <Label>{a.ui(customerResolutionFinancialLabels[order.resolution.financialAction])}</Label>
+          <Label muted>{a.date(order.resolution.resolvedAt)}</Label>
+        </View>}
       </Card>
       {(error || loadError) && <Notice text={error || loadError} error />}
       {order.checkoutErrorCode === "ORDER_EXPIRED" && order.listingId && (

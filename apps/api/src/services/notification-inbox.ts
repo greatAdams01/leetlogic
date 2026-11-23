@@ -20,7 +20,7 @@ export async function notificationInbox(userId: string, seller: boolean) {
               OR: [
                 {
                   ledger: { some: { kind: "FUND" } },
-                  status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+                  status: { not: "AWAITING_PAYMENT" },
                 },
                 { id: { in: recoveryOrders.map((r) => r.orderId) } },
               ],
@@ -34,7 +34,7 @@ export async function notificationInbox(userId: string, seller: boolean) {
     order: {
       farmerProfile: { userId },
       ledger: { some: { kind: "FUND" } },
-      status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+      status: { not: "AWAITING_PAYMENT" },
     },
   };
   const [delivery, paid, approved, deliveryUnread, paidUnread, listingUnread] = await Promise.all([

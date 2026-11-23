@@ -1,3 +1,4 @@
+import { notifyOrderChanges } from "./order-invalidation";
 import { useEffect } from "react";
 import { useApp, useResource } from "../state";
 import { api } from "./api";
@@ -13,6 +14,7 @@ export type InboxItem = {
 };
 const listeners = new Set<() => void>();
 export function refreshOrderInbox() {
+  notifyOrderChanges();
   for (const listener of listeners) listener();
 }
 export function useOrderInbox() {

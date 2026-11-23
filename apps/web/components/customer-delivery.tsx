@@ -127,7 +127,7 @@ export function CustomerDelivery({
           refreshing = false;
         });
     };
-    const updates = setInterval(refresh, 30000);
+    const updates = setInterval(refresh, 10000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {

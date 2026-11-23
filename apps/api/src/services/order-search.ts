@@ -8,7 +8,7 @@ export function ownedOrderWhere(
     ? {
         farmerProfile: { userId },
         ledger: { some: { kind: "FUND" } },
-        status: { notIn: ["AWAITING_PAYMENT", "CANCELLED"] },
+        status: { not: "AWAITING_PAYMENT" },
       }
     : { buyerId: userId };
   const filters: Prisma.TradeOrderWhereInput[] = [scope];
