@@ -92,3 +92,11 @@ describe("mobile listing photo preview", () => {
     expect(h.write).not.toHaveBeenCalled();
   });
 });
+
+it("loads a resumed draft photo by id without a remote native request or local picker URI", async () => {
+  await testRenderer.act(async () => {
+    renderer = testRenderer.create(<ListingPhoto item={{ title: "Draft tomatoes" }} photoId="11111111-1111-4111-8111-111111111111" />);
+  });
+  expect(h.api).toHaveBeenCalledWith("/listing-photos/11111111-1111-4111-8111-111111111111", { imageResponse: true });
+  expect(renderer.root.findByType("Image" as never).props.source).toEqual({ uri: "file:///cache/preview.jpg" });
+});

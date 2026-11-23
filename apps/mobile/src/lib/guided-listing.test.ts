@@ -169,7 +169,11 @@ describe("English guided listing grammar", () => {
     expect(voice.salePackaging).toEqual(typed.salePackaging);
     expect(firstIncompleteVoiceField(voice, categoryCatalogue)).toBeNull();
     expect(listingDetailsError(voice, categoryCatalogue.units, "grains")).toBe("");
-    expect(listingPayload(voice, "en")).toEqual(listingPayload(typed, "en"));
+    const { inputMethod: voiceMethod, ...voicePayload } = listingPayload(voice, "en");
+    const { inputMethod: typedMethod, ...typedPayload } = listingPayload(typed, "en");
+    expect(voiceMethod).toBe("voice");
+    expect(typedMethod).toBe("type");
+    expect(voicePayload).toEqual(typedPayload);
     expect(listingReadback(voice, categoryCatalogue)).toContain("Total produce stock: 1,000 kilograms");
     expect(listingReadback(voice, categoryCatalogue)).toContain("Gross stock value before commission: ₦1,500,000.00");
     expect(listingReadback(voice, categoryCatalogue)).toContain("₦4,500.00 (6%)");

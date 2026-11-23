@@ -1349,8 +1349,12 @@ suite("delivery and language database workflows", () => {
         .post(`/v1/listing-drafts/${id}/submit`)
         .set(sellerAuth)
         .send({ confirmed: true });
-    const draft = await create();
+    const draft = await create({ inputMethod: "voice" });
     expect(draft.status).toBe(201);
+    const resumed = await request(app).get(`/v1/listing-drafts/${draft.body.id}`).set(sellerAuth);
+    expect(resumed.status).toBe(200);
+    expect(resumed.body.fields).toMatchObject({ inputMethod: "voice", salePackaging });
+    expect(resumed.body.fields.photoIds).toEqual(draft.body.fields.photoIds);
     const submitted = await submit(draft.body.id);
     expect(submitted.status).toBe(201);
     expect(submitted.body.listing).toMatchObject({

@@ -12,12 +12,14 @@ export function ListingPhoto({
   item,
   height = 200,
   objectKey,
+  photoId,
   resizeMode = "cover",
   radius = 14,
 }: {
-  item: Listing;
+  item: Pick<Listing, "title"> & Partial<Pick<Listing, "media">>;
   height?: number;
   objectKey?: string;
+  photoId?: string;
   resizeMode?: "cover" | "contain";
   radius?: number;
 }) {
@@ -26,7 +28,7 @@ export function ListingPhoto({
     objectKey ??
     item.media?.find((media) => /^produce\/[a-f0-9-]{36}$/i.test(media.objectKey))?.objectKey;
   const id =
-    selected && /^produce\/[a-f0-9-]{36}$/i.test(selected) ? selected.split("/")[1] : undefined;
+    photoId || (selected && /^produce\/[a-f0-9-]{36}$/i.test(selected) ? selected.split("/")[1] : undefined);
   const identity = sessionVersion();
   const [uri, setUri] = useState<string | null>(null),
     [failed, setFailed] = useState(false),

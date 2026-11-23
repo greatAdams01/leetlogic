@@ -49,7 +49,7 @@ vi.mock("../components/ui", async () => {
     ]),
   );
 });
-import { GuidedListing } from "../components/guided-listing";
+import { GuidedListing, ReadListingAloud } from "../components/guided-listing";
 import { emptyListing, type ListingForm } from "./listing-form";
 const catalogue = {
   categories: [
@@ -202,4 +202,14 @@ it("does not guess the category for an unfamiliar produce name", async () => {
   await edit("Unknown crop"); await tap("Continue");
   expect(saved().categoryId).toBe("");
   expect(button("Roots and tubers")).toBeDefined();
+});
+
+it("reads photo and review guidance automatically and stops on exit", async () => {
+  await act(async () => { renderer = create(<ReadListingAloud automatic text="Add photos, then review your listing." />); });
+  expect(h.speak).toHaveBeenLastCalledWith("Add photos, then review your listing.");
+  expect(button("Read listing aloud")).toBeUndefined();
+  await act(async () => renderer.update(<ReadListingAloud automatic text="Confirm the details and tap Submit listing." />));
+  expect(h.speak).toHaveBeenLastCalledWith("Confirm the details and tap Submit listing.");
+  await act(async () => h.background!("background"));
+  expect(h.stop).toHaveBeenCalled();
 });

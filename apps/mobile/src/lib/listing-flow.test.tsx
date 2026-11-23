@@ -363,7 +363,7 @@ describe("seller listing wizard", () => {
     expect(h.api).toHaveBeenLastCalledWith("/listing-photos", { method: "POST", binary });
     expect(nodes("AppSheet")).toHaveLength(0);
     expect(button("Review listing").props.disabled).toBe(false);
-    expect(nodes("Image").some((n) => n.props.source.uri === "file:///cache/photo.jpg")).toBe(true);
+    expect(nodes("ListingPhoto").some((n) => n.props.photoId === "new-photo")).toBe(true);
   });
   it("shows all uploaded images compactly and no voice controls in review", async () => {
     h.route = { id: "draft" };
@@ -371,13 +371,11 @@ describe("seller listing wizard", () => {
     await act(async () => {
       renderer = create(<Review />);
     });
-    const images = nodes("Image");
+    const images = nodes("ListingPhoto");
     expect(images).toHaveLength(4);
-    expect(images.map((n) => n.props.source.uri)).toEqual(
-      ["one", "two", "three", "four"].map((id) => `http://localhost:3000/v1/listing-photos/${id}`),
-    );
+    expect(images.map((n) => n.props.photoId)).toEqual(["one", "two", "three", "four"]);
     expect(nodes("ListingVoiceNote")).toHaveLength(0);
-    expect(images.slice(1).every((node) => node.props.style.height <= 100)).toBe(true);
+    expect(images.slice(1).every((node) => node.props.height <= 100)).toBe(true);
   });
   it("offers the voice aid while editing details and blocks continuation during recording", async () => {
     h.route = { id: "draft" };
@@ -475,10 +473,61 @@ it("switches from guided voice to typing without losing confirmed draft answers"
   });
   await act(async () => button("Continue guided listing").props.onPress());
   expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
-  await act(async () => nodes("GuidedListing")[0]!.props.onClose());
+  await act(async () => nodes("GuidedListing")[0]!.props.onUseFullForm());
   expect(nodes("GuidedListing")[0]!.props.visible).toBe(false);
   expect(nodes("Field").find((node) => node.props.label === "Description *")!.props.value).toBe(
     "Fresh harvest",
   );
   expect(nodes("ListingPage")[0]!.props.step).toBe(2);
+});
+
+it.each([false, true])("keeps guidance through photos, review and submission (resumed=%s)", async resumed => {
+  const details = { ...valid, price: "12.34", inputMethod: "voice", salePackaging: { type: "KG", size: 1, measure: "KG" }, photos: [{ id: "photo" }] };
+  if (resumed) {
+    h.route = { id: "draft" };
+    h.get.mockResolvedValue(JSON.stringify({ ...details, flowVersion: 2, step: 2 }));
+  }
+  await act(async () => { renderer = create(<Sell />); });
+  if (!resumed) await act(async () => button("Guided listing · tap, type or speak").props.onPress());
+  expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
+  await act(async () => nodes("GuidedListing")[0]!.props.onChange(details));
+  await act(async () => nodes("GuidedListing")[0]!.props.onDone());
+  expect(nodes("ListingPage")[0]!.props.step).toBe(4);
+  expect(nodes("ReadListingAloud").some(n => n.props.automatic && n.props.text.includes("add photos"))).toBe(true);
+  await act(async () => button("Review listing").props.onPress());
+  expect(h.api.mock.calls.at(-1)![1].body.inputMethod).toBe("voice");
+  expect(h.go).toHaveBeenCalledWith("review", "draft");
+  await act(async () => renderer.unmount());
+  h.route = { id: "draft" };
+  h.draft = { id: "draft", listingId: null, fields: { ...valid, inputMethod: "voice", photoIds: ["photo"] } };
+  h.api.mockResolvedValue({ listing: { id: "listing", title: "Tomatoes", status: "PENDING_REVIEW" } });
+  await act(async () => { renderer = create(<Review />); });
+  expect(nodes("ListingPhoto")[0]!.props.photoId).toBe("photo");
+  expect(nodes("ReadListingAloud")[0]!.props.automatic).toBe(true);
+  await act(async () => nodes("Confirmation")[0]!.props.onChange());
+  await act(async () => button("Submit listing").props.onPress());
+  expect(nodes("ListingPage")[0]!.props.complete).toBe(true);
+  expect(nodes("ReadListingAloud")[0]!.props.automatic).toBe(true);
+});
+it("resumes a guided photo-stage draft without reopening the details or losing images", async () => {
+  h.get.mockResolvedValue(JSON.stringify({ ...valid, inputMethod: "voice", flowVersion: 2, step: 4 }));
+  await act(async () => { renderer = create(<Sell />); });
+  expect(nodes("GuidedListing")[0]!.props.visible).toBe(false);
+  expect(nodes("ListingPage")[0]!.props.step).toBe(4);
+  expect(nodes("ReadListingAloud")[0]!.props.automatic).toBe(true);
+  expect(nodes("ListingPhoto")[0]!.props.photoId).toBe("photo");
+});
+it("restores guided mode from the server draft without a device cache", async () => {
+  h.route = { id: "draft" };
+  h.api.mockResolvedValueOnce({ fields: { ...valid, inputMethod: "voice" }, listingId: null });
+  await act(async () => { renderer = create(<Sell />); });
+  expect(nodes("GuidedListing")[0]!.props.visible).toBe(true);
+});
+
+it("saves guided mode when closing the guide instead of silently switching to typing", async () => {
+  h.get.mockResolvedValue(JSON.stringify({ ...valid, inputMethod: "voice", step: 2, flowVersion: 2 }));
+  await act(async () => { renderer = create(<Sell />); });
+  await act(async () => nodes("GuidedListing")[0]!.props.onClose());
+  expect(h.reset).toHaveBeenCalledWith("myListings");
+  expect(JSON.parse(h.set.mock.calls.at(-1)![1]).inputMethod).toBe("voice");
 });

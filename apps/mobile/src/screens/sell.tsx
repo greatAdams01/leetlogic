@@ -24,12 +24,12 @@ import { postcodeStatus } from "../../../../packages/contracts/src/addresses";
 import { Confirmation } from "../components/feedback";
 import { LocalizedText as Text } from "../localization";
 import React, { useState, useEffect, useRef } from "react";
-import { View, Pressable, Image, StyleSheet, BackHandler, TextInput } from "react-native";
+import { View, Pressable, StyleSheet, BackHandler, TextInput } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { choosePhoto, photoBody } from "../lib/produce-photo";
 import { useApp, useResource } from "../state";
 import { Page, Label, Heading, Field, Button, Card, Icon, Notice, s, colors } from "../components/ui";
-import { api, API_URL, authHeaders } from "../lib/api";
+import { api } from "../lib/api";
 import { money, toMinor, type Listing, type Address } from "../lib/domain";
 import { ListingPhoto } from "./market";
 import { ListingControls } from "../components/seller-listing-controls";
@@ -54,6 +54,8 @@ export function Sell() {
     [error, setError] = useState("");
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [guided, setGuided] = useState(false);
+  const latestForm = useRef(form);
+  latestForm.current = form;
   const descriptionInput = useRef<React.ComponentRef<typeof TextInput>>(null);
   const voiceActive = useRef(false);
   const voiceActivity = (active: boolean) => {
@@ -90,7 +92,9 @@ export function Sell() {
         if (cached) {
           const parsed = JSON.parse(cached);
           if (active) {
-            setForm(restoreListing(parsed));
+            const restored = restoreListing(parsed);
+            setForm(restored);
+            setGuided(restored.inputMethod === "voice" && !(parsed.flowVersion === 2 && parsed.step === 4));
             setStep(
               [1, 2, 3, 4].includes(parsed.step)
                 ? parsed.flowVersion === 2
@@ -109,7 +113,9 @@ export function Sell() {
           );
           if (draft.listingId) throw new Error("This draft has already been submitted.");
           if (active) {
-            setForm(restoreListing(draft.fields));
+            const restored = restoreListing(draft.fields);
+            setForm(restored);
+            setGuided(restored.inputMethod === "voice");
             setStep(2);
           }
         }
@@ -413,22 +419,31 @@ export function Sell() {
             clearTimeout(timer.current);
             try {
               await saveLocal(nextForm);
+              latestForm.current = nextForm;
               setForm(nextForm);
             } catch {
               throw new Error(a.ui("Could not save this draft on your device."));
             }
           }}
           onActivityChange={voiceActivity}
-          onClose={() => {
+          onClose={() => { setGuided(false); void close(); }}
+          onUseFullForm={() => {
             setGuided(false);
             field("inputMethod", "type");
           }}
           onDone={() => {
-            setGuided(false);
-            setStep(3);
+            void (async () => {
+              try {
+                await saveLocal(latestForm.current, 4);
+                setGuided(false);
+                setStep(4);
+              } catch { setError(a.ui("Could not save this draft on your device.")); }
+            })();
           }}
         />
       )}
+      {form.inputMethod === "voice" && step === 4 && !guided && <ReadListingAloud automatic
+        text="Next, add photos of your produce. Tap Add photo, then choose your camera or photo library. Add at least one clear photo. You can choose the cover photo before tapping Review listing." />}
       {!form.inputMethod ? null : step === 1 ? (
         <>
           <ListingProgress step={1} label="Classification" />
@@ -642,18 +657,7 @@ export function Sell() {
                   disabled={busy}
                   onPress={() => setPhotoChoice(index)}
                 >
-                  <Image
-                    source={
-                      photo.uri
-                        ? { uri: photo.uri }
-                        : {
-                            uri: `${API_URL}/v1/listing-photos/${photo.id}`,
-                            headers: authHeaders(),
-                          }
-                    }
-                    style={StyleSheet.absoluteFill}
-                    resizeMode="cover"
-                  />
+                  <ListingPhoto item={{ title: form.title }} photoId={photo.id} height={140} />
                   <Text style={listingStyles.photoBadge}>
                     {index === 0 ? a.ui("Cover") : a.ui("Photo {number}", { number: index + 1 })}
                   </Text>
@@ -766,7 +770,16 @@ export function Review() {
     null,
   );
   const running = useRef(false);
+  const [savedGuided, setSavedGuided] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(`listing-draft:${a.user!.id}:${a.route.id}`).then(cached => {
+      if (active) setSavedGuided(cached ? restoreListing(JSON.parse(cached)).inputMethod === "voice" : false);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [a.route.id, a.user!.id]);
   const form = r.data ? restoreListing(r.data.fields) : null;
+  const guidedReview = form?.inputMethod === "voice" || (r.data?.fields.inputMethod === undefined && savedGuided);
   useEffect(() => setConfirmed(false), [r.data?.fields]);
   const selectedCategory = catalogue.data?.categories.find((item) => item.id === form?.categoryId);
   const categoryLabel =
@@ -802,12 +815,7 @@ export function Review() {
     }
   };
   const image = form?.photos[0] ? (
-    <Image
-      source={{ uri: `${API_URL}/v1/listing-photos/${form.photos[0].id}`, headers: authHeaders() }}
-      accessibilityLabel={a.ui("Cover photo")}
-      resizeMode="cover"
-      style={{ width: "100%", height: 184, borderRadius: 16 }}
-    />
+    <ListingPhoto item={{ title: form.title }} photoId={form.photos[0].id} height={184} />
   ) : null;
   if (submitted)
     return (
@@ -822,6 +830,7 @@ export function Review() {
           </>
         }
       >
+        {guidedReview && <ReadListingAloud automatic text="Your listing has been submitted for review. Our team will check the details before it becomes visible to buyers." />}
         <View style={listingStyles.success}>
           <View style={listingStyles.successOuter}>
             <View style={listingStyles.successInner}>
@@ -844,14 +853,9 @@ export function Review() {
           }}
         >
           {form?.photos[0] && (
-            <Image
-              source={{
-                uri: `${API_URL}/v1/listing-photos/${form.photos[0].id}`,
-                headers: authHeaders(),
-              }}
-              style={{ width: 67, height: 67, borderRadius: 10 }}
-              resizeMode="cover"
-            />
+            <View style={{ width: 67 }}>
+              <ListingPhoto item={{ title: form.title }} photoId={form.photos[0].id} height={67} />
+            </View>
           )}
           <View style={{ flex: 1, gap: 4 }}>
             <View style={s.between}>
@@ -917,7 +921,8 @@ export function Review() {
         <ListingCommission basisPoints={catalogue.data?.commissionBasisPoints} price={form.price} />
         {catalogue.data?.commissionBasisPoints === undefined && <Button title="Refresh" secondary onPress={() => void catalogue.reload()} />}
       </Card>}
-      {form && catalogue.data && <ReadListingAloud text={listingReadback(form, catalogue.data)} />}
+      {form && catalogue.data && <ReadListingAloud automatic={guidedReview}
+        text={`${listingReadback(form, catalogue.data)} Check the photos and details below. Tick the confirmation when everything is correct, then tap Submit listing.`} />}
       {form?.packingAssistanceRequested && (
         <Notice text="Our team will complete missing measurements during listing review before approving it for buyers." />
       )}
@@ -926,14 +931,10 @@ export function Review() {
         {image}
         {form && form.photos.length > 1 && (
           <View style={{ flexDirection: "row", gap: 8 }}>
-            {form.photos.slice(1).map((photo, index) => (
-              <Image
-                key={photo.id}
-                accessibilityLabel={a.ui("Photo {number}", { number: index + 2 })}
-                source={{ uri: `${API_URL}/v1/listing-photos/${photo.id}`, headers: authHeaders() }}
-                resizeMode="cover"
-                style={{ width: 80, height: 76, borderRadius: 10 }}
-              />
+            {form.photos.slice(1).map((photo) => (
+              <View key={photo.id} style={{ width: 80 }}>
+                <ListingPhoto item={{ title: form.title }} photoId={photo.id} height={76} />
+              </View>
             ))}
           </View>
         )}

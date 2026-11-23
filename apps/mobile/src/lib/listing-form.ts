@@ -121,6 +121,7 @@ export function listingPayload(form: ListingForm, locale: string) {
     unitPriceMinor: toMinor(form.price),
     addressId: form.addressId,
     sourceLocale: form.inputMethod === "voice" ? "en" : locale,
+    ...(form.inputMethod ? { inputMethod: form.inputMethod } : {}),
     shippingScope: form.shippingScope,
     ...(form.salePackaging ? { salePackaging: salePackagingSchema.parse(form.salePackaging) } : {}),
     packingAssistanceRequested: !!form.packingAssistanceRequested,

@@ -18,6 +18,7 @@ export const draftSchema = z.object({
   salePackaging: salePackagingSchema.optional(),
   packaging: packagingSchema.optional(),
   packingAssistanceRequested: z.boolean().default(false),
+  inputMethod: z.enum(["type", "voice"]).optional(),
   title: z.string().trim().min(2).max(160),
   description: z.string().trim().max(5000),
   sourceLocale: z.enum(["en", "pcm", "ig", "ha", "yo"]),

@@ -9,10 +9,10 @@ import { localSpeechAvailable, finishListingAnswer, requestLocalSpeechPermission
 import { listingDetailsError, type ListingForm } from "../lib/listing-form";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 
-export function GuidedListing({ visible, form: savedForm, catalogue, onChange, onClose, onDone, onActivityChange }: {
+export function GuidedListing({ visible, form: savedForm, catalogue, onChange, onClose, onUseFullForm, onDone, onActivityChange }: {
   visible: boolean; form: ListingForm; catalogue: VoiceCatalogue;
   onChange: (form: ListingForm) => void | Promise<void>;
-  onClose: () => void; onDone: () => void; onActivityChange: (active: boolean) => void;
+  onClose: () => void; onUseFullForm?: () => void; onDone: () => void; onActivityChange: (active: boolean) => void;
 }) {
   const form = guidedListingForm(savedForm, catalogue);
   const produceChoices = guidedProduceChoices(catalogue);
@@ -157,7 +157,7 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
         {cursor && !choiceOnly && <Button title="Continue" disabled={!parsed} onPress={() => void save()} />}
         {!cursor && <Button title="Continue to photos and review" onPress={() => void finish()} />}
         {cursor && !choiceOnly && <Button title={transcript ? "Record again" : "Answer by voice"} secondary onPress={() => void record()} />}
-        <Button title="Use full form" secondary onPress={() => { pause(); onClose(); }} />
+        <Button title="Use full form" secondary onPress={() => { pause(); (onUseFullForm || onClose)(); }} />
       </>}
     </View>}>
     <Label>{prompt}</Label>
@@ -176,11 +176,12 @@ export function GuidedListing({ visible, form: savedForm, catalogue, onChange, o
   </AppSheet>;
 }
 
-export function ReadListingAloud({ text }: { text: string }) {
+export function ReadListingAloud({ text, automatic = false }: { text: string; automatic?: boolean }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const live = useRef(true);
   useEffect(() => {
+    live.current = true;
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
         void stopListingSpeech();
@@ -193,9 +194,23 @@ export function ReadListingAloud({ text }: { text: string }) {
       void stopListingSpeech();
     };
   }, []);
+  useEffect(() => {
+    if (!automatic) return;
+    let active = true;
+    void (async () => {
+      try {
+        await stopListingSpeech();
+        if (active) await speakListing(text);
+      } catch {
+        if (active) setError("Could not read this step aloud. You can still continue.");
+      }
+    })();
+    return () => { active = false; void stopListingSpeech(); };
+  }, [automatic, text]);
   return (
     <View style={{ gap: 8 }}>
-      <Button
+      {automatic && <Label>{text}</Label>}
+      {!automatic && <Button
         title={busy ? "Stop reading" : "Read listing aloud"}
         secondary
         onPress={() => {
@@ -214,7 +229,7 @@ export function ReadListingAloud({ text }: { text: string }) {
               if (live.current) setBusy(false);
             });
         }}
-      />
+      />}
       {!!error && <Notice text={error} />}
     </View>
   );
