@@ -22,6 +22,8 @@ import {
   refreshAccount,
   availableEarnings,
   requestWithdrawal,
+  withdrawalConfiguration,
+  withdrawalReviewCount,
   assertRelease,
   requestRelease,
   requestRefund,
@@ -221,7 +223,7 @@ financialRouter.get("/sales", async (req, res) => {
 });
 financialRouter.get("/", async (req, res) => {
   const userId = req.auth!.sub;
-  const [account, destinations, operations, earnings, held] = await Promise.all([
+  const [account, destinations, operations, earnings, held, reviews] = await Promise.all([
     prisma.financialAccount.findUnique({ where: { userId_mode: { userId, mode: mode() } } }),
     prisma.bankDestination.findMany({
       where: { userId, mode: mode() },
@@ -255,7 +257,10 @@ financialRouter.get("/", async (req, res) => {
       },
       _sum: { heldMinor: true },
     }),
+    withdrawalReviewCount(userId),
   ]);
+  const blockers = withdrawalConfiguration();
+  if (reviews) blockers.push({ code: "PAYOUT_BLOCKED", message: "Withdrawals are paused while an order is being reviewed." });
   res.json(
     serialize({
       enabled: getConfig().PAYMENTS_ENABLED,
@@ -269,6 +274,7 @@ financialRouter.get("/", async (req, res) => {
       operations: operations.map(safeOperation),
       earnings,
       heldMinor: held._sum.heldMinor || 0n,
+      withdrawals: { enabled: blockers.length === 0, blockers },
       payoutFeeMinor: getConfig().BACHS_NGN_PAYOUT_FEE_MINOR || null,
     }),
   );
@@ -387,6 +393,8 @@ financialRouter.get("/banks/operations/:id", async (req, res) => {
   res.json({ status: operation.status, destination: resolvedDestination });
 });
 financialRouter.post("/withdrawals", async (req, res) => {
+  const blocker = withdrawalConfiguration()[0];
+  if (blocker) throw new AppError(503, blocker.code, blocker.message);
   const input = z
     .object({
       destinationId: uuid,

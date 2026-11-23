@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   sales: { items: [] as { id: string; orderId: string; title: string; reference: string; createdAt: string; grossMinor: string; commissionMinor: string; netMinor: string }[], nextCursor: null },
   data: {
     enabled: true,
+    withdrawals: { enabled: true, blockers: [] as { code: string; message: string }[] },
     account: null as null | { ready: boolean; status: string },
     destinations: [] as {
       id: string;
@@ -87,6 +88,7 @@ const button = (title: string) =>
   renderer!.root.findAllByType("Button" as never).find((node) => node.props.title === title)!;
 beforeEach(() => {
   vi.clearAllMocks();
+  h.data.withdrawals = { enabled: true, blockers: [] };
   h.data.account = null;
   h.data.destinations = [];
   h.data.operations = [];
@@ -191,6 +193,16 @@ describe("payment setup feedback", () => {
     expect(renderer!.root.findAllByType("Field" as never)).toHaveLength(0);
     await act(async () => button("Manage bank accounts").props.onPress());
     expect(h.go).toHaveBeenCalledWith("banks");
+  });
+  it("explains withdrawal blockers before allowing a request", async () => {
+    h.data.account = { ready: true, status: "READY" };
+    h.data.earnings.availableMinor = "10000";
+    h.data.destinations = [{ id: "bank", bankName: "Example Bank", accountLastFour: "1234", usable: true }];
+    h.data.withdrawals = { enabled: false, blockers: [{ code: "PAYOUT_BLOCKED", message: "Withdrawals are paused while an order is being reviewed." }] };
+    await mount();
+    expect(button("Withdraw earnings").props.disabled).toBe(true);
+    expect(JSON.stringify(renderer!.toJSON())).toContain("Withdrawals are paused while an order is being reviewed.");
+    expect(h.api).not.toHaveBeenCalled();
   });
   it("offers only the available amount less fees and closes the modal after a request", async () => {
     h.data.account = { ready: true, status: "READY" };

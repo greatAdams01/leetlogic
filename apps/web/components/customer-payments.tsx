@@ -221,11 +221,15 @@ export function CustomerFinance() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [banks, setBanks] = useState<any[]>([]);
+  const running = useRef(false);
   const load = useCallback(async () => setData(await customerApi("financial")), []);
   useEffect(() => {
-    void load().catch((e) => setNotice(error(e)));
+    const refresh = () => { if (!running.current && document.visibilityState !== "hidden") void load().catch(e => setNotice(error(e))); };
+    refresh();
+    const timer = setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [load]);
-  const running = useRef(false);
   const withdrawalKey = useRef({ input: "", key: "" });
   const act = async (work: () => Promise<unknown>) => {
     if (running.current) return;
@@ -369,9 +373,11 @@ export function CustomerFinance() {
           {data.account?.ready && data.destinations.some((d: any) => d.usable) && (
             <>
               <h2>{say("Withdraw earnings")}</h2>
+              {data.withdrawals?.blockers.map((blocker: { code: string; message: string }) => <p role="status" key={blocker.code}>{say(blocker.message)}</p>)}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (data.withdrawals?.enabled === false) return;
                   const form = new FormData(e.currentTarget);
                   const value = withdrawalAmount;
                   if (!/^\d{1,10}(\.\d{1,2})?$/.test(value)) {
@@ -435,7 +441,7 @@ export function CustomerFinance() {
                     "Review the bank account, amount and fee before requesting your withdrawal.",
                   )}
                 </label>
-                <button disabled={busy || data.payoutFeeMinor === null}>
+                <button disabled={busy || data.withdrawals?.enabled === false || data.payoutFeeMinor === null}>
                   {say("Request withdrawal")}
                 </button>
               </form>

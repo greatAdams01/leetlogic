@@ -1,3 +1,4 @@
+import { withdrawalReviewCount } from "./payments.js";
 import { resolutionAuthorizes } from "./order-resolution-policy.js";
 import { startRecoveryWorker } from "./recovery-worker.js";
 import { assertFulfillmentOpen, financeEnabled } from "./fulfillment-deadline.js";
@@ -706,18 +707,7 @@ export async function runMoneyOperation(id: string) {
       });
       if (!destination)
         throw new AppError(409, "BANK_NOT_READY", "Choose an approved bank account.");
-      if (
-        await prisma.tradeOrder.count({
-          where: {
-            farmerProfile: { userId: op.ownerId },
-            fundsProvider: "bachs",
-            OR: [
-              { financialHold: true },
-              { tickets: { some: { kind: "DISPUTE", status: { not: "RESOLVED" } } } },
-            ],
-          },
-        })
-      )
+      if (await withdrawalReviewCount(op.ownerId))
         throw new AppError(
           409,
           "PAYOUT_BLOCKED",

@@ -15,6 +15,12 @@ Use the root `.env`; restart API and worker after changes. The example contains 
 
 The API key alone is insufficient: organization ID, webhook secret, farmer onboarding/capabilities, approved banks, provider pricing and eligible routes must also be ready. Provider-side setup and real sandbox transactions are still required; mocked tests do not certify provider account readiness.
 
+## Withdrawal availability
+
+The earnings summary reports withdrawal blockers separately from available earnings. Mobile and web show these before accepting a withdrawal. Disabled payouts, an unconfigured fee, and an order under financial review each block requests; no payout or reservation is created on rejection. A financial hold or unresolved dispute on any of the farmer's Bachs orders freezes all withdrawals, including when a cancelled checkout never credited the farmer. The buyer refund must be reconciled before the hold is removed; do not clear it merely to permit a withdrawal.
+
+For the current sandbox pilot, bank payouts are enabled and the documentation's ₦100 example is configured as `BACHS_NGN_PAYOUT_FEE_MINOR=10000`, as requested by the project owner. This is a provisional sandbox setting, rather than a provider-confirmed fee. Update it when account pricing is confirmed. Restart the API and standalone worker after environment changes; development already runs its worker inside the API. Requests still require approval, and provider confirmation determines whether a withdrawal completed. A fee mismatch retains the operation for reconciliation.
+
 ## Run
 
 From repository root:

@@ -733,13 +733,29 @@ export async function addBank(
     });
   });
 }
+export function withdrawalConfiguration() {
+  const blockers: { code: string; message: string }[] = [];
+  try { paymentReady("PAYOUT"); } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    blockers.push({ code: error.code, message: "Bank withdrawals are temporarily unavailable. Your earnings remain in your account." });
+  }
+  if (getConfig().BACHS_NGN_PAYOUT_FEE_MINOR === undefined)
+    blockers.push({ code: "PAYOUT_FEE_UNAVAILABLE", message: "Withdrawal fees are being updated. Please try again later." });
+  return blockers;
+}
+export const withdrawalReviewCount = (userId: string, tx: Prisma.TransactionClient = prisma) => tx.tradeOrder.count({
+  where: { farmerProfile: { userId }, fundsProvider: "bachs", OR: [
+    { financialHold: true }, { tickets: { some: { kind: "DISPUTE", status: { not: "RESOLVED" } } } },
+  ] },
+});
 export async function requestWithdrawal(
   userId: string,
   destinationId: string,
   amountMinor: bigint,
   key: string,
 ) {
-  paymentReady("PAYOUT");
+  const blocker = withdrawalConfiguration()[0];
+  if (blocker) throw new AppError(503, blocker.code, blocker.message);
   const destination = await prisma.bankDestination.findFirst({
     where: { id: destinationId, userId, mode: mode(), usable: true },
   });
@@ -783,16 +799,7 @@ export async function requestWithdrawal(
         "INSUFFICIENT_BALANCE",
         "Your available earnings do not cover this withdrawal and its fee.",
       );
-    const frozen = await tx.tradeOrder.count({
-      where: {
-        farmerProfile: { userId },
-        fundsProvider: "bachs",
-        OR: [
-          { financialHold: true },
-          { tickets: { some: { kind: "DISPUTE", status: { not: "RESOLVED" } } } },
-        ],
-      },
-    });
+    const frozen = await withdrawalReviewCount(userId, tx);
     if (frozen)
       throw new AppError(
         409,

@@ -13,7 +13,7 @@ import { isHostedPaymentUrl } from "../../../../packages/contracts/src/payment-u
 import { withdrawalAmounts, type FinancialSummary } from "../lib/finance";
 export function Finance() {
   const a = useApp(),
-    r = useResource<FinancialSummary>("/financial");
+    r = useResource<FinancialSummary>("/financial", true, 15000);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [errorScope, setErrorScope] = useState<"setup" | "withdraw">("setup"),
@@ -95,7 +95,7 @@ export function Finance() {
     }
   };
   const submitWithdrawal = () => {
-    if (!data || !withdrawal.valid || !selectedBank?.usable) return;
+    if (!data || data.withdrawals?.enabled === false || !withdrawal.valid || !selectedBank?.usable) return;
     void run(async () => {
       const inputKey = JSON.stringify([destination, toMinor(amount), data.payoutFeeMinor]);
       if (withdrawalKey.current.input !== inputKey)
@@ -137,6 +137,7 @@ export function Finance() {
       )}
       {data?.enabled && (
         <>
+          {data.withdrawals?.blockers.map(blocker => <Notice key={blocker.code} text={blocker.message} />)}
           <Card>
             <Heading>Your earnings</Heading>
             <Label>Available to withdraw</Label>
@@ -150,6 +151,7 @@ export function Finance() {
             {data.account?.ready && data.destinations.some((bank) => bank.usable) && (
               <Button
                 title="Withdraw earnings"
+                disabled={data.withdrawals?.enabled === false}
                 onPress={() => {
                   setError("");
                   setAmount("");
@@ -301,7 +303,7 @@ export function Finance() {
                             : "Review withdrawal"
                       }
                       loading={task === "withdraw"}
-                      disabled={busy || !selectedBank?.usable || !withdrawal.valid}
+                      disabled={busy || data.withdrawals?.enabled === false || !selectedBank?.usable || !withdrawal.valid}
                       onPress={() =>
                         reviewWithdrawal ? submitWithdrawal() : setReviewWithdrawal(true)
                       }
@@ -310,6 +312,7 @@ export function Finance() {
                 }
               >
                 {error && errorScope === "withdraw" && <Notice text={error} error />}
+                {data.withdrawals?.blockers.map(blocker => <Notice key={blocker.code} text={blocker.message} />)}
                 <Card>
                   <Label>Available to withdraw</Label>
                   <Heading>{money(data.earnings.availableMinor)}</Heading>

@@ -12,6 +12,7 @@ export type FinancialSummary = {
   earnings: { availableMinor: string; reservedMinor: string; balanceMinor: string };
   heldMinor: string;
   payoutFeeMinor: string | null;
+  withdrawals?: { enabled: boolean; blockers: { code: string; message: string }[] };
   operations: {
     id: string;
     kind: string;
@@ -26,6 +27,7 @@ export function sellerPaymentAction(data: FinancialSummary | null) {
   if (!data.account?.ready) return { title: "Set up payments", route: "finance" as const };
   if (!data.destinations.some((bank) => bank.usable))
     return { title: "Add bank account", route: "banks" as const };
+  if (data.withdrawals?.enabled === false) return { title: "Payments and earnings", route: "finance" as const };
   return { title: "Withdraw", route: "finance" as const };
 }
 export const bankVerificationPending = (status: string) =>

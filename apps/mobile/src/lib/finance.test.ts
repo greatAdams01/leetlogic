@@ -51,6 +51,7 @@ describe("seller bank and earnings flow", () => {
   });
   it("never presents unavailable payments or unresolved bank verification as successful", () => {
     expect(sellerPaymentAction(data({ enabled: false })).title).toBe("Payments and earnings");
+    expect(sellerPaymentAction(data({ destinations: [{ id: "bank", accountName: "Farmer", accountLastFour: "1234", bankName: "Bank", usable: true }], withdrawals: { enabled: false, blockers: [] } })).title).toBe("Payments and earnings");
     for (const status of ["QUEUED", "PROCESSING", "PROVIDER_PENDING"])
       expect(bankVerificationPending(status)).toBe(true);
     for (const status of ["SUCCEEDED", "FAILED", "UNKNOWN"])

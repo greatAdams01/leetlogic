@@ -1934,6 +1934,37 @@ suite("provider-backed payment safeguards", () => {
     expect((await prisma.fulfillmentDeadline.findUniqueOrThrow({where:{orderId:f.o.id}})).state).toBe("REFUNDED");
     expect((await prisma.paymentAttempt.findUniqueOrThrow({where:{id:f.a.id}})).status).toBe("REFUNDED");
   });
+  it("reports payout configuration blockers before accepting or reserving a withdrawal", async () => {
+    const sellerToken = (await createSession({ subject: "CUSTOMER", principalId: seller, deviceId: randomUUID() })).accessToken;
+    const auth = { Authorization: `Bearer ${sellerToken}` };
+    const before = await availableEarnings(seller);
+    const count = await prisma.moneyOperation.count({ where: { ownerId: seller, kind: "PAYOUT" } });
+    getConfig().PAYMENTS_PAYOUTS_ENABLED = false;
+    getConfig().BACHS_NGN_PAYOUT_FEE_MINOR = undefined;
+    const summary = await request(app).get("/v1/financial").set(auth);
+    expect(summary.status).toBe(200);
+    expect(summary.body.withdrawals).toMatchObject({ enabled: false, blockers: expect.arrayContaining([
+      expect.objectContaining({ code: "PAYMENTS_UNAVAILABLE" }), expect.objectContaining({ code: "PAYOUT_FEE_UNAVAILABLE" }),
+    ]) });
+    const send = () => request(app).post("/v1/financial/withdrawals").set(auth).send({ destinationId: destination, amountMinor: "1000", feeMinor: "100", mutationKey: randomUUID() });
+    expect((await send()).body.error.code).toBe("PAYMENTS_UNAVAILABLE");
+    getConfig().PAYMENTS_PAYOUTS_ENABLED = true;
+    expect((await send()).body.error.code).toBe("PAYOUT_FEE_UNAVAILABLE");
+    getConfig().BACHS_NGN_PAYOUT_FEE_MINOR = "0";
+    const restored = await request(app).get("/v1/financial").set(auth);
+    expect(restored.body.payoutFeeMinor).toBe("0");
+    expect(restored.body.withdrawals.blockers.some((b: any) => b.code === "PAYOUT_FEE_UNAVAILABLE")).toBe(false);
+    expect(await availableEarnings(seller)).toEqual(before);
+    expect(await prisma.moneyOperation.count({ where: { ownerId: seller, kind: "PAYOUT" } })).toBe(count);
+    getConfig().BACHS_NGN_PAYOUT_FEE_MINOR = "100";
+    const cancelled = await order();
+    await prisma.tradeOrder.update({ where: { id: cancelled.o.id }, data: { status: "CANCELLED", financialHold: true, fundsProvider: "bachs" } });
+    const held = await request(app).get("/v1/financial").set(auth);
+    expect(held.body.withdrawals).toMatchObject({ enabled: false, blockers: expect.arrayContaining([expect.objectContaining({ code: "PAYOUT_BLOCKED" })]) });
+    await expect(requestWithdrawal(seller, destination, 1n, randomUUID())).rejects.toMatchObject({ code: "PAYOUT_BLOCKED" });
+    expect(await availableEarnings(seller)).toEqual(before);
+    await prisma.tradeOrder.update({ where: { id: cancelled.o.id }, data: { financialHold: false } });
+  });
   it("returns the full automatic bank-refund principal and expenses the payout fee", async () => {
     const f = await recoverable();
     Object.assign(getConfig(), { BACHS_BANK_REFUNDS_VERIFIED: true, BACHS_NGN_PAYOUT_FEE_MINOR: "100" });
