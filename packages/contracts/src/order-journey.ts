@@ -52,14 +52,14 @@ export function orderJourney(input: {
         ? "Order declined"
         : "Order closed";
     body = refunded
-      ? "Your refund is confirmed."
-      : "No preparation is needed. Follow your refund below.";
+      ? buyer ? "Your refund is confirmed." : "The buyer’s refund is confirmed."
+      : buyer ? "Follow your refund below." : "No preparation is needed. Follow the buyer’s refund below.";
   } else if (review) {
     title = "We’re reviewing this order";
     body = "Actions are paused while we resolve the issue.";
   } else if (p?.confirmed) {
-    stage = 4;
-    title = "Order completed";
+    stage = input.orderStatus === "COMPLETED" ? 4 : 3;
+    title = input.orderStatus === "COMPLETED" ? "Order completed" : "Receipt confirmed";
     body = released
       ? "Receipt and farmer payment are confirmed."
       : "Receipt confirmed. We’ll update you when payment is released.";
@@ -158,7 +158,7 @@ export function orderJourney(input: {
           ? "Next: buyer collects the goods."
           : "Next: rider collects the goods."
         : action === "dispatch" || action === "handover"
-          ? "Next: buyer inspection and confirmation."
+          ? action === "dispatch" ? "Next: courier delivery, then buyer inspection and confirmation." : "Next: buyer inspection and confirmation."
           : action === "confirm"
             ? "Next: verified payment release to the farmer."
             : receiptPending

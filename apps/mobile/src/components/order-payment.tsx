@@ -185,18 +185,18 @@ export function OrderPayment({
           <Label>
             {a.ui("Escrow")}: {data.progress.escrow}
           </Label>
-          <Label>
+          {!isBuyer && <Label>
             {a.ui("Transfer")}: {data.progress.transfer}
-          </Label>
-          <Label>
+          </Label>}
+          {!isBuyer && <Label>
             {a.ui("Earnings")}: {data.progress.earnings}
-          </Label>
+          </Label>}
         </View>
       )}
       {data?.fulfillment && data.fulfillment.state !== "SECURED" && (
         <Label>{a.ui(fulfillmentLabel(data.fulfillment.state))}</Label>
       )}
-      {!compact &&
+      {isBuyer && !compact &&
         data?.orderStatus === "AWAITING_PAYMENT" &&
         !actions.succeeded &&
         !data?.progress?.verified && (
@@ -209,9 +209,9 @@ export function OrderPayment({
         <Notice text="Payments are not available right now. Please try again later." error />
       )}
       {!!data?.financialHold && (
-        <Notice text="Your payment is being reviewed. Please contact support for help." error />
+        <Notice text={isBuyer ? "Your payment is being reviewed. Please contact support for help." : "Payment under review"} error />
       )}
-      {!compact && actions.ready && !actions.locked && !disabled && (
+      {isBuyer && !compact && actions.ready && !actions.locked && !disabled && (
         <Label>{money(data.payableMinor)}</Label>
       )}
       {data?.enabled && isBuyer && !actions.ready && !actions.locked && !actions.succeeded && (
@@ -220,7 +220,7 @@ export function OrderPayment({
       {item && (
         <View style={{ gap: 8 }}>
           {!data?.progress && <Label>{a.status(item.status)}</Label>}
-          <Label>{money(item.amountMinor)}</Label>
+          {isBuyer && <Label>{money(item.amountMinor)}</Label>}
         </View>
       )}
       {data?.enabled && isBuyer && actions.canPay && (

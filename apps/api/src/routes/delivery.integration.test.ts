@@ -619,9 +619,10 @@ suite("delivery and language database workflows", () => {
           })
       ).status,
     ).toBe(200);
-    await request(app)
+    const webhook = await request(app)
       .post("/v1/webhooks/shipbubble")
       .send({ order_id: providerId, status: "completed" });
+    expect(webhook.status).toBe(200);
     expect((await prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } })).status).toBe(
       "BOOKED",
     );

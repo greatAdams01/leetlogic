@@ -111,7 +111,7 @@ export function orderFulfillment(input: {
   const stage = !paid
     ? -1
     : confirmed
-      ? 4
+      ? input.orderStatus === "COMPLETED" ? 4 : 3
       : collection
         ? status === "PICKUP_READY"
           ? 2
@@ -132,7 +132,7 @@ export function orderFulfillment(input: {
             ? "Check the produce and quantity, then accept this order."
             : "Your order is placed. Waiting for the farmer to accept."
           : confirmed
-            ? "Receipt confirmed. Fulfillment is complete."
+            ? input.orderStatus === "COMPLETED" ? "Order completed" : "Receipt confirmed"
             : blocked
               ? "This order needs review. Fulfillment actions are paused."
                : !paid
@@ -175,7 +175,7 @@ export function orderFulfillment(input: {
           : awaitingAcceptance && paid && !blocked
             ? "New Order"
             : confirmed
-              ? "Completed"
+              ? input.orderStatus === "COMPLETED" ? "Completed" : "Receipt confirmed"
               : blocked
                 ? "Needs review"
                 : !paid

@@ -366,10 +366,21 @@ export class Shipbubble implements ShippingProvider {
     return BigInt(Math.round(value * 100));
   }
   async track(id: string) {
-    const data = providerResponse(z.array(z.unknown()), await this.call(`/shipping/labels/list/${encodeURIComponent(id)}`), "/shipping/labels/list");
-    const shipment = data.map((value) => mapShipment(providerResponse(trackingSchema, value, "/shipping/labels/list"))).find((x) => x.id === id);
+    const path = `/shipping/labels/list/${encodeURIComponent(id)}`;
+    const data = providerResponse(z.union([
+      z.object({ results: z.array(z.unknown()) }),
+      z.array(z.unknown()),
+    ]), await this.call(path), path);
+    const rows = Array.isArray(data) ? data : data.results;
+    const shipment = rows.find(value => value && typeof value === "object" && (value as { order_id?: unknown }).order_id === id);
     if (!shipment) throw new AppError(404, "SHIPMENT_NOT_FOUND", "Provider shipment not found");
-    return shipment;
+    return mapShipment(providerResponse(trackingSchema, shipment, path));
+  }
+  async simulateWebhook(id: string, status: "picked_up" | "in_transit" | "completed") {
+    const c = getConfig();
+    if (c.SHIPBUBBLE_MODE !== "test" || !c.SHIPBUBBLE_TEST_KEY_CONFIRMED)
+      throw new AppError(409, "SANDBOX_REQUIRED", "Delivery simulation requires confirmed Shipbubble test mode.");
+    await this.call(`/shipping/labels/webhooks/${encodeURIComponent(id)}`, "POST", { status_code: status });
   }
   async cancel(id: string) {
     await this.call(`/shipping/labels/cancel/${encodeURIComponent(id)}`, "POST");

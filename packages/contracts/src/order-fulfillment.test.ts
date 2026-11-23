@@ -51,6 +51,7 @@ it("never treats a courier delivery or farmer dispatch as buyer confirmation", (
       farmer: false,
       status: "DELIVERED",
       confirmed: true,
+      orderStatus: "COMPLETED",
       receiptReady: true,
     }),
   ).toMatchObject({ status: "Completed", canConfirm: false, canReady: false, canDispatch: false });

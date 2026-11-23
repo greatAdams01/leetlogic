@@ -1,6 +1,6 @@
 import { getConfig } from "../config.js";
 import { prisma } from "@leetlogic/database";
-import { orderPaymentProgress } from "@leetlogic/contracts";
+import { orderPaymentProgress, buyerPaymentProgress } from "@leetlogic/contracts";
 import { mode } from "./payments.js";
 import { paymentReady } from "../providers/payments/bachs.js";
 type PaymentViewOrder = {
@@ -13,7 +13,7 @@ type PaymentViewOrder = {
   receiptPhotoKey: string | null;
   financialHold: boolean;
 };
-export async function orderPaymentView(order: PaymentViewOrder) {
+export async function orderPaymentView(order: PaymentViewOrder, buyer = false) {
   const [verified, release, disputed] = await Promise.all([
     prisma.paymentAttempt.count({
       where: {
@@ -34,7 +34,8 @@ export async function orderPaymentView(order: PaymentViewOrder) {
       where: { orderId: order.id, kind: "DISPUTE", status: { not: "RESOLVED" } },
     }),
   ]);
-  return paymentProgressView(order, { verified: !!verified, release, disputed: !!disputed });
+  const progress = paymentProgressView(order, { verified: !!verified, release, disputed: !!disputed });
+  return buyer ? buyerPaymentProgress(progress) : progress;
 }
 
 /** Shared projection; queue readers can load the evidence in batches without per-row queries. */

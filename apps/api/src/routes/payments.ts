@@ -139,7 +139,7 @@ paymentsRouter.get("/:id/payments", async (req, res) => {
   });
   res.json(
     serialize({
-      progress: await orderPaymentView(order),
+      progress: await orderPaymentView(order, order.buyerId === req.auth!.sub),
       enabled: getConfig().PAYMENTS_ENABLED,
       ...checkoutSummary(order),
       checkoutActive: items.some(

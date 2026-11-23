@@ -130,3 +130,22 @@ Bachs rejects localhost redirect URLs. For local sandbox only, optional success/
 Verification on 27 October 2026: a real sandbox checkout was created and read back with a matching reference, without submitting a payment. Fresh sandbox courier data recommended Bubble Express (NGN 6,950, 24 hours) over Richard Express (NGN 11,250, 2–3 working days) with equal supplied quality signals. Automated integration tests exercise pending/failed/confirmed receipts, declined-card retries, courier selection, and a single escrow credit. These tests mock payment receipts; they do not certify a real card charge, live webhook delivery or live settlement.
 
 References: [Shipbubble rates and courier quality](https://docs.shipbubble.com/api-reference/rates/request-shipping-rates), [Bachs checkout fields](https://docs.bachs.io/api-reference/payments/create-checkout-session).
+
+
+## Courier delivery confirmation and sandbox simulation
+
+Shipbubble’s official [shipment API schema](https://github.com/Shipbubble/node-sdk/blob/main/openapi.yaml) documents `GET /shipping/labels/list/{order_ids}`. Its response contains `data.results`; the adapter also accepts the older bare array format. Match the actual shipment ID before applying a status. Shipbubble `completed` means courier delivery, not buyer receipt or platform payment settlement.
+
+The [sandbox webhook simulator](https://docs.shipbubble.com/api-reference/webhooks/webhook-simulator-sandbox) accepts `POST /shipping/labels/webhooks/{order_id}` with `status_code` values including `picked_up`, `in_transit`, and `completed`. Its success response documents webhook dispatch to the configured **Test Webhook URL**, not a guarantee that authenticated tracking has advanced. Configure a publicly reachable URL ending in `/v1/webhooks/shipbubble`; localhost is unreachable from Shipbubble. This endpoint returns HTTP 200 and treats unauthenticated payloads only as hints to recheck authenticated tracking. A webhook body alone never marks goods delivered.
+
+From the repository root, with confirmed Shipbubble test mode and the test key configured:
+
+```sh
+pnpm --filter @leetlogic/api simulate:delivery ORDER_UUID picked_up
+pnpm --filter @leetlogic/api simulate:delivery ORDER_UUID in_transit
+pnpm --filter @leetlogic/api simulate:delivery ORDER_UUID completed
+```
+
+Use the platform order UUID, not the Shipbubble shipment ID. The command requires an open funded courier order, covers every saved parcel, and refuses live mode. After sending the simulator request it reads authenticated tracking and reports the verified status. If tracking still shows an earlier state, completion remains unavailable. Provider/network failures do not fabricate buyer receipt or release escrow.
+
+The normal sequence is farmer dispatch report → verified courier delivery of every parcel → buyer receipt photo and explicit inspection acknowledgment → verified payment release → order completion. Before settlement succeeds the customer sees **Receipt confirmed**, not **Order completed**. The buyer must perform their own acknowledgment; the simulator never impersonates them.

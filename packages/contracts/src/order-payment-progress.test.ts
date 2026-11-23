@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { orderPaymentProgress } from "./order-payment-progress.js";
+import { orderPaymentProgress, buyerPaymentProgress } from "./order-payment-progress.js";
 it("does not treat an order record or an amount as verified payment", () => {
   expect(
     orderPaymentProgress({
@@ -58,4 +58,18 @@ it("does not equate a release amount with a verified transfer or claim zero fund
       release: { status: "QUEUED" },
     }),
   ).toMatchObject({ stage: "PAUSED", transfer: "Transfer paused", tone: "warning" });
+});
+
+it("keeps buyer payment messages free of earnings and bank withdrawal copy", () => {
+  for (const input of [
+    { verified: true, heldMinor: "10000" },
+    { verified: true, receiptConfirmed: true, hasPhoto: true },
+    { verified: true, releasedMinor: "10000", release: { status: "SUCCEEDED" } },
+  ]) {
+    const progress = orderPaymentProgress(input);
+    const buyer = buyerPaymentProgress(progress);
+    expect(buyer.stage).toBe(progress.stage);
+    expect(buyer.earnings).toBe("");
+    expect(buyer.body).not.toMatch(/earnings|withdrawal/i);
+  }
 });

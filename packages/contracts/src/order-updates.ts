@@ -103,13 +103,13 @@ export function recoveryExperience(record: RecoveryRecord, now = new Date()) {
 export function orderUpdateCopy(messageKey: string, buyer: boolean) {
   const state = messageKey.replace(/^status\./, "");
   const recovery: Record<string, [string, string]> = {
-    ORDER_ACCEPTED: ["Order accepted", "The farmer is preparing your goods."],
-    ORDER_REJECTED: ["Order declined", "The farmer cannot fulfill this order. Follow the refund status in your order."],
+    ORDER_ACCEPTED: ["Order accepted", buyer ? "The farmer is preparing your goods." : "You accepted this order. Prepare the goods for collection."],
+    ORDER_REJECTED: ["Order declined", buyer ? "The farmer cannot fulfill this order. Follow the refund status in your order." : "You declined this order. Follow the buyer’s refund status in the order."],
     BUYER_COLLECTED: ["Goods handed over", "The buyer should inspect the goods and confirm receipt."],
     PAYMENT_RELEASE_PAUSED: ["Payment release paused", "Receipt is saved. Payment processing needs support attention."],
-    PAYMENT_RELEASE_PROCESSING: ["Payment release processing", "Receipt is confirmed. The farmer’s transfer is queued for secure processing."],
+    PAYMENT_RELEASE_PROCESSING: [buyer ? "Payment settlement pending" : "Payment release processing", buyer ? "Your receipt is saved. Payment settlement is being processed." : "Receipt is confirmed. Your earnings transfer is queued for secure processing."],
     PAYMENT_RELEASE_FAILED: ["Payment needs attention", "The farmer’s payment could not be completed. Support will review it."],
-    PAYMENT_RELEASED: ["Payment released", "The farmer’s payment is confirmed. Open the order for details."],
+    PAYMENT_RELEASED: [buyer ? "Payment settled" : "Payment released", buyer ? "Your payment and receipt are confirmed." : "Your sale payment is confirmed. Open the order for your earnings details."],
     PAYMENT_REFUNDED: ["Refund confirmed", "The payment provider confirmed a refund for this order. Open the order to review the amount."],
     RECOVERY_REQUIRED: [
       buyer ? "Your payment needs order recovery" : "Stock confirmation needed",

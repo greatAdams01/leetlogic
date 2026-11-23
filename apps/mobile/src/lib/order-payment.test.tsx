@@ -334,10 +334,16 @@ it("does not display checkout-lock warnings after a successful payment", async (
   expect(tree.root.findAllByType("Notice").some((node: any) => /cannot accept|not verified/.test(node.props.text))).toBe(false);
   expect(button("Make Payment")).toBeUndefined();
 });
-it("renders backend escrow, transfer and earnings states separately", async () => {
+it("hides farmer transfer and earnings rows from buyers", async () => {
   h.data.progress = { title: "Transfer Processing", body: "Waiting for provider confirmation.", tone: "neutral", escrow: "Held in escrow", transfer: "Processing", earnings: "Not credited", verified: true };
   h.data.orderStatus = "DELIVERED"; h.data.items = [{ ...pending("SUCCEEDED"), confirmedAt: "2026-11-06T10:00:00Z" }];
   await render();
   expect(tree.root.findAllByType("Heading").some((n: any) => n.props.children === "Transfer Processing")).toBe(true);
+  expect(tree.root.findAllByType("Label").map((n: any) => n.props.children).flat()).not.toContain("Not credited");
+});
+
+it("retains transfer and earnings information for the farmer", async () => {
+  h.data.progress = { title: "Payment Secured", body: "Payment is held safely until receipt is confirmed.", tone: "neutral", escrow: "Held in escrow", transfer: "Not started", earnings: "Not credited", verified: true };
+  await act(async () => { tree = create(<OrderPayment orderId="order" isBuyer={false} onChanged={h.changed} />); });
   expect(tree.root.findAllByType("Label").map((n: any) => n.props.children).flat()).toContain("Not credited");
 });

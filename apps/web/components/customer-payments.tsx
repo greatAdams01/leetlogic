@@ -151,10 +151,10 @@ export function CustomerPayment({
       <h2>{say("Payment")}</h2>
       {data?.progress && <section className={`payment-progress payment-progress-${data.progress.tone}`} aria-live="polite">
         <h3>{say(data.progress.title)}</h3><p role={data.progress.tone === "warning" ? "alert" : "status"}>{say(data.progress.body)}</p>
-        <dl><dt>{say("Escrow")}</dt><dd>{say(data.progress.escrow)}</dd><dt>{say("Transfer")}</dt><dd>{say(data.progress.transfer)}</dd><dt>{say("Earnings")}</dt><dd>{say(data.progress.earnings)}</dd></dl>
+        <dl><dt>{say("Escrow")}</dt><dd>{say(data.progress.escrow)}</dd>{!isBuyer && <><dt>{say("Transfer")}</dt><dd>{say(data.progress.transfer)}</dd><dt>{say("Earnings")}</dt><dd>{say(data.progress.earnings)}</dd></>}</dl>
       </section>}
       {data?.fulfillment && data.fulfillment.state !== "SECURED" && <p role="status">{say(fulfillmentLabel(data.fulfillment.state))}</p>}
-      {data?.orderStatus === "AWAITING_PAYMENT" && !actions.succeeded && !data?.progress?.verified && <p>
+      {isBuyer && data?.orderStatus === "AWAITING_PAYMENT" && !actions.succeeded && !data?.progress?.verified && <p>
         {say(
           "Payment-processing fees are shown before you pay. Non-returnable fees are deducted from refunds.",
         )}
@@ -164,16 +164,16 @@ export function CustomerPayment({
       )}
       {data?.financialHold && (
         <p role="status">
-          {say("Your payment is being reviewed. Please contact support for help.")}
+          {say(isBuyer ? "Your payment is being reviewed. Please contact support for help." : "Payment under review")}
         </p>
       )}
-      {actions.ready && !actions.locked && !disabled && <p>{say("Total")}: {money(data.payableMinor)}</p>}
+      {isBuyer && actions.ready && !actions.locked && !disabled && <p>{say("Total")}: {money(data.payableMinor)}</p>}
       {data?.enabled && isBuyer && !actions.ready && !actions.locked && !actions.succeeded && (
         <p role="status">{error({ code: data.checkoutErrorCode || "QUOTE_EXPIRED" })}</p>
       )}
       {latest && (
         <p>
-          {!data?.progress && `${status(latest.status)} · `}{money(latest.amountMinor)}
+          {!data?.progress && status(latest.status)}{isBuyer && ` · ${money(latest.amountMinor)}`}
         </p>
       )}
       {data?.enabled && isBuyer && actions.canPay && (

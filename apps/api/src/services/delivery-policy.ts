@@ -53,7 +53,7 @@ type ParcelDelivery = {
   package: unknown;
   parcels: { parcelIndex: number; quoteId: string; status: string; providerShipmentId: string | null }[];
 };
-function completeParcelPlan(delivery: ParcelDelivery) {
+export function completeParcelPlan(delivery: ParcelDelivery) {
   const count = (delivery.package as { packageCount?: number } | null)?.packageCount;
   return Number.isInteger(count) && count! > 1 && delivery.parcels.length === count &&
     !!delivery.selectedQuoteId && new Set(delivery.parcels.map((parcel) => parcel.parcelIndex)).size === count &&

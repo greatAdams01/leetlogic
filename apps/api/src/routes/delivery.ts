@@ -181,7 +181,7 @@ customerDeliveryRouter.get("/", async (req, res) => {
   const hasMore = rows.length > query.limit;
   const items = rows.slice(0, query.limit);
   res.set("Cache-Control", "private, no-store");
-  res.json(serialize({hasMore, nextCursor: hasMore ? items.at(-1)!.id : null, items:items.map(item=>({...item, sellerName: item.farmerProfile.user.profile?.fullName || item.farmerProfile.user.profile?.displayName || item.farmerProfile.farmName, farmName: item.farmerProfile.farmName, farmerProfile: undefined, delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({farmerDecision:item.farmerDecision,handedOver:!!item.handedOverAt,review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
+  res.json(serialize({hasMore, nextCursor: hasMore ? items.at(-1)!.id : null, items:items.map(item=>({...item, sellerName: item.farmerProfile.user.profile?.fullName || item.farmerProfile.user.profile?.displayName || item.farmerProfile.farmName, farmName: item.farmerProfile.farmName, farmerProfile: undefined, delivery:item.delivery?{status:item.delivery.status,shippingMinor:item.delivery.shippingMinor}:null,fulfillmentStatus:["FUNDED","DELIVERED","COMPLETED"].includes(item.status)?orderFulfillment({orderStatus:item.status,farmerDecision:item.farmerDecision,handedOver:!!item.handedOverAt,review:item.financialHold,paid:true,confirmed:!!item.deliveryConfirmedAt,blocked:item.financialHold,buyer:view==="buyer",farmer:view==="seller",status:item.delivery?.status||"",ready:!!item.delivery?.events.some(e=>e.status==="READY_FOR_PICKUP"),dispatched:!!item.delivery?.events.some(e=>e.status==="FARMER_DISPATCHED"),booked:false,receiptReady:false,collection:!!item.delivery?.status.startsWith("PICKUP_")}).status:item.status}))}));
 });
 // Buyer collection uses no courier quote or shipping charge.
 customerDeliveryRouter.post("/:id/delivery/collection", async (req, res) => {
@@ -516,7 +516,7 @@ for (const router of [customerDeliveryRouter, staffDeliveryRouter]) {
         ...(isStaff ? { manualShipment: order.shipment && !delivery?.providerShipmentId && !delivery?.bookingStartedAt
           ? { id: order.shipment.id, carrier: order.shipment.carrier, trackingRef: order.shipment.trackingRef, status: order.shipment.status, riderAssignment: order.shipment.riderAssignment } : null } : {}),
         money: {
-          progress: await orderPaymentView(order),
+          progress: await orderPaymentView(order, order.buyerId === req.auth!.sub),
           ...(!isStaff && ownOrStaff ? { sellerEarnings: await farmerOrderEarnings(order) } : {}),
           heldMinor: order.heldMinor, releasedMinor: order.releasedMinor, refundedMinor: order.refundedMinor,
           release: await prisma.moneyOperation.findFirst({ where: { orderId: order.id, mode: mode(), kind: "RELEASE" }, orderBy: { createdAt: "desc" }, select: { status: true, failureCode: true, updatedAt: true } }),
@@ -1200,7 +1200,7 @@ deliveryWebhookRouter.post("/shipbubble", async (req, res) => {
       },
       data: { nextSyncAt: new Date(Date.now() + 60000) },
     });
-  res.status(202).json({ accepted: true });
+  res.status(200).json({ accepted: true });
 });
 
 staffDeliveryRouter.post(

@@ -529,7 +529,7 @@ export async function runDeliveryJobs() {
         await shippingProvider.cancel(d.providerShipmentId!);
       }
       await applyTracking(d.id, await shippingProvider.track(d.providerShipmentId!));
-    } catch {
+    } catch (error) {
       await prisma.delivery.update({
         where: { id: d.id },
         data: {
@@ -538,7 +538,7 @@ export async function runDeliveryJobs() {
           failureCode: d.cancelRequestedAt ? "CANCEL_RESULT_UNKNOWN" : "TRACKING_UNAVAILABLE",
         },
       });
-      logger.warn({ deliveryId: d.id }, "Delivery tracking delayed");
+      logger.warn({ deliveryId: d.id, code: error instanceof AppError ? error.code : "TRACKING_FAILED" }, "Delivery tracking delayed");
     }
   }
 }

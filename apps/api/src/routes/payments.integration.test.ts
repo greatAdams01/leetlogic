@@ -1841,6 +1841,13 @@ suite("provider-backed payment safeguards", () => {
     expect((await prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe(
       "BOOKED",
     );
+    expect((await request(app).post(`/v1/orders/${orderId}/delivery/dispatch`).set(farmerAuth).send({})).status).toBe(200);
+    const beforeDelivery = await request(app).get(`/v1/orders/${orderId}/delivery`).set(buyerAuth);
+    expect(beforeDelivery.body.progress.canConfirm).toBe(false);
+    expect(beforeDelivery.body.money.sellerEarnings).toBeUndefined();
+    expect((await request(app).get(`/v1/orders/${orderId}/payments`).set(buyerAuth)).body.progress.earnings).toBe("");
+    expect((await request(app).get(`/v1/orders/${orderId}/payments`).set(farmerAuth)).body.progress.earnings).toBe("Not credited");
+    expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } })).status).toBe("FUNDED");
     const { trackSplitDelivery } = await import("../services/split-delivery.js");
     const { applyTracking } = await import("../services/delivery.js");
     vi.spyOn(shippingProvider, "track").mockImplementation(async (id) => ({
@@ -1849,6 +1856,13 @@ suite("provider-backed payment safeguards", () => {
       courier: "Test courier",
     }));
     await applyTracking(delivery.id, await trackSplitDelivery(shippingProvider, delivery.id));
+    const delivered = await request(app).get(`/v1/orders/${orderId}/delivery`).set(buyerAuth);
+    expect(delivered.body.progress.canConfirm).toBe(true);
+    expect((await request(app).get(`/v1/orders/${orderId}/delivery`).set(farmerAuth)).body.progress.canConfirm).toBe(false);
+    const pendingReceipt = await prisma.tradeOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(pendingReceipt.status).toBe("FUNDED");
+    expect(pendingReceipt.deliveryConfirmedAt).toBeNull();
+    expect(pendingReceipt.releasedMinor).toBe(0n);
     vi.spyOn(mediaStorage, "storeMedia").mockResolvedValue(`receipt/${randomUUID()}`);
     expect((await request(app).post(`/v1/orders/${orderId}/delivery/receipt-photo`).set(buyerAuth).set("Content-Type", "image/jpeg").send(Buffer.from([255,216,255,...Array(20).fill(0)]))).status).toBe(201);
     expect(
@@ -2262,8 +2276,8 @@ suite("provider-backed payment safeguards", () => {
     expect(one.status).toBe(200);expect(two.status).toBe(200);
     expect(await prisma.deliveryEvent.count({where:{deliveryId:f.d.id,status:"BUYER_RECEIPT_CONFIRMED"}})).toBe(1);
     expect(await prisma.deliveryNotification.count({where:{event:{deliveryId:f.d.id,status:"BUYER_RECEIPT_CONFIRMED"}}})).toBe(2);
-    expect((await request(app).get(base).set(customerAuth())).body.progress).toMatchObject({status:"Completed",canConfirm:false});
-    const list=(await request(app).get("/v1/orders").set(customerAuth())).body.items.find((item:any)=>item.id===f.o.id);expect(list.fulfillmentStatus).toBe("Completed");
+    expect((await request(app).get(base).set(customerAuth())).body.progress).toMatchObject({status:"Receipt confirmed",canConfirm:false});
+    const list=(await request(app).get("/v1/orders").set(customerAuth())).body.items.find((item:any)=>item.id===f.o.id);expect(list.fulfillmentStatus).toBe("Receipt confirmed");
     expect((await prisma.tradeOrder.findUniqueOrThrow({where:{id:f.o.id}})).heldMinor).toBe(10000n);
   });
 
@@ -2332,7 +2346,7 @@ suite("provider-backed payment safeguards", () => {
     expect(operations).toHaveLength(1); expect(operations[0]!.status).toBe("QUEUED");
     expect((await prisma.tradeOrder.findUniqueOrThrow({ where: { id: o.id } })).heldMinor).toBe(10000n);
     const view = await request(app).get(`/v1/orders/${o.id}/payments`).set(headers);
-    expect(view.body.progress).toMatchObject({ stage: "PROCESSING", escrow: "Held in escrow", transfer: "Queued", earnings: "Not credited" });
+    expect(view.body.progress).toMatchObject({ stage: "PROCESSING", escrow: "Held in escrow", title: "Payment settlement pending", transfer: "", earnings: "" });
   });
 
   it("resumes a balance-blocked release through admin without creating another transfer", async () => {

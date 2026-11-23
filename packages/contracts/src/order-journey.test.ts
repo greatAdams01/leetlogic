@@ -73,7 +73,7 @@ it("keeps receipt completion separate from payment success and payment failure",
     },
   };
   expect(orderJourney(input)).toMatchObject({
-    title: "Order completed",
+    title: "Receipt confirmed",
     payment: "Payment processing",
     action: null,
   });
@@ -148,4 +148,10 @@ it("keeps legacy shipment tracking visible without offering the buyer a receipt 
     expect(journey).toMatchObject({ action: null, receiptPending: false, body: progress.next });
     expect(journey.title).not.toContain("preparing");
   }
+});
+
+it("does not call a receipted order completed until settlement completes", () => {
+  const p = { confirmed: true } as any;
+  expect(orderJourney({ buyer: true, orderStatus: "DELIVERED", progress: p })).toMatchObject({ title: "Receipt confirmed", stage: 3 });
+  expect(orderJourney({ buyer: true, orderStatus: "COMPLETED", progress: p })).toMatchObject({ title: "Order completed", stage: 4 });
 });

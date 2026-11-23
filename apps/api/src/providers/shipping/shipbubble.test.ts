@@ -237,3 +237,18 @@ describe("Shipbubble protocol", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
+
+it("reads the documented results envelope for a specific shipment", async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "success", data: { results: [{ order_id: "other" }, { order_id: "SB-test", status: "completed", courier: { name: "Test courier" } }], pagination: { next: 0 } } }));
+  expect(await new Shipbubble(fetcher as typeof fetch).track("SB-test")).toMatchObject({ id: "SB-test", status: "completed" });
+  expect(fetcher).toHaveBeenCalledWith("https://api.shipbubble.com/v1/shipping/labels/list/SB-test", expect.anything());
+});
+it("does not apply another shipment's status when the requested reference is absent", async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "success", data: { results: [{ order_id: "other", status: "completed" }] } }));
+  await expect(new Shipbubble(fetcher as typeof fetch).track("SB-test")).rejects.toMatchObject({ code: "SHIPMENT_NOT_FOUND" });
+});
+it("uses the documented sandbox simulator without trusting its response as delivery evidence", async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "success", message: "Webhook sent successfully" }));
+  expect(await new Shipbubble(fetcher as typeof fetch).simulateWebhook("SB-test", "completed")).toBeUndefined();
+  expect(fetcher).toHaveBeenCalledWith("https://api.shipbubble.com/v1/shipping/labels/webhooks/SB-test", expect.objectContaining({ method: "POST", body: JSON.stringify({ status_code: "completed" }) }));
+});

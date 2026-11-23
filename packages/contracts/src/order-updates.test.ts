@@ -85,3 +85,9 @@ describe("actionable order recovery", () => {
     });
   });
 });
+
+it("uses purchase language for buyer notifications and sale language for farmers", () => {
+  expect(orderUpdateCopy("status.PAYMENT_RELEASED", true).body).not.toMatch(/earnings|withdrawal/i);
+  expect(orderUpdateCopy("status.PAYMENT_RELEASED", false).body).toContain("your earnings");
+  expect(orderUpdateCopy("status.ORDER_ACCEPTED", false).body).toContain("You accepted");
+});

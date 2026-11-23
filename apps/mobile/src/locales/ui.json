@@ -7400,5 +7400,8 @@
   ["Your listing has been submitted for review. Our team will check the details before it becomes visible to buyers.", "We don send your listing for review. Our team go check the details before buyers fit see am.", "An aika jerin kayanka don dubawa. Ma'aikatanmu za su duba bayanan kafin masu saye su gani.", "Ezigala ndepụta gị maka nyocha. Ndị otu anyị ga-enyocha nkọwa tupu ndị na-azụ ahịa ahụ ya.", "A ti fi àkọsílẹ̀ ọjà rẹ ránṣẹ́ fún àyẹ̀wò. Ẹgbẹ́ wa yóò ṣàyẹ̀wò àlàyé kí àwọn olùrà tó lè rí i."],
   ["Produce item", "Produce item", "Nau’in amfanin gona", "Ụdị ihe ubi", "Irú ọjà oko"],
   ["Produce details", "Produce details", "Bayanan amfanin gona", "Nkọwa ihe ubi", "Àlàyé ọjà oko"],
-  ["Gross stock value before commission", "Total stock money before commission", "Jimillar kuɗin kaya kafin cire kaso", "Ngụkọta ego ngwaahịa tupu ewepụ oke", "Àpapọ̀ iye ọjà kí a tó yọ ìpín"]
+  ["Gross stock value before commission", "Total stock money before commission", "Jimillar kuɗin kaya kafin cire kaso", "Ngụkọta ego ngwaahịa tupu ewepụ oke", "Àpapọ̀ iye ọjà kí a tó yọ ìpín"],
+  ["Receipt confirmed", "Buyer don confirm receipt", "An tabbatar da karɓa", "Ekwenyela nnata", "A ti jẹ́rìí gbígbà"],
+  ["Payment settled", "Payment don settle", "An kammala biyan kuɗi", "Emechala ịkwụ ụgwọ", "A ti parí ìsanwó"],
+  ["Payment settlement pending", "Payment settlement still dey wait", "Ana jiran kammala biyan kuɗi", "A na-eche mmecha ịkwụ ụgwọ", "A ń dúró de píparí ìsanwó"]
 ]

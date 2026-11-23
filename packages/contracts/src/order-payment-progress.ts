@@ -95,3 +95,17 @@ export function orderPaymentProgress(input: {
   return { stage, title, body, tone, escrow, transfer, earnings, verified: input.verified };
 }
 export type OrderPaymentProgress = ReturnType<typeof orderPaymentProgress>;
+
+/** Presentation only: preserve settlement stages while keeping buyer copy purchase-specific. */
+export function buyerPaymentProgress(progress: OrderPaymentProgress): OrderPaymentProgress {
+  const copy: Record<string, [string, string]> = {
+    AVAILABLE: ["Payment settled", "Your payment and receipt are confirmed."],
+    REVIEW: ["Payment under review", "Support is reviewing your payment. Check this order for updates."],
+    ATTENTION: ["Payment needs attention", "Support is checking payment settlement. Do not pay again."],
+    PAUSED: ["Payment settlement pending", "Your payment is recorded. Support is checking settlement; do not pay again."],
+    PROCESSING: ["Payment settlement pending", "Your receipt is saved. Payment settlement is being processed."],
+    PENDING: ["Payment settlement pending", "Your receipt is saved. Payment settlement is pending."],
+  };
+  const selected = copy[progress.stage];
+  return { ...progress, ...(selected ? { title: selected[0], body: selected[1] } : {}), earnings: "", transfer: "" };
+}
