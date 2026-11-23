@@ -427,7 +427,7 @@ export function ProduceListing() {
               {draft.fields.packingAssistanceRequested && (
                 <p>
                   {say(
-                    "Packing assistance requested. Our team must complete package measurements before buyers can purchase.",
+                    "Our team will complete missing measurements during listing review before approving it for buyers.",
                   )}
                 </p>
               )}

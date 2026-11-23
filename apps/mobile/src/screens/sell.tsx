@@ -919,7 +919,7 @@ export function Review() {
       </Card>}
       {form && catalogue.data && <ReadListingAloud text={listingReadback(form, catalogue.data)} />}
       {form?.packingAssistanceRequested && (
-        <Notice text="Packing assistance requested. Our team must complete package measurements before buyers can purchase." />
+        <Notice text="Our team will complete missing measurements during listing review before approving it for buyers." />
       )}
       <View style={{ gap: 8 }}>
         <Label style={{ fontFamily: "NotoBold" }}>Uploaded photos</Label>
@@ -1172,7 +1172,7 @@ export function MyListings() {
           <Label style={{ fontFamily: "NotoBold" }}>{i.title}</Label>
           <Text style={s.badge}>{a.status(i.status)}</Text>
           {i.packingAssistanceRequested && (
-            <Notice text="Packing assistance requested. Our team must complete package measurements before buyers can purchase." />
+            <Notice text="Our team will complete missing measurements during listing review before approving it for buyers." />
           )}
           <Label>
             {money(i.unitPriceMinor)} / {saleUnitLabel(i.salePackaging, a.ui) || a.unit(i.unitCode)}

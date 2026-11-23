@@ -7,6 +7,8 @@ import {
   voiceFields,
   listingReadback,
   firstIncompleteVoiceField,
+  guidedListingForm,
+  guidedProduceChoices,
   type VoiceCatalogue,
 } from "./guided-listing";
 import { emptyListing, listingDetailsError, listingPayload, restoreListing, type ListingForm } from "./listing-form";
@@ -241,5 +243,28 @@ describe("English guided listing grammar", () => {
     expect(listingReadback(form, catalogue)).toContain("Only the submit button");
     expect(listingReadback({ ...form, price: "1500" }, catalogue)).toContain("₦90.00 (6%)");
     expect(listingReadback({ ...form, price: "1500" }, catalogue)).toContain("₦1,410.00");
+  });
+});
+
+describe("guided listing assistance", () => {
+  it("uses staff measurements without inventing selling size, quantity or price", () => {
+    const draft = guidedListingForm(emptyListing, catalogue);
+    expect(draft).toMatchObject({ packingAssistanceRequested: true, addressId: "farm", quantity: "", price: "" });
+    expect(draft.salePackaging).toBeUndefined();
+    expect(listingDetailsError(draft, catalogue.units, "grains")).not.toBe("");
+    expect(emptyListing.packingAssistanceRequested).toBeUndefined();
+  });
+  it("does not choose between several saved farms", () => {
+    expect(guidedListingForm(emptyListing, { ...catalogue, addresses: [...catalogue.addresses, { ...catalogue.addresses[0]!, id: "other" }] }).addressId).toBe("");
+  });
+  it("preserves complete measured packaging from an existing draft", () => {
+    const form = { ...emptyListing, unitCode: "BAG", salePackaging: { type: "BAG" as const, size: 50, measure: "KG" as const }, packaging: { ...emptyListing.packaging!, unitsPerPackage: "1", weightKg: "51", length: "80", width: "50", height: "25" } };
+    const draft = guidedListingForm(form, catalogue);
+    expect(draft.packaging).toEqual(form.packaging);
+    expect(draft.packingAssistanceRequested).toBe(false);
+  });
+  it("only offers produce with a live matching category", () => {
+    expect(guidedProduceChoices(catalogue)).toContainEqual({ title: "Rice", categoryId: "grains" });
+    expect(guidedProduceChoices({ ...catalogue, categories: [] })).toEqual([]);
   });
 });

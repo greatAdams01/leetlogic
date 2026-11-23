@@ -115,7 +115,7 @@ it("automatically reads each question and its choices without repeating while ty
   expect(h.speak).toHaveBeenCalledOnce();
   await tap("Continue");
   expect(h.speak).toHaveBeenCalledTimes(2);
-  expect(h.speak.mock.calls[1]![0]).toContain("Roots and tubers");
+  expect(h.speak.mock.calls[1]![0]).toContain("Tell buyers");
   expect(h.permission).not.toHaveBeenCalled();
   expect(h.listen).not.toHaveBeenCalled();
 });
@@ -128,15 +128,15 @@ it("keeps typing available if automatic speech fails", async () => {
 });
 it("completes a hybrid listing without starting speech or asking spoken yes/no", async () => {
   await act(async () => { renderer = create(<Harness />); });
-  await edit("Yam"); await tap("Continue");
-  await tap("Roots and tubers");
-  await edit("Fresh white yam"); await tap("Continue");
-  await tap("Individual piece / tuber"); await tap("1 PIECE");
+  await tap("Yam");
+  await tap("Freshly harvested");
+  await tap("Individual piece / tuber");
   await edit("20"); await tap("Continue");
   await edit("500"); await tap("Continue");
-  await tap("Farm road, Enugu, Enugu"); await tap("Within my state");
-  await tap("Ask for packing assistance");
-  expect(saved()).toMatchObject({ quantity: "20", price: "500", shippingScope: "LOCAL", packingAssistanceRequested: true });
+  expect(button("Farm road, Enugu, Enugu")).toBeUndefined();
+  expect(button("Enter measurements")).toBeUndefined();
+  await tap("Within my state");
+  expect(saved()).toMatchObject({ quantity: "20", price: "500", shippingScope: "LOCAL", packingAssistanceRequested: true, addressId: "farm" });
   expect(h.listen).not.toHaveBeenCalled(); expect(h.permission).not.toHaveBeenCalled();
   expect(JSON.stringify(renderer.toJSON())).toContain("estimated earnings before submitting");
   expect(h.done).not.toHaveBeenCalled();
@@ -188,4 +188,18 @@ it("does not save invalid stock or price", async () => {
   await edit("20"); await tap("Continue");
   await edit("0"); expect(button("Continue").props.disabled).toBe(true);
   expect(saved().price).toBe("");
+});
+
+it("saves packing assistance before leaving a complete older draft", async () => {
+  await act(async () => { renderer = create(<Harness initial={{ ...stockForm, quantity: "20", price: "500", packingAssistanceRequested: false, voiceCursor: "weightKg" }} />); });
+  expect(button("Continue to photos and review")).toBeDefined();
+  await tap("Continue to photos and review");
+  expect(saved().packingAssistanceRequested).toBe(true);
+  expect(h.done).toHaveBeenCalledOnce();
+});
+it("does not guess the category for an unfamiliar produce name", async () => {
+  await act(async () => { renderer = create(<Harness />); });
+  await edit("Unknown crop"); await tap("Continue");
+  expect(saved().categoryId).toBe("");
+  expect(button("Roots and tubers")).toBeDefined();
 });

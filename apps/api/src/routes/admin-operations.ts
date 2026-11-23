@@ -295,20 +295,31 @@ operationsRouter.post(
   requirePermission("catalog.manage"),
   async (req, res) => {
     const body = reasonSchema
-      .extend({ status: z.enum(["ACTIVE", "REJECTED", "PAUSED", "ARCHIVED"]) })
+      .extend({ status: z.enum(["ACTIVE", "REJECTED", "PAUSED", "ARCHIVED"]), packaging: packagingSchema.optional() })
+      .refine(body => !body.packaging || body.status === "ACTIVE", { message: "Measurements can only be supplied with listing approval." })
       .parse(req.body);
     const listingId = id.parse(req.params.id);
     const item = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM listings WHERE id = ${listingId}::uuid FOR UPDATE`;
       const listing = await tx.listing.findUniqueOrThrow({
         where: { id: listingId },
-        include: { farmerProfile: true },
+        include: { farmerProfile: true, unit: true },
       });
-      if (body.status === "ACTIVE" && (listing.packingAssistanceRequested || !packagingSchema.safeParse(listing.packaging).success))
+      if (listing.deletedAt) throw new AppError(409, "INVALID_TRANSITION", "Deleted listings cannot be approved.");
+      const packing = packagingSchema.safeParse(body.packaging ?? listing.packaging);
+      if (body.status === "ACTIVE" && ((!body.packaging && listing.packingAssistanceRequested) || !packing.success))
         throw new AppError(
           409,
           "PACKING_ASSISTANCE_PENDING",
           "Complete package measurements before approving this listing",
         );
+      if (body.status === "ACTIVE" && packing.success) {
+        const salePackage = salePackagingSchema.safeParse(listing.salePackaging);
+        if ((!listing.unit.allowsDecimal && !Number.isInteger(packing.data.unitsPerPackage)) ||
+          packing.data.weightKg < Math.max(listing.unitCode === "KG" ? packing.data.unitsPerPackage : 0,
+            minimumPackedWeight(salePackage.success ? salePackage.data : undefined, packing.data.unitsPerPackage)))
+          throw new AppError(422, "INVALID_PACKING", "Package units and weight must match the selling unit");
+      }
       if (body.status === "ACTIVE" && listing.farmerProfile.verificationStatus !== "APPROVED")
         throw new AppError(409, "SELLER_UNVERIFIED", "Only verified farmers can publish listings");
       if (
@@ -321,7 +332,7 @@ operationsRouter.post(
         );
       const changed = await tx.listing.updateMany({
         where: { id: listingId, status: listing.status },
-        data: { status: body.status },
+        data: { status: body.status, ...(body.packaging ? { packaging: body.packaging, packingAssistanceRequested: false } : {}) },
       });
       if (!changed.count)
         throw new AppError(409, "STALE_RECORD", "Listing changed. Refresh and try again.");
@@ -337,8 +348,8 @@ operationsRouter.post(
           action: "listing.status.changed",
           entityType: "listing",
           entityId: listingId,
-          before: { status: listing.status },
-          after: body,
+          before: { status: listing.status, packaging: listing.packaging, packingAssistanceRequested: listing.packingAssistanceRequested },
+          after: { ...body, ...(body.packaging ? { packingAssistanceRequested: false } : {}) },
         },
         tx,
       );
@@ -1164,64 +1175,3 @@ operationsRouter.get("/lookups", async (req, res) => {
     });
   }
 });
-
-// Complete assisted packing separately from moderation; this never publishes a listing.
-operationsRouter.patch(
-  "/listings/:id/packaging",
-  requirePermission("catalog.manage"),
-  async (req, res) => {
-    const body = reasonSchema.extend({ packaging: packagingSchema }).parse(req.body);
-    const listingId = id.parse(req.params.id);
-    const item = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM listings WHERE id = ${listingId}::uuid FOR UPDATE`;
-      const listing = await tx.listing.findUniqueOrThrow({
-        where: { id: listingId },
-        include: { unit: true },
-      });
-      if (
-        listing.deletedAt ||
-        !listing.packingAssistanceRequested ||
-        listing.status !== "PENDING_REVIEW"
-      )
-        throw new AppError(
-          409,
-          "INVALID_TRANSITION",
-          "This listing is not waiting for packing assistance",
-        );
-      const salePackage = salePackagingSchema.safeParse(listing.salePackaging);
-      if (
-        (!listing.unit.allowsDecimal && !Number.isInteger(body.packaging.unitsPerPackage)) ||
-        body.packaging.weightKg <
-          Math.max(
-            listing.unitCode === "KG" ? body.packaging.unitsPerPackage : 0,
-            minimumPackedWeight(
-              salePackage.success ? salePackage.data : undefined,
-              body.packaging.unitsPerPackage,
-            ),
-          )
-      )
-        throw new AppError(
-          422,
-          "INVALID_PACKING",
-          "Package units and weight must match the selling unit",
-        );
-      const updated = await tx.listing.update({
-        where: { id: listingId },
-        data: { packaging: body.packaging, packingAssistanceRequested: false },
-      });
-      await audit(
-        req,
-        {
-          action: "listing.packaging.completed",
-          entityType: "listing",
-          entityId: listingId,
-          before: { packaging: listing.packaging, packingAssistanceRequested: true },
-          after: body,
-        },
-        tx,
-      );
-      return updated;
-    });
-    res.json(json(item));
-  },
-);

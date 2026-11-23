@@ -2,18 +2,20 @@ import React, { useEffect, useRef, useState } from "react";
 import { AppState, View } from "react-native";
 import { AppSheet } from "./app-sheet";
 import { Button, Field, Label, Notice } from "./ui";
-import { englishListing, interpretAnswer, commitAnswer, voiceFields, firstIncompleteVoiceField,
+import { englishListing, interpretAnswer, commitAnswer, guidedListingForm, guidedProduceChoices, firstIncompleteVoiceField,
   voicePackagingOptions, listingReadback, type VoiceCatalogue } from "../lib/guided-listing";
 import { localSpeechAvailable, finishListingAnswer, requestLocalSpeechPermission,
   speakListing, listenListing, stopListingSpeech, speechSetupMessage } from "../lib/local-listing-speech";
 import { listingDetailsError, type ListingForm } from "../lib/listing-form";
 import { saleUnitLabel } from "../../../../packages/contracts/src/sale-packaging";
 
-export function GuidedListing({ visible, form, catalogue, onChange, onClose, onDone, onActivityChange }: {
+export function GuidedListing({ visible, form: savedForm, catalogue, onChange, onClose, onDone, onActivityChange }: {
   visible: boolean; form: ListingForm; catalogue: VoiceCatalogue;
   onChange: (form: ListingForm) => void | Promise<void>;
   onClose: () => void; onDone: () => void; onActivityChange: (active: boolean) => void;
 }) {
+  const form = guidedListingForm(savedForm, catalogue);
+  const produceChoices = guidedProduceChoices(catalogue);
   const [input, setInput] = useState(""), [message, setMessage] = useState(""),
     [transcript, setTranscript] = useState(""), [phase, setPhase] = useState(""),
     [busy, setBusy] = useState(false);
@@ -91,14 +93,22 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
     saving.current = true; setBusy(true); onActivityChange(true);
     try {
       let draft = commitAnswer(form, cursor, answer);
-      const next = voiceFields(draft, catalogue).find(f => englishListing.fields.indexOf(f) > englishListing.fields.indexOf(cursor));
-      draft = { ...draft, voiceCursor: next ? `change:${next}` : "review" };
+      if (cursor === "title") {
+        const produce = produceChoices.find(p => p.title.toLowerCase() === answer.value.toLowerCase());
+        if (produce) draft = commitAnswer(draft, "categoryId", { value: produce.categoryId, spoken: produce.title });
+      }
+      draft = guidedListingForm({ ...draft, voiceCursor: undefined }, catalogue);
+      const next = firstIncompleteVoiceField(draft, catalogue);
+      draft.voiceCursor = cursor === "salePackageLabel" ? "change:salePackageMeasure"
+        : !next && cursor !== "shippingScope" ? "change:shippingScope" : next || "review";
       await onChange(draft);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save. Please try again."); }
     finally { saving.current = false; setBusy(false); onActivityChange(false); }
   };
   const choices: { label: string; value: string }[] =
-    cursor === "categoryId" ? catalogue.categories.map((c, i) => ({ label: c.translations.find(t => t.locale === "en")?.name || c.slug, value: String(i + 1) }))
+    cursor === "title" ? produceChoices.map(p => ({ label: p.title, value: p.title }))
+    : cursor === "description" ? ["Freshly harvested", "Clean and dry", "Ready for sale"].map(value => ({ label: value, value }))
+    : cursor === "categoryId" ? catalogue.categories.map((c, i) => ({ label: c.translations.find(t => t.locale === "en")?.name || c.slug, value: String(i + 1) }))
     : cursor === "salePackaging" ? options.map((o, i) => ({ label: o.label, value: String(i + 1) }))
     : cursor === "salePackageSize" ? (option?.sizes || []).map(size => ({ label: `${size} ${form.salePackaging?.measure}`, value: String(size) }))
     : cursor === "salePackageMeasure" ? [{ label: "Kilograms", value: "kilograms" }, { label: "Litres", value: "litres" }, { label: "Pieces", value: "pieces" }]
@@ -126,10 +136,17 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
     return () => { live = false; narration.current++; void stopListingSpeech(); };
   }, [visible, spokenPrompt]);
   const choiceOnly = !!cursor && ["categoryId", "salePackaging", "salePackageMeasure", "addressId", "shippingScope", "packing", "handling"].includes(cursor);
-  const finish = () => {
+  const finish = async () => {
+    if (saving.current || active.current) return;
     const error = listingDetailsError(form, catalogue.units, category?.slug);
     if (error) { setMessage(error); return; }
-    onDone();
+    saving.current = true; setBusy(true); onActivityChange(true);
+    try {
+      await onChange(form);
+      pause();
+      onDone();
+    } catch { setMessage("Could not save. Please try again."); }
+    finally { saving.current = false; setBusy(false); onActivityChange(false); }
   };
   return <AppSheet visible={visible} title="Create your listing" subtitle="Tap, type or speak — choose what is easiest"
     onClose={() => { pause(); onClose(); }} footer={<View style={{ gap: 10 }}>
@@ -138,7 +155,7 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
         {!saving.current && <Button title="Cancel recording" secondary onPress={pause} />}
       </> : <>
         {cursor && !choiceOnly && <Button title="Continue" disabled={!parsed} onPress={() => void save()} />}
-        {!cursor && <Button title="Continue to photos and review" onPress={finish} />}
+        {!cursor && <Button title="Continue to photos and review" onPress={() => void finish()} />}
         {cursor && !choiceOnly && <Button title={transcript ? "Record again" : "Answer by voice"} secondary onPress={() => void record()} />}
         <Button title="Use full form" secondary onPress={() => { pause(); onClose(); }} />
       </>}
@@ -152,7 +169,8 @@ export function GuidedListing({ visible, form, catalogue, onChange, onClose, onD
       onChangeText={value => { setInput(value); setMessage(""); }} />}
     {!!transcript && <Label>{`You said: ${transcript}`}</Label>}
     {parsed && !choiceOnly && <Label>{`Check your answer: ${parsed.spoken}`}</Label>}
-    {!cursor && <Label>Next, add photos and review your package, stock, price and estimated earnings before submitting.</Label>}
+    {form.packingAssistanceRequested && <Notice text="Our team will complete missing measurements during listing review before approving it for buyers." />}
+    {!cursor && <Label>{`Pickup: ${catalogue.addresses.find(a => a.id === form.addressId)?.line1 || "Choose your farm address"}. Next, add photos and review your package, stock, price and estimated earnings before submitting.`}</Label>}
     {!!message && <Notice text={message} />}
     <Label>Tap Continue to save each answer. You can edit everything before submitting your listing.</Label>
   </AppSheet>;

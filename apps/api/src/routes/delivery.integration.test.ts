@@ -1181,7 +1181,7 @@ suite("delivery and language database workflows", () => {
       ).body.listing.id,
     ).toBe(submit.body.listing.id);
   });
-  it("keeps assisted packing off sale until authorized staff complete and audit the measurements", async () => {
+  it("completes missing measurements and publishes in one authorized listing approval", async () => {
     const sellerAuth = { Authorization: `Bearer ${seller}` };
     const photo = await prisma.producePhoto.create({
       data: {
@@ -1250,7 +1250,8 @@ suite("delivery and language database workflows", () => {
     ).toBe("PACKING_ASSISTANCE_PENDING");
     await prisma.listing.update({ where: { id: listing.id }, data: { status: "PENDING_REVIEW" } });
     const completion = {
-      reason: "Measured with the farmer",
+      status: "ACTIVE",
+      reason: "Measurements and listing verified with the farmer",
       packaging: {
         unitsPerPackage: 2,
         weightKg: 3,
@@ -1262,36 +1263,24 @@ suite("delivery and language database workflows", () => {
       },
     };
     expect(
-      (await request(app).patch(`${base}/packaging`).set(sellerAuth).send(completion)).status,
+      (await request(app).post(`${base}/status`).set(sellerAuth).send(completion)).status,
     ).toBe(401);
-    expect(
-      (
-        await request(app)
-          .patch(`${base}/packaging`)
-          .set(admin())
-          .send({ ...completion, packaging: { ...completion.packaging, weightKg: 1 } })
-      ).status,
-    ).toBe(422);
-    const completed = await request(app).patch(`${base}/packaging`).set(admin()).send(completion);
+    expect((await request(app).post(`${base}/status`).set(admin())
+      .send({ ...completion, packaging: { ...completion.packaging, weightKg: 1 } })).status).toBe(422);
+    expect(await prisma.listing.findUniqueOrThrow({ where: { id: listing.id } })).toMatchObject({
+      status: "PENDING_REVIEW", packingAssistanceRequested: true, packaging: null,
+    });
+    const completed = await request(app).post(`${base}/status`).set(admin()).send(completion);
     expect(completed.status).toBe(200);
     expect(completed.body).toMatchObject({
-      status: "PENDING_REVIEW",
-      packingAssistanceRequested: false,
-      packaging: completion.packaging,
+      status: "ACTIVE", packingAssistanceRequested: false, packaging: completion.packaging,
     });
-    expect(
-      await prisma.auditLog.count({
-        where: { entityId: listing.id, action: "listing.packaging.completed" },
-      }),
-    ).toBe(1);
-    expect(
-      (
-        await request(app)
-          .post(`${base}/status`)
-          .set(admin())
-          .send({ status: "ACTIVE", reason: "Measurements and listing verified" })
-      ).status,
-    ).toBe(200);
+    const decision = await prisma.auditLog.findFirstOrThrow({
+      where: { entityId: listing.id, action: "listing.status.changed" },
+    });
+    expect(decision.beforeRedacted).toMatchObject({ status: "PENDING_REVIEW", packingAssistanceRequested: true });
+    expect(decision.afterRedacted).toMatchObject({ status: "ACTIVE", packaging: completion.packaging, packingAssistanceRequested: false });
+    expect(await prisma.listingApprovalNotification.count({ where: { listingId: listing.id } })).toBe(1);
     expect(
       (
         await request(app)

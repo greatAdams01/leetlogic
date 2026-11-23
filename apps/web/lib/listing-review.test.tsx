@@ -115,3 +115,11 @@ it("includes the farmer's packed measurements and handling in staff review", () 
   ])
     expect(html).toContain(text);
 });
+
+it("offers one approval action for a listing with missing measurements", () => {
+  const html = review({ ...listing, packingAssistanceRequested: true } as typeof listing);
+  expect(html).toContain("Add and verify missing measurements in the approval form");
+  expect(html).toContain(">Approve listing</button>");
+  expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve listing/);
+  expect(html).not.toContain("Complete package measurements</button>");
+});

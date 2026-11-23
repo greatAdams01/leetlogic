@@ -32,6 +32,34 @@ export type VoiceCatalogue = {
 };
 export const voicePackagingOptions = (categorySlug: string, title: string, catalogue: VoiceCatalogue) =>
   packagingOptions(categorySlug, title).filter((option) => option.value === "CUSTOM" || packageUnitCode(option, catalogue.units));
+
+// These explicit produce choices only appear when their category exists in the live catalogue.
+export function guidedProduceChoices(catalogue: VoiceCatalogue) {
+  const produce = [
+    ["Rice", "rice", "grains"], ["Maize", "maize", "grains"],
+    ["Beans", "beans", "legumes"], ["Yam", "yam", "roots-tubers"],
+    ["Cassava", "cassava", "roots-tubers"], ["Tomatoes", "tomatoes", "vegetables"],
+    ["Plantain", "plantain", "fruits"], ["Palm oil", "palm-oil", "oils"],
+    ["Garri", "garri", "processed-produce"],
+  ];
+  return produce.flatMap(([title, slug, group]) => {
+    const category = catalogue.categories.find(c => c.slug === slug)
+      || catalogue.categories.find(c => c.slug === group);
+    return category ? [{ title: title!, categoryId: category.id }] : [];
+  });
+}
+
+export function guidedListingForm(form: ListingForm, catalogue: VoiceCatalogue): ListingForm {
+  const needsMeasurements = voiceFields(form, catalogue).includes("weightKg");
+  return {
+    ...form,
+    // Never estimate courier dimensions. Staff completes these before sales are enabled.
+    packingAssistanceRequested: form.packingAssistanceRequested || needsMeasurements,
+    addressId: form.addressId || (catalogue.addresses.length === 1 ? catalogue.addresses[0]!.id : ""),
+    voiceCursor: /^(?:change:)?(?:packing|unitsPerPackage|weightKg|length|width|height|handling)$/.test(form.voiceCursor || "")
+      ? undefined : form.voiceCursor,
+  };
+}
 // Prompts, grammar and parsers belong to a locale profile. Only English is enabled.
 export const englishListing = {
   locale: "en" as const,
@@ -572,5 +600,5 @@ export function listingReadback(form: ListingForm, catalogue: VoiceCatalogue): s
     ? new Intl.NumberFormat("en-NG", { maximumFractionDigits: 3 }).format(Number(form.salePackaging.size) * Number(form.quantity))
     : null;
   const stockValue = price ? produceTotal(form.quantity, price) : null;
-  return `Your listing: ${form.title}. ${form.description}. Category: ${catalogue.categories.find((c) => c.id === form.categoryId)?.translations.find((t) => t.locale === "en")?.name || "not selected"}. Available: ${form.quantity} ${packageDescription}. Price: ${price ? money(price) : "not entered"} per ${packageDescription}. ${stockWeight ? `Total produce stock: ${stockWeight} kilograms. ` : ""}${stockValue ? `Gross stock value before commission: ${money(stockValue)}. ` : ""}${commission} Pickup: ${address ? `${address.line1}, ${address.city}, ${address.state}` : "missing farm address"}. Delivery: ${form.shippingScope === "LOCAL" ? "within your state" : "nationwide"}. ${form.packingAssistanceRequested ? "The team must complete package measurements before buyers can purchase." : packingError(form.packaging) ? "Package measurements are incomplete." : `Each courier package contains ${form.packaging!.unitsPerPackage} selling units, weighs ${form.packaging!.weightKg} kilograms, and measures ${form.packaging!.length} by ${form.packaging!.width} by ${form.packaging!.height} centimetres. Handling: ${form.packaging!.handling.replace(/_/g, " ")}.`} ${form.photos.length} photos. Review and correct any details. Only the submit button can send your listing for review.`;
+  return `Your listing: ${form.title}. ${form.description}. Category: ${catalogue.categories.find((c) => c.id === form.categoryId)?.translations.find((t) => t.locale === "en")?.name || "not selected"}. Available: ${form.quantity} ${packageDescription}. Price: ${price ? money(price) : "not entered"} per ${packageDescription}. ${stockWeight ? `Total produce stock: ${stockWeight} kilograms. ` : ""}${stockValue ? `Gross stock value before commission: ${money(stockValue)}. ` : ""}${commission} Pickup: ${address ? `${address.line1}, ${address.city}, ${address.state}` : "missing farm address"}. Delivery: ${form.shippingScope === "LOCAL" ? "within your state" : "nationwide"}. ${form.packingAssistanceRequested ? "Our team will complete missing measurements during listing review before approving it for buyers." : packingError(form.packaging) ? "Package measurements are incomplete." : `Each courier package contains ${form.packaging!.unitsPerPackage} selling units, weighs ${form.packaging!.weightKg} kilograms, and measures ${form.packaging!.length} by ${form.packaging!.width} by ${form.packaging!.height} centimetres. Handling: ${form.packaging!.handling.replace(/_/g, " ")}.`} ${form.photos.length} photos. Review and correct any details. Only the submit button can send your listing for review.`;
 }

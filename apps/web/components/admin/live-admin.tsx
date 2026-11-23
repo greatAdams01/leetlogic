@@ -402,6 +402,7 @@ function Workspace({ route, title }: { route: string; title: string }) {
     method?: string;
     stepUp?: boolean;
     extra?: Row;
+    includePackaging?: boolean;
   }>();
   const dialog = useRef<HTMLDialogElement>(null);
   const reviewPanel = useRef<HTMLElement>(null);
@@ -515,9 +516,10 @@ function Workspace({ route, title }: { route: string; title: string }) {
       if (action.stepUp)
         await api("auth/totp/step-up", "POST", { code: new FormData(form).get("stepUpCode") });
       const entered = values(form, action.fields);
-      const payload = action.path.endsWith("/packaging")
+      const payload = action.includePackaging
         ? {
             reason: entered.reason,
+            ...action.extra,
             packaging: Object.fromEntries(
               Object.entries(entered).filter(([key]) => key !== "reason"),
             ),
@@ -1045,11 +1047,12 @@ function Workspace({ route, title }: { route: string; title: string }) {
                     record={selected}
                     busy={busy}
                     canDecide={!!can("catalog.manage")}
-                    onCompletePacking={() =>
+                    onStatus={(status) =>
                       open(
-                        "Complete package measurements",
-                        `listings/${selected.id}/packaging`,
-                        [
+                        `${status === "ACTIVE" ? "Approve" : status === "REJECTED" ? "Reject" : status === "PAUSED" ? "Pause" : "Archive"} listing`,
+                        `listings/${selected.id}/status`,
+                        status === "ACTIVE" && (selected.packingAssistanceRequested || !selected.packaging)
+                          ? [
                           {
                             name: "unitsPerPackage",
                             label: "Selling units per package",
@@ -1066,16 +1069,9 @@ function Workspace({ route, title }: { route: string; title: string }) {
                           },
                           { name: "notes", label: "Packing notes", type: "optional" },
                           reason,
-                        ],
-                        { method: "PATCH" },
-                      )
-                    }
-                    onStatus={(status) =>
-                      open(
-                        `${status === "ACTIVE" ? "Approve" : status === "REJECTED" ? "Reject" : status === "PAUSED" ? "Pause" : "Archive"} listing`,
-                        `listings/${selected.id}/status`,
-                        [reason],
-                        { extra: { status } },
+                        ]
+                          : [reason],
+                        { extra: { status }, includePackaging: status === "ACTIVE" && (selected.packingAssistanceRequested || !selected.packaging) },
                       )
                     }
                   />
